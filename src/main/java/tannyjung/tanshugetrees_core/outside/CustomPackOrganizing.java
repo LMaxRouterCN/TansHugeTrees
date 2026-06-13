@@ -227,10 +227,14 @@ public class CustomPackOrganizing {
 
                 Error.add("pack", "packs / info file not found. This will results skipping these packs. Make sure you use the version that includes info file.", pack.getPath(), pack.getName());
                 pass = false;
+                // 修复: 当找不到 info 文件时，给 data 赋空 Map，防止后续 data.get() 抛出 NPE，并让后续检查自然失败
+                data = new HashMap<>();
+
+            } else {
+
+                data = OutsideUtils.convertFileToDataMap(location);
 
             }
-
-            data = OutsideUtils.convertFileToDataMap(location);
 
             // Pack ID
             {

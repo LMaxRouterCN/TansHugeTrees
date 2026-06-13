@@ -349,30 +349,27 @@ public class OutsideUtils {
         if (OutsideUtils.isURLAvailable(url) == true) {
 
             try {
-
+                // [LMax Fix] Use HttpURLConnection with strict timeouts to prevent main-thread/network-thread blocking
+                java.net.HttpURLConnection connection = (java.net.HttpURLConnection) new URI(url).toURL().openConnection();
+                connection.setConnectTimeout(3000); // 3 seconds connect timeout
+                connection.setReadTimeout(5000);    // 5 seconds read timeout
+                connection.setRequestMethod("GET");
+                
                 List<String> data = new ArrayList<>();
 
-                {
-
-                    BufferedReader buffered_reader = new BufferedReader(new InputStreamReader(new URI(url).toURL().openStream()), 65536);
+                try (BufferedReader buffered_reader = new BufferedReader(new InputStreamReader(connection.getInputStream()), 65536)) {
                     String scan = "";
-
                     while ((scan = buffered_reader.readLine()) != null) {
-
                         data.add(scan);
-
                     }
-
-                    buffered_reader.close();
-
+                } finally {
+                    connection.disconnect();
                 }
 
                 return data.toArray(new String[0]);
 
             } catch (Exception exception) {
-
-                exception(new Exception(), exception, "");
-
+                // Silently fail on network issues to avoid log spam and thread blocking
             }
 
         }

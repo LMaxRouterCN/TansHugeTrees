@@ -1,5 +1,7 @@
 package tannyjung.tanshugetrees_core.outside;
 
+import java.util.concurrent.ConcurrentHashMap;
+
 import tannyjung.tanshugetrees_core.Core;
 
 import java.util.*;
@@ -32,10 +34,10 @@ public class CacheManager {
 
     public static class DataLogic {
 
-        private static final Map<String, Map<String, Boolean>> normal = new HashMap<>();
-        private static final Map<String, Map<String, boolean[]>> array = new HashMap<>();
-        private static final Map<String, Map<String, List<Boolean>>> list = new HashMap<>();
-        private static final Map<String, Map<String, Map<String, Boolean>>> map = new HashMap<>();
+        private static final Map<String, Map<String, Boolean>> normal = new ConcurrentHashMap<>();
+        private static final Map<String, Map<String, boolean[]>> array = new ConcurrentHashMap<>();
+        private static final Map<String, Map<String, List<Boolean>>> list = new ConcurrentHashMap<>();
+        private static final Map<String, Map<String, Map<String, Boolean>>> map = new ConcurrentHashMap<>();
         private static final Object lock_normal = new Object();
         private static final Object lock_array = new Object();
         private static final Object lock_list = new Object();
@@ -133,7 +135,7 @@ public class CacheManager {
 
             synchronized (lock_normal) {
 
-                return normal.getOrDefault(name, new HashMap<>()).containsKey(key) == true;
+                return normal.getOrDefault(name, new ConcurrentHashMap<>()).containsKey(key) == true;
 
             }
 
@@ -143,7 +145,7 @@ public class CacheManager {
 
             synchronized (lock_normal) {
 
-                return normal.getOrDefault(name, new HashMap<>());
+                return normal.getOrDefault(name, new ConcurrentHashMap<>());
 
             }
 
@@ -155,11 +157,11 @@ public class CacheManager {
 
                 if (key == null) {
 
-                    normal.put(name, new HashMap<>());
+                    normal.put(name, new ConcurrentHashMap<>());
 
                 } else {
 
-                    normal.computeIfAbsent(name, create -> new HashMap<>()).put(key, value);
+                    normal.computeIfAbsent(name, create -> new ConcurrentHashMap<>()).put(key, value);
 
                 }
 
@@ -171,7 +173,7 @@ public class CacheManager {
 
             synchronized (lock_array) {
 
-                return array.getOrDefault(name, new HashMap<>());
+                return array.getOrDefault(name, new ConcurrentHashMap<>());
 
             }
 
@@ -183,11 +185,11 @@ public class CacheManager {
 
                 if (key == null) {
 
-                    array.put(name, new HashMap<>());
+                    array.put(name, new ConcurrentHashMap<>());
 
                 } else {
 
-                    array.computeIfAbsent(name, create -> new HashMap<>()).put(key, value);
+                    array.computeIfAbsent(name, create -> new ConcurrentHashMap<>()).put(key, value);
 
                 }
 
@@ -199,7 +201,7 @@ public class CacheManager {
 
             synchronized (lock_list) {
 
-                return list.getOrDefault(name, new HashMap<>());
+                return list.getOrDefault(name, new ConcurrentHashMap<>());
 
             }
 
@@ -211,11 +213,11 @@ public class CacheManager {
 
                 if (key == null) {
 
-                    list.put(name, new HashMap<>());
+                    list.put(name, new ConcurrentHashMap<>());
 
                 } else {
 
-                    list.computeIfAbsent(name, create -> new HashMap<>()).put(key, value);
+                    list.computeIfAbsent(name, create -> new ConcurrentHashMap<>()).put(key, value);
 
                 }
 
@@ -227,7 +229,7 @@ public class CacheManager {
 
             synchronized (lock_map) {
 
-                return map.getOrDefault(name, new HashMap<>());
+                return map.getOrDefault(name, new ConcurrentHashMap<>());
 
             }
 
@@ -239,11 +241,11 @@ public class CacheManager {
 
                 if (key == null) {
 
-                    map.put(name, new HashMap<>());
+                    map.put(name, new ConcurrentHashMap<>());
 
                 } else {
 
-                    map.computeIfAbsent(name, create -> new HashMap<>()).put(key, value);
+                    map.computeIfAbsent(name, create -> new ConcurrentHashMap<>()).put(key, value);
 
                 }
 
@@ -255,11 +257,11 @@ public class CacheManager {
 
     public static class DataText {
 
-        private static final Map<String, Map<String, String>> normal = new HashMap<>();
-        private static final Map<String, Map<String, String[]>> array = new HashMap<>();
-        private static final Map<String, Map<String, Set<String>>> set = new HashMap<>();
-        private static final Map<String, Map<String, List<String>>> list = new HashMap<>();
-        private static final Map<String, Map<String, Map<String, String>>> map = new HashMap<>();
+        private static final Map<String, Map<String, String>> normal = new ConcurrentHashMap<>();
+        private static final Map<String, Map<String, String[]>> array = new ConcurrentHashMap<>();
+        private static final Map<String, Map<String, Set<String>>> set = new ConcurrentHashMap<>();
+        private static final Map<String, Map<String, List<String>>> list = new ConcurrentHashMap<>();
+        private static final Map<String, Map<String, Map<String, String>>> map = new ConcurrentHashMap<>();
         private static final Object lock_normal = new Object();
         private static final Object lock_array = new Object();
         private static final Object lock_set = new Object();
@@ -399,7 +401,7 @@ public class CacheManager {
 
             synchronized (lock_normal) {
 
-                return normal.getOrDefault(name, new HashMap<>()).containsKey(key) == true;
+                return normal.getOrDefault(name, new ConcurrentHashMap<>()).containsKey(key) == true;
 
             }
 
@@ -409,7 +411,7 @@ public class CacheManager {
 
             synchronized (lock_normal) {
 
-                return normal.getOrDefault(name, new HashMap<>());
+                return normal.getOrDefault(name, new ConcurrentHashMap<>());
 
             }
 
@@ -421,11 +423,11 @@ public class CacheManager {
 
                 if (key == null) {
 
-                    normal.put(name, new HashMap<>());
+                    normal.put(name, new ConcurrentHashMap<>());
 
                 } else {
 
-                    normal.computeIfAbsent(name, create -> new HashMap<>()).put(key, value);
+                    normal.computeIfAbsent(name, create -> new ConcurrentHashMap<>()).put(key, value);
 
                 }
 
@@ -437,7 +439,7 @@ public class CacheManager {
 
             synchronized (lock_array) {
 
-                return array.getOrDefault(name, new HashMap<>());
+                return array.getOrDefault(name, new ConcurrentHashMap<>());
 
             }
 
@@ -449,11 +451,11 @@ public class CacheManager {
 
                 if (key == null) {
 
-                    array.put(name, new HashMap<>());
+                    array.put(name, new ConcurrentHashMap<>());
 
                 } else {
 
-                    array.computeIfAbsent(name, create -> new HashMap<>()).put(key, value);
+                    array.computeIfAbsent(name, create -> new ConcurrentHashMap<>()).put(key, value);
 
                 }
 
@@ -465,7 +467,7 @@ public class CacheManager {
 
             synchronized (lock_set) {
 
-                return set.getOrDefault(name, new HashMap<>());
+                return set.getOrDefault(name, new ConcurrentHashMap<>());
 
             }
 
@@ -477,11 +479,11 @@ public class CacheManager {
 
                 if (key == null) {
 
-                    set.put(name, new HashMap<>());
+                    set.put(name, new ConcurrentHashMap<>());
 
                 } else {
 
-                    set.computeIfAbsent(name, create -> new HashMap<>()).put(key, value);
+                    set.computeIfAbsent(name, create -> new ConcurrentHashMap<>()).put(key, value);
 
                 }
 
@@ -493,7 +495,7 @@ public class CacheManager {
 
             synchronized (lock_list) {
 
-                return list.getOrDefault(name, new HashMap<>());
+                return list.getOrDefault(name, new ConcurrentHashMap<>());
 
             }
 
@@ -505,11 +507,11 @@ public class CacheManager {
 
                 if (key == null) {
 
-                    list.put(name, new HashMap<>());
+                    list.put(name, new ConcurrentHashMap<>());
 
                 } else {
 
-                    list.computeIfAbsent(name, create -> new HashMap<>()).put(key, value);
+                    list.computeIfAbsent(name, create -> new ConcurrentHashMap<>()).put(key, value);
 
                 }
 
@@ -521,7 +523,7 @@ public class CacheManager {
 
             synchronized (lock_map) {
 
-                return map.getOrDefault(name, new HashMap<>());
+                return map.getOrDefault(name, new ConcurrentHashMap<>());
 
             }
 
@@ -533,11 +535,11 @@ public class CacheManager {
 
                 if (key == null) {
 
-                    map.put(name, new HashMap<>());
+                    map.put(name, new ConcurrentHashMap<>());
 
                 } else {
 
-                    map.computeIfAbsent(name, create -> new HashMap<>()).put(key, value);
+                    map.computeIfAbsent(name, create -> new ConcurrentHashMap<>()).put(key, value);
 
                 }
 
@@ -549,11 +551,11 @@ public class CacheManager {
 
     public static class DataShort {
 
-        private static final Map<String, Map<String, Short>> normal = new HashMap<>();
-        private static final Map<String, Map<String, short[]>> array = new HashMap<>();
-        private static final Map<String, Map<String, Set<Short>>> set = new HashMap<>();
-        private static final Map<String, Map<String, List<Short>>> list = new HashMap<>();
-        private static final Map<String, Map<String, Map<String, Short>>> map = new HashMap<>();
+        private static final Map<String, Map<String, Short>> normal = new ConcurrentHashMap<>();
+        private static final Map<String, Map<String, short[]>> array = new ConcurrentHashMap<>();
+        private static final Map<String, Map<String, Set<Short>>> set = new ConcurrentHashMap<>();
+        private static final Map<String, Map<String, List<Short>>> list = new ConcurrentHashMap<>();
+        private static final Map<String, Map<String, Map<String, Short>>> map = new ConcurrentHashMap<>();
         private static final Object lock_normal = new Object();
         private static final Object lock_array = new Object();
         private static final Object lock_set = new Object();
@@ -683,7 +685,7 @@ public class CacheManager {
 
             synchronized (lock_normal) {
 
-                return normal.getOrDefault(name, new HashMap<>());
+                return normal.getOrDefault(name, new ConcurrentHashMap<>());
 
             }
 
@@ -695,11 +697,11 @@ public class CacheManager {
 
                 if (key == null) {
 
-                    normal.put(name, new HashMap<>());
+                    normal.put(name, new ConcurrentHashMap<>());
 
                 } else {
 
-                    normal.computeIfAbsent(name, create -> new HashMap<>()).put(key, value);
+                    normal.computeIfAbsent(name, create -> new ConcurrentHashMap<>()).put(key, value);
 
                 }
 
@@ -711,7 +713,7 @@ public class CacheManager {
 
             synchronized (lock_array) {
 
-                return array.getOrDefault(name, new HashMap<>());
+                return array.getOrDefault(name, new ConcurrentHashMap<>());
 
             }
 
@@ -723,11 +725,11 @@ public class CacheManager {
 
                 if (key == null) {
 
-                    array.put(name, new HashMap<>());
+                    array.put(name, new ConcurrentHashMap<>());
 
                 } else {
 
-                    array.computeIfAbsent(name, create -> new HashMap<>()).put(key, value);
+                    array.computeIfAbsent(name, create -> new ConcurrentHashMap<>()).put(key, value);
 
                 }
 
@@ -739,7 +741,7 @@ public class CacheManager {
 
             synchronized (lock_set) {
 
-                return set.getOrDefault(name, new HashMap<>());
+                return set.getOrDefault(name, new ConcurrentHashMap<>());
 
             }
 
@@ -751,11 +753,11 @@ public class CacheManager {
 
                 if (key == null) {
 
-                    set.put(name, new HashMap<>());
+                    set.put(name, new ConcurrentHashMap<>());
 
                 } else {
 
-                    set.computeIfAbsent(name, create -> new HashMap<>()).put(key, value);
+                    set.computeIfAbsent(name, create -> new ConcurrentHashMap<>()).put(key, value);
 
                 }
 
@@ -767,7 +769,7 @@ public class CacheManager {
 
             synchronized (lock_list) {
 
-                return list.getOrDefault(name, new HashMap<>());
+                return list.getOrDefault(name, new ConcurrentHashMap<>());
 
             }
 
@@ -779,11 +781,11 @@ public class CacheManager {
 
                 if (key == null) {
 
-                    list.put(name, new HashMap<>());
+                    list.put(name, new ConcurrentHashMap<>());
 
                 } else {
 
-                    list.computeIfAbsent(name, create -> new HashMap<>()).put(key, value);
+                    list.computeIfAbsent(name, create -> new ConcurrentHashMap<>()).put(key, value);
 
                 }
 
@@ -795,7 +797,7 @@ public class CacheManager {
 
             synchronized (lock_map) {
 
-                return map.getOrDefault(name, new HashMap<>());
+                return map.getOrDefault(name, new ConcurrentHashMap<>());
 
             }
 
@@ -807,11 +809,11 @@ public class CacheManager {
 
                 if (key == null) {
 
-                    map.put(name, new HashMap<>());
+                    map.put(name, new ConcurrentHashMap<>());
 
                 } else {
 
-                    map.computeIfAbsent(name, create -> new HashMap<>()).put(key, value);
+                    map.computeIfAbsent(name, create -> new ConcurrentHashMap<>()).put(key, value);
 
                 }
 
@@ -823,11 +825,11 @@ public class CacheManager {
 
     public static class DataInt {
 
-        private static final Map<String, Map<String, Integer>> normal = new HashMap<>();
-        private static final Map<String, Map<String, int[]>> array = new HashMap<>();
-        private static final Map<String, Map<String, Set<Integer>>> set = new HashMap<>();
-        private static final Map<String, Map<String, List<Integer>>> list = new HashMap<>();
-        private static final Map<String, Map<String, Map<String, Integer>>> map = new HashMap<>();
+        private static final Map<String, Map<String, Integer>> normal = new ConcurrentHashMap<>();
+        private static final Map<String, Map<String, int[]>> array = new ConcurrentHashMap<>();
+        private static final Map<String, Map<String, Set<Integer>>> set = new ConcurrentHashMap<>();
+        private static final Map<String, Map<String, List<Integer>>> list = new ConcurrentHashMap<>();
+        private static final Map<String, Map<String, Map<String, Integer>>> map = new ConcurrentHashMap<>();
         private static final Object lock_normal = new Object();
         private static final Object lock_array = new Object();
         private static final Object lock_set = new Object();
@@ -957,7 +959,7 @@ public class CacheManager {
 
             synchronized (lock_normal) {
 
-                return normal.getOrDefault(name, new HashMap<>());
+                return normal.getOrDefault(name, new ConcurrentHashMap<>());
 
             }
 
@@ -969,11 +971,11 @@ public class CacheManager {
 
                 if (key == null) {
 
-                    normal.put(name, new HashMap<>());
+                    normal.put(name, new ConcurrentHashMap<>());
 
                 } else {
 
-                    normal.computeIfAbsent(name, create -> new HashMap<>()).put(key, value);
+                    normal.computeIfAbsent(name, create -> new ConcurrentHashMap<>()).put(key, value);
 
                 }
 
@@ -985,7 +987,7 @@ public class CacheManager {
 
             synchronized (lock_array) {
 
-                return array.getOrDefault(name, new HashMap<>());
+                return array.getOrDefault(name, new ConcurrentHashMap<>());
 
             }
 
@@ -997,11 +999,11 @@ public class CacheManager {
 
                 if (key == null) {
 
-                    array.put(name, new HashMap<>());
+                    array.put(name, new ConcurrentHashMap<>());
 
                 } else {
 
-                    array.computeIfAbsent(name, create -> new HashMap<>()).put(key, value);
+                    array.computeIfAbsent(name, create -> new ConcurrentHashMap<>()).put(key, value);
 
                 }
 
@@ -1013,7 +1015,7 @@ public class CacheManager {
 
             synchronized (lock_set) {
 
-                return set.getOrDefault(name, new HashMap<>());
+                return set.getOrDefault(name, new ConcurrentHashMap<>());
 
             }
 
@@ -1025,11 +1027,11 @@ public class CacheManager {
 
                 if (key == null) {
 
-                    set.put(name, new HashMap<>());
+                    set.put(name, new ConcurrentHashMap<>());
 
                 } else {
 
-                    set.computeIfAbsent(name, create -> new HashMap<>()).put(key, value);
+                    set.computeIfAbsent(name, create -> new ConcurrentHashMap<>()).put(key, value);
 
                 }
 
@@ -1041,7 +1043,7 @@ public class CacheManager {
 
             synchronized (lock_list) {
 
-                return list.getOrDefault(name, new HashMap<>());
+                return list.getOrDefault(name, new ConcurrentHashMap<>());
 
             }
 
@@ -1053,11 +1055,11 @@ public class CacheManager {
 
                 if (key == null) {
 
-                    list.put(name, new HashMap<>());
+                    list.put(name, new ConcurrentHashMap<>());
 
                 } else {
 
-                    list.computeIfAbsent(name, create -> new HashMap<>()).put(key, value);
+                    list.computeIfAbsent(name, create -> new ConcurrentHashMap<>()).put(key, value);
 
                 }
 
@@ -1069,7 +1071,7 @@ public class CacheManager {
 
             synchronized (lock_map) {
 
-                return map.getOrDefault(name, new HashMap<>());
+                return map.getOrDefault(name, new ConcurrentHashMap<>());
 
             }
 
@@ -1081,11 +1083,11 @@ public class CacheManager {
 
                 if (key == null) {
 
-                    map.put(name, new HashMap<>());
+                    map.put(name, new ConcurrentHashMap<>());
 
                 } else {
 
-                    map.computeIfAbsent(name, create -> new HashMap<>()).put(key, value);
+                    map.computeIfAbsent(name, create -> new ConcurrentHashMap<>()).put(key, value);
 
                 }
 

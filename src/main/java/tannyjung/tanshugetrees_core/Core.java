@@ -244,47 +244,10 @@ public class Core {
     
     public static class GlobalLocking {
 
-        private static final Object lock = new Object();
-
-        public static void lock () {
-
-            global_locking = true;
-
-        }
-
-        public static void unlock () {
-
-            synchronized (lock) {
-
-                global_locking = false;
-                lock.notifyAll();
-
-            }
-
-        }
-
-        public static void test () {
-
-            synchronized (lock) {
-
-                while (global_locking == true) {
-
-                    try {
-
-                        lock.wait();
-
-                    } catch (Exception exception) {
-
-                        OutsideUtils.exception(new Exception(), exception, "");
-                        return;
-
-                    }
-
-                }
-
-            }
-
-        }
+        // [LMax Fix] Global lock removed to prevent deadlocks in async chunk generation (e.g., Distant Horizons).
+        public static void lock () { }
+        public static void unlock () { }
+        public static void test () { }
 
     }
 
