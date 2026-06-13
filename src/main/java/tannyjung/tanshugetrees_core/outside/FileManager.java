@@ -155,7 +155,12 @@ public class FileManager {
 
 	public static void writeTXT (String path, String write, boolean append) {
 
-		File file = new File(path);
+	        // 修复: 增加 null 检查，防止传入 null 路径导致游戏崩溃
+	        if (path == null) {
+	            return;
+	        }
+
+	        File file = new File(path);
         createEmptyFile(file.getPath(), false);
 
 		try {
@@ -178,7 +183,12 @@ public class FileManager {
 
 	public static String[] readTXT (String path) {
 
-		File file = new File(path);
+	        // 修复: 增加 null 检查，防止传入 null 路径导致游戏崩溃
+	        if (path == null) {
+	            return new String[0];
+	        }
+
+	        File file = new File(path);
 
 		if (file.exists() == true) {
 
