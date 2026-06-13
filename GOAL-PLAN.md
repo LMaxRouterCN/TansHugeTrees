@@ -8,11 +8,12 @@
 - [x] 1. 废除 `Core.java` 中的 `GlobalLocking`。
 - [x] 2. `CacheManager` 升级 `ConcurrentHashMap`。
 - [x] 3. `OutsideUtils` 增加网络超时。
-- [ ] 4. 拆除 `TreePlacer$Data` 中的第二把全局对象锁，解决 DH 线程池饥饿问题。
-- [ ] 5. 解决多线程并发下的跨区块树木截断（劈树）问题。
+- [x] 4. 拆除 `TreePlacer$Data` 中的全局对象锁。
+- [x] 5. 修复 `TreePlacer$Data` 中 `ConcurrentHashMap.computeIfAbsent` 耗时 I/O 引发的桶锁死锁（改用双重检查锁定+细粒度锁）。
+- [ ] 6. 解决多线程并发下的跨区块树木截断（劈树）问题。
 
 ## 阶段二：实地测试与并发写入排查
-- [ ] 观察 DH 并发生成区块时的 MSPT。
+- [ ] 观察 DH 并发生成区块时的 MSPT，确认死锁与 TPS 掉底问题是否彻底消除。
 - [ ] 排查底层方块写入的线程安全问题。
 
 ## 阶段三：剥离 MCreator 累赘与深度重构

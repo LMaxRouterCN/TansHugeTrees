@@ -800,74 +800,59 @@ public class TreePlacer {
 
     public static class Data {
 
-        private static final Object lock = new Object();
-        private static final Map<String, Map<ChunkPos, ByteArrayOutputStream>> bin_convert = new HashMap<>();
+        // [LMax Fix V2] Replaced computeIfAbsent with Double-Checked Locking + Fine-grained Region Locks.
+        // ConcurrentHashMap.computeIfAbsent holds bucket-level locks during heavy I/O, causing deadlocks with clear().
+        // Now, heavy I/O happens inside a standard synchronized block using a per-region lock object.
+        private static final Map<String, Map<ChunkPos, ByteArrayOutputStream>> bin_convert = new java.util.concurrent.ConcurrentHashMap<>();
+        private static final Map<String, Object> region_locks = new java.util.concurrent.ConcurrentHashMap<>();
 
         public static void clear () {
-
-            synchronized (lock) {
-
-                bin_convert.clear();
-
-            }
-
+            bin_convert.clear();
+            region_locks.clear();
         }
 
         private static void clearChunk (String dimension, ChunkPos chunk_pos) {
-
             int regionX = chunk_pos.x >> 5;
             int regionZ = chunk_pos.z >> 5;
             String key = dimension + "/" + regionX + "," + regionZ;
 
-            synchronized (lock) {
-
-                Map<ChunkPos, ByteArrayOutputStream> data = bin_convert.get(key);
-
-                if (data != null) {
-
-                    data.remove(chunk_pos);
-
-                }
-
+            Map<ChunkPos, ByteArrayOutputStream> data = bin_convert.get(key);
+            if (data != null) {
+                data.remove(chunk_pos);
             }
-
         }
 
         private static ByteBuffer get (String dimension, ChunkPos chunk_pos) {
-
             int regionX = chunk_pos.x >> 5;
             int regionZ = chunk_pos.z >> 5;
             String key = dimension + "/" + regionX + "," + regionZ;
 
-            synchronized (lock) {
-
-                Map<ChunkPos, ByteArrayOutputStream> data = bin_convert.get(key);
-
-                if (data == null) {
-
-                    bin_convert.put(key, new HashMap<>());
-
-                    // Convert Region
-                    {
-
+            Map<ChunkPos, ByteArrayOutputStream> data = bin_convert.get(key);
+            
+            if (data == null) {
+                // Creating a new Object() is extremely fast, so computeIfAbsent is safe here.
+                Object regionLock = region_locks.computeIfAbsent(key, k -> new Object());
+                synchronized (regionLock) {
+                    // Double-checked locking
+                    data = bin_convert.get(key);
+                    if (data == null) {
+                        data = new HashMap<>();
+                        
+                        // Heavy I/O happens OUTSIDE of ConcurrentHashMap's internal locks
                         ByteBuffer bin = FileManager.readBIN(Core.path_world_mod + "/world_gen/place/" + key + ".bin");
-                        ByteArrayOutputStream stream = new ByteArrayOutputStream();
-                        int from_chunkX = 0;
-                        int from_chunkZ = 0;
-                        int to_chunkX = 0;
-                        int to_chunkZ = 0;
-                        short id = 0;
-                        short chosen = 0;
-                        int centerX = 0;
-                        int centerZ = 0;
+                        if (bin != null) {
+                            ByteArrayOutputStream stream = new ByteArrayOutputStream();
+                            int from_chunkX = 0;
+                            int from_chunkZ = 0;
+                            int to_chunkX = 0;
+                            int to_chunkZ = 0;
+                            short id = 0;
+                            short chosen = 0;
+                            int centerX = 0;
+                            int centerZ = 0;
 
-                        while (bin.remaining() > 0) {
-
-                            // Get Data
-                            {
-
+                            while (bin.remaining() > 0) {
                                 try {
-
                                     id = bin.getShort();
                                     chosen = bin.getShort();
                                     centerX = bin.getInt();
@@ -888,50 +873,32 @@ public class TreePlacer {
                                     stream.write(OutsideUtils.Data.convertIntToArrayByte(to_chunkZ));
 
                                     for (int scanX = from_chunkX; scanX <= to_chunkX; scanX++) {
-
                                         for (int scanZ = from_chunkZ; scanZ <= to_chunkZ; scanZ++) {
-
                                             if (regionX == scanX >> 5 && regionZ == scanZ >> 5) {
-
-                                                bin_convert.get(key).computeIfAbsent(new ChunkPos(scanX, scanZ), create -> new ByteArrayOutputStream()).write(stream.toByteArray());
-
+                                                data.computeIfAbsent(new ChunkPos(scanX, scanZ), create -> new ByteArrayOutputStream()).write(stream.toByteArray());
                                             }
-
                                         }
-
                                     }
-
                                 } catch (Exception exception) {
-
                                     OutsideUtils.exception(new Exception(), exception, "");
-                                    return ByteBuffer.allocate(0);
-
+                                    break;
                                 }
-
                             }
-
                         }
-
+                        
+                        // Publish the fully populated map
+                        bin_convert.put(key, data);
                     }
-
-                    data = bin_convert.get(key);
-
                 }
-
-                ByteArrayOutputStream stream = data.get(chunk_pos);
-
-                if (stream == null) {
-
-                    return ByteBuffer.allocate(0);
-
-                } else {
-
-                    return ByteBuffer.wrap(stream.toByteArray());
-
-                }
-
             }
 
+            ByteArrayOutputStream stream = data.get(chunk_pos);
+
+            if (stream == null) {
+                return ByteBuffer.allocate(0);
+            } else {
+                return ByteBuffer.wrap(stream.toByteArray());
+            }
         }
 
     }
