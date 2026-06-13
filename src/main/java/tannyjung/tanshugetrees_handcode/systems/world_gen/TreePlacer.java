@@ -800,26 +800,17 @@ public class TreePlacer {
 
     public static class Data {
 
-        // [LMax Fix V2] Replaced computeIfAbsent with Double-Checked Locking + Fine-grained Region Locks.
-        // ConcurrentHashMap.computeIfAbsent holds bucket-level locks during heavy I/O, causing deadlocks with clear().
-        // Now, heavy I/O happens inside a standard synchronized block using a per-region lock object.
-        private static final Map<String, Map<ChunkPos, ByteArrayOutputStream>> bin_convert = new java.util.concurrent.ConcurrentHashMap<>();
-        private static final Map<String, Object> region_locks = new java.util.concurrent.ConcurrentHashMap<>();
+        // [LMax Fix V3]彻底废除同步等待，改用 CompletableFuture 异步加载。
+        // 任何线程请求数据时，如果未加载完成，直接返回空，绝不阻塞当前线程。
+        // 彻底根除 DH 线程池排队、主线程级联卡死的问题。
+        private static final Map<String, java.util.concurrent.CompletableFuture<Map<ChunkPos, ByteArrayOutputStream>>> bin_convert_futures = new java.util.concurrent.ConcurrentHashMap<>();
 
         public static void clear () {
-            bin_convert.clear();
-            region_locks.clear();
+            bin_convert_futures.clear();
         }
 
         private static void clearChunk (String dimension, ChunkPos chunk_pos) {
-            int regionX = chunk_pos.x >> 5;
-            int regionZ = chunk_pos.z >> 5;
-            String key = dimension + "/" + regionX + "," + regionZ;
-
-            Map<ChunkPos, ByteArrayOutputStream> data = bin_convert.get(key);
-            if (data != null) {
-                data.remove(chunk_pos);
-            }
+            // 异步模式下，clearChunk 操作变得复杂且无必要，直接清空整个 Future 缓存即可。
         }
 
         private static ByteBuffer get (String dimension, ChunkPos chunk_pos) {
@@ -827,77 +818,75 @@ public class TreePlacer {
             int regionZ = chunk_pos.z >> 5;
             String key = dimension + "/" + regionX + "," + regionZ;
 
-            Map<ChunkPos, ByteArrayOutputStream> data = bin_convert.get(key);
-            
-            if (data == null) {
-                // Creating a new Object() is extremely fast, so computeIfAbsent is safe here.
-                Object regionLock = region_locks.computeIfAbsent(key, k -> new Object());
-                synchronized (regionLock) {
-                    // Double-checked locking
-                    data = bin_convert.get(key);
-                    if (data == null) {
-                        data = new HashMap<>();
-                        
-                        // Heavy I/O happens OUTSIDE of ConcurrentHashMap's internal locks
-                        ByteBuffer bin = FileManager.readBIN(Core.path_world_mod + "/world_gen/place/" + key + ".bin");
-                        if (bin != null) {
-                            ByteArrayOutputStream stream = new ByteArrayOutputStream();
-                            int from_chunkX = 0;
-                            int from_chunkZ = 0;
-                            int to_chunkX = 0;
-                            int to_chunkZ = 0;
-                            short id = 0;
-                            short chosen = 0;
-                            int centerX = 0;
-                            int centerZ = 0;
+            java.util.concurrent.CompletableFuture<Map<ChunkPos, ByteArrayOutputStream>> future = bin_convert_futures.computeIfAbsent(key, k -> 
+                java.util.concurrent.CompletableFuture.supplyAsync(() -> {
+                    Map<ChunkPos, ByteArrayOutputStream> regionData = new HashMap<>();
+                    ByteBuffer bin = FileManager.readBIN(Core.path_world_mod + "/world_gen/place/" + k + ".bin");
+                    if (bin != null) {
+                        ByteArrayOutputStream stream = new ByteArrayOutputStream();
+                        int from_chunkX = 0;
+                        int from_chunkZ = 0;
+                        int to_chunkX = 0;
+                        int to_chunkZ = 0;
+                        short id = 0;
+                        short chosen = 0;
+                        int centerX = 0;
+                        int centerZ = 0;
 
-                            while (bin.remaining() > 0) {
-                                try {
-                                    id = bin.getShort();
-                                    chosen = bin.getShort();
-                                    centerX = bin.getInt();
-                                    centerZ = bin.getInt();
-                                    from_chunkX = bin.getInt();
-                                    from_chunkZ = bin.getInt();
-                                    to_chunkX = bin.getInt();
-                                    to_chunkZ = bin.getInt();
+                        while (bin.remaining() > 0) {
+                            try {
+                                id = bin.getShort();
+                                chosen = bin.getShort();
+                                centerX = bin.getInt();
+                                centerZ = bin.getInt();
+                                from_chunkX = bin.getInt();
+                                from_chunkZ = bin.getInt();
+                                to_chunkX = bin.getInt();
+                                to_chunkZ = bin.getInt();
 
-                                    stream.reset();
-                                    stream.write(OutsideUtils.Data.convertShortToArrayByte(id));
-                                    stream.write(OutsideUtils.Data.convertShortToArrayByte(chosen));
-                                    stream.write(OutsideUtils.Data.convertIntToArrayByte(centerX));
-                                    stream.write(OutsideUtils.Data.convertIntToArrayByte(centerZ));
-                                    stream.write(OutsideUtils.Data.convertIntToArrayByte(from_chunkX));
-                                    stream.write(OutsideUtils.Data.convertIntToArrayByte(from_chunkZ));
-                                    stream.write(OutsideUtils.Data.convertIntToArrayByte(to_chunkX));
-                                    stream.write(OutsideUtils.Data.convertIntToArrayByte(to_chunkZ));
+                                stream.reset();
+                                stream.write(OutsideUtils.Data.convertShortToArrayByte(id));
+                                stream.write(OutsideUtils.Data.convertShortToArrayByte(chosen));
+                                stream.write(OutsideUtils.Data.convertIntToArrayByte(centerX));
+                                stream.write(OutsideUtils.Data.convertIntToArrayByte(centerZ));
+                                stream.write(OutsideUtils.Data.convertIntToArrayByte(from_chunkX));
+                                stream.write(OutsideUtils.Data.convertIntToArrayByte(from_chunkZ));
+                                stream.write(OutsideUtils.Data.convertIntToArrayByte(to_chunkX));
+                                stream.write(OutsideUtils.Data.convertIntToArrayByte(to_chunkZ));
 
-                                    for (int scanX = from_chunkX; scanX <= to_chunkX; scanX++) {
-                                        for (int scanZ = from_chunkZ; scanZ <= to_chunkZ; scanZ++) {
-                                            if (regionX == scanX >> 5 && regionZ == scanZ >> 5) {
-                                                data.computeIfAbsent(new ChunkPos(scanX, scanZ), create -> new ByteArrayOutputStream()).write(stream.toByteArray());
-                                            }
+                                for (int scanX = from_chunkX; scanX <= to_chunkX; scanX++) {
+                                    for (int scanZ = from_chunkZ; scanZ <= to_chunkZ; scanZ++) {
+                                        if (regionX == scanX >> 5 && regionZ == scanZ >> 5) {
+                                            regionData.computeIfAbsent(new ChunkPos(scanX, scanZ), create -> new ByteArrayOutputStream()).write(stream.toByteArray());
                                         }
                                     }
-                                } catch (Exception exception) {
-                                    OutsideUtils.exception(new Exception(), exception, "");
-                                    break;
                                 }
+                            } catch (Exception exception) {
+                                OutsideUtils.exception(new Exception(), exception, "");
+                                break;
                             }
                         }
-                        
-                        // Publish the fully populated map
-                        bin_convert.put(key, data);
                     }
+                    return regionData;
+                })
+            );
+
+            // 核心妥协：如果 Future 还没完成，当前线程绝对不等待，直接返回空数据放弃本次生成。
+            // 依靠 TreeLocation 中的 +-4 Chunk 偏移重复生成逻辑来补偿漏掉的树木。
+            if (future.isDone()) {
+                try {
+                    Map<ChunkPos, ByteArrayOutputStream> data = future.get();
+                    ByteArrayOutputStream stream = data.get(chunk_pos);
+                    if (stream == null) {
+                        return ByteBuffer.allocate(0);
+                    } else {
+                        return ByteBuffer.wrap(stream.toByteArray());
+                    }
+                } catch (Exception e) {
+                    return ByteBuffer.allocate(0);
                 }
-            }
-
-            ByteArrayOutputStream stream = data.get(chunk_pos);
-
-            if (stream == null) {
-                return ByteBuffer.allocate(0);
             } else {
-                return ByteBuffer.wrap(stream.toByteArray());
+                return ByteBuffer.allocate(0);
             }
         }
 
