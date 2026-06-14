@@ -197,6 +197,9 @@ public class EventCenter {
         */
         public static void eventTickServer (TickEvent.ServerTickEvent event) {
 
+            Core.currentServer = event.getServer();
+            tannyjung.tanshugetrees_handcode.systems.world_gen.TreePlacer.DeferredQueue.processTick(event.getServer());
+
             if (Core.global_locking == false) {
 
                 /*

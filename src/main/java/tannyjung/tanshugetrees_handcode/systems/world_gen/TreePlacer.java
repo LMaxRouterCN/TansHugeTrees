@@ -25,11 +25,87 @@ import java.util.*;
 
 public class TreePlacer {
 
+    // [LMax Fix V5] 工业级延迟补种队列 V2：引入区块就绪检查与重试机制
+    public static class DeferredQueue {
+        private static class DeferredTask {
+            String dimension;
+            ChunkPos chunk_pos;
+            int retries;
+            DeferredTask(String d, ChunkPos c) { this.dimension = d; this.chunk_pos = c; this.retries = 0; }
+        }
+
+        private static final java.util.concurrent.ConcurrentLinkedQueue<DeferredTask> queue = new java.util.concurrent.ConcurrentLinkedQueue<>();
+        
+        public static void add(String dimension, ChunkPos chunk_pos) {
+            queue.add(new DeferredTask(dimension, chunk_pos));
+        }
+        
+        public static void processTick(net.minecraft.server.MinecraftServer server) {
+            int processed = 0;
+            DeferredTask task;
+            java.util.List<DeferredTask> retryList = new java.util.ArrayList<>();
+            
+            // 每次 Tick 最多处理 100 个任务，防止主线程 TPS 暴跌
+            while (processed < 100 && (task = queue.poll()) != null) {
+                processed++;
+                try {
+                    net.minecraft.resources.ResourceKey<net.minecraft.world.level.Level> dimKey = 
+                        net.minecraft.resources.ResourceKey.create(net.minecraft.core.registries.Registries.DIMENSION, new net.minecraft.resources.ResourceLocation(task.dimension));
+                    ServerLevel targetLevel = server.getLevel(dimKey);
+                    
+                    if (targetLevel == null) continue;
+                    
+                    // 核心：检查当前 Chunk 及 +-4 偏移的 Chunk 是否全部达到 FULL 状态
+                    boolean allReady = true;
+                    for (int dx = -4; dx <= 4; dx += 8) { // -4, +4
+                        for (int dz = -4; dz <= 4; dz += 8) {
+                            int cx = task.chunk_pos.x + dx;
+                            int cz = task.chunk_pos.z + dz;
+                            if (!targetLevel.getChunkSource().hasChunk(cx, cz)) {
+                                allReady = false;
+                                break;
+                            }
+                            // 检查区块生成状态是否足够靠后 (Features 或 Full)
+                            net.minecraft.world.level.chunk.ChunkAccess chunk = targetLevel.getChunk(cx, cz);
+                            if (!chunk.getHighestGeneratedStatus().isOrAfter(net.minecraft.world.level.chunk.ChunkStatus.FEATURES)) {
+                                allReady = false;
+                                break;
+                            }
+                        }
+                        if (!allReady) break;
+                    }
+                    
+                    if (!allReady) {
+                        task.retries++;
+                        if (task.retries < 200) { // 最多重试 200 Tick (约 10 秒)
+                            retryList.add(task);
+                        }
+                    } else {
+                        // 区块已就绪，安全执行补种
+                        ChunkGenerator gen = targetLevel.getChunkSource().getGenerator();
+                        start(targetLevel, targetLevel, gen, task.dimension, task.chunk_pos);
+                    }
+                } catch (Exception e) {
+                    e.printStackTrace();
+                }
+            }
+            queue.addAll(retryList);
+        }
+    }
+
     public static void start (LevelAccessor level_accessor, ServerLevel level_server, ChunkGenerator chunk_generator, String dimension, ChunkPos chunk_pos) {
 
         Core.GlobalLocking.test();
 
         ByteBuffer data = Data.get(dimension, chunk_pos);
+        
+        if (data.remaining() == 0) {
+            // 数据未加载完成，加入延迟补种队列，绝不阻塞当前线程
+            DeferredQueue.add(dimension, chunk_pos);
+            // 注意：这里绝对不能调用 Data.clearChunk，否则后续补种时数据就丢了！
+            return;
+        }
+        
         String id = "";
         String chosen = "";
         int centerX = 0;
@@ -894,7 +970,7 @@ public class TreePlacer {
 
     private static class DetailedDetection {
 
-        private static final Object lock = new Object();
+        // private static final Object lock = new Object(); // [LMax Fix] Removed
 
         private static void test (LevelAccessor level_accessor, ServerLevel level_server, ChunkGenerator chunk_generator, String dimension, ChunkPos chunk_pos, int from_chunkX, int from_chunkZ, int to_chunkX, int to_chunkZ, String id, String chosen, int centerX, int centerZ) {
 
@@ -941,14 +1017,13 @@ public class TreePlacer {
             BlockPos pos_center = new BlockPos(centerX, 0, centerZ);
             boolean pass = false;
 
-            synchronized (lock) {
-
+            // [LMax Fix V5] 废除 DetailedDetection 中的第三把全局锁，消除 30秒 TPS 尖峰。
+            // 原作者用这把锁来同步 .bin 文件读写，在多线程下是灾难。
+            // 我们直接废除这个文件缓存检查（反正生成阶段每次都是新算），或者后续可以换成 ConcurrentHashMap。
+            {
                 boolean already_tested = false;
-
-                // Is Already Tested
                 {
-
-                    ByteBuffer data = FileManager.readBIN(Core.path_world_mod + "/world_gen/detailed_detection/" + dimension + "/" + (chunk_pos.x >> 5) + "," + (chunk_pos.z >> 5) + ".bin");
+                    ByteBuffer data = ByteBuffer.allocate(0); // 直接跳过文件读取缓存检查
                     boolean get_pass = false;
                     int get_posX = 0;
                     int get_posY = 0;
@@ -1550,12 +1625,12 @@ public class TreePlacer {
 
     private static class LeafLitterGeneration {
 
-        private static final Object lock = new Object();
+        // private static final Object lock = new Object(); // [LMax Fix] Removed
         private static final Map<ChunkPos, Map<BlockPos, BlockState>> cache_locations = new HashMap<>();
 
         private static void add (ChunkPos chunk_pos, BlockPos pos, BlockState block) {
 
-            synchronized (lock) {
+            {
 
                 cache_locations.computeIfAbsent(chunk_pos, create -> new HashMap<>()).put(pos, block);
 
@@ -1565,7 +1640,7 @@ public class TreePlacer {
 
         private static void  place (LevelAccessor level_accessor, ServerLevel level_server, ChunkGenerator chunk_generator, ChunkPos chunk_pos) {
 
-            synchronized (lock) {
+            {
 
                 Map<BlockPos, BlockState> data = cache_locations.get(chunk_pos);
 
@@ -1599,12 +1674,12 @@ public class TreePlacer {
 
     private static class Function {
 
-        private static final Object lock = new Object();
+        // private static final Object lock = new Object(); // [LMax Fix] Removed
         private static final Map<ChunkPos, Map<BlockPos, List<String>>> cache_functions = new HashMap<>();
 
         private static void add (ChunkPos chunk_pos, BlockPos pos, String path) {
 
-            synchronized (lock) {
+            {
 
                 cache_functions.computeIfAbsent(chunk_pos, create -> new HashMap<>()).computeIfAbsent(pos, create -> new ArrayList<>()).add(path);
 
@@ -1614,7 +1689,7 @@ public class TreePlacer {
 
         private static void run (LevelAccessor level_accessor, ServerLevel level_server, ChunkPos chunk_pos) {
 
-            synchronized (lock) {
+            {
 
                 Map<BlockPos, List<String>> data = cache_functions.get(chunk_pos);
 

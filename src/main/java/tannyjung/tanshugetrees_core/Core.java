@@ -38,6 +38,8 @@ import net.minecraftforge.registries.DeferredRegister;
 
 public class Core {
 
+    public static net.minecraft.server.MinecraftServer currentServer = null;
+
     /*
 
     Use replace-all tool to replace these words, without "___" by the way. Note that you need to enable match cases and match words as well.
