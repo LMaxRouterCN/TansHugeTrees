@@ -215,6 +215,14 @@ public class EventCenter {
 
                 Core.DelayedWork.runTick();
                 Core.Loop.loopTick(level_accessor, level_server);
+                
+                // [LMax Fix V10] 消费实体生成队列
+                Runnable entityTask;
+                int processed = 0;
+                while (processed < 50 && (entityTask = GameUtils.Mob.entity_queue.poll()) != null) {
+                    try { entityTask.run(); } catch (Exception e) { e.printStackTrace(); }
+                    processed++;
+                }
 
             }
 

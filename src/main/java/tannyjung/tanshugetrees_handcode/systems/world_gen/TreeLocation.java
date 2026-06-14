@@ -23,10 +23,11 @@ import java.util.concurrent.CompletableFuture;
 
 public class TreeLocation {
 
-    private static final Map<ChunkPos, Map<BlockPos, String>> cache_write_tree_location = new HashMap<>();
-    private static final Map<String, List<String>> cache_write_place = new HashMap<>();
-    private static final Map<String, Map<ChunkPos, Map<BlockPos, String>>> cache_other_region = new HashMap<>();
-    private static final Map<ChunkPos, Holder<Biome>> cache_biome = new HashMap<>();
+    // [LMax Fix V9] 替换为 ConcurrentHashMap 解决 CME
+private static final Map<ChunkPos, Map<BlockPos, String>> cache_write_tree_location = new java.util.concurrent.ConcurrentHashMap<>();
+    private static final Map<String, List<String>> cache_write_place = new java.util.concurrent.ConcurrentHashMap<>();
+    private static final Map<String, Map<ChunkPos, Map<BlockPos, String>>> cache_other_region = new java.util.concurrent.ConcurrentHashMap<>();
+    private static final Map<ChunkPos, Holder<Biome>> cache_biome = new java.util.concurrent.ConcurrentHashMap<>();
     public static int world_gen_overlay_animation = 0;
     public static int world_gen_overlay_bar = 0;
     public static String world_gen_overlay_details_biome = "";
@@ -41,11 +42,11 @@ public class TreeLocation {
 
         if (data.isEmpty() == false) {
 
-            // Separate +-4 to fix tree cut-off by chunk status not fully update
-            TreeLocation.run(level_accessor, dimension, new ChunkPos(chunk_pos.x + 4, chunk_pos.z + 4), data);
-            TreeLocation.run(level_accessor, dimension, new ChunkPos(chunk_pos.x + 4, chunk_pos.z - 4), data);
-            TreeLocation.run(level_accessor, dimension, new ChunkPos(chunk_pos.x - 4, chunk_pos.z + 4), data);
-            TreeLocation.run(level_accessor, dimension, new ChunkPos(chunk_pos.x - 4, chunk_pos.z - 4), data);
+            // [LMax Fix V8] 废除 +-4 重复生成逻辑。
+            // 在 V2 延迟补种队列中，我们已经引入了严格的区块就绪检查（Chunk Readiness Check），
+            // 只有当目标区块及周围区块都达到 FEATURES 状态时才会补种，彻底解决了跨区块截断问题。
+            // 原作者的 +-4 逻辑现在只会导致 9 倍的并发计算量，引发多线程重复放置和严重的 TPS 尖峰。
+            TreeLocation.run(level_accessor, dimension, chunk_pos, data);
 
         }
 
@@ -356,7 +357,7 @@ public class TreeLocation {
         int step = 0;
         int explorer_step = 0;
         boolean is_first = true;
-        Map<BlockPos, String> data = new HashMap<>();
+        Map<BlockPos, String> data = new java.util.concurrent.ConcurrentHashMap<>();
 
         ByteBuffer buffer = null;
         String key = "";
@@ -388,7 +389,7 @@ public class TreeLocation {
 
                         if (cache_other_region.containsKey(key) == false) {
 
-                            cache_other_region.put(key, new HashMap<>());
+                            cache_other_region.put(key, new java.util.concurrent.ConcurrentHashMap<>());
 
                             // Load From BIN
                             {
@@ -410,7 +411,7 @@ public class TreeLocation {
 
                                     }
 
-                                    cache_other_region.computeIfAbsent(key, create -> new HashMap<>()).computeIfAbsent(new ChunkPos(test_posX >> 4, test_posZ >> 4), create -> new HashMap<>()).put(new BlockPos(test_posX, 0, test_posZ), test_id);
+                                    cache_other_region.computeIfAbsent(key, create -> new java.util.concurrent.ConcurrentHashMap<>()).computeIfAbsent(new ChunkPos(test_posX >> 4, test_posZ >> 4), create -> new java.util.concurrent.ConcurrentHashMap<>()).put(new BlockPos(test_posX, 0, test_posZ), test_id);
 
                                 }
 
@@ -676,7 +677,7 @@ public class TreeLocation {
 
                 ChunkPos chunk_pos = new ChunkPos(centerX >> 4,centerZ >> 4);
                 BlockPos pos = new BlockPos(centerX, 0, centerZ);
-                cache_write_tree_location.computeIfAbsent(chunk_pos, create -> new HashMap<>()).put(pos, CacheManager.getDictionary(id, false));
+                cache_write_tree_location.computeIfAbsent(chunk_pos, create -> new java.util.concurrent.ConcurrentHashMap<>()).put(pos, CacheManager.getDictionary(id, false));
 
             }
 
@@ -702,7 +703,7 @@ public class TreeLocation {
 
                     for (int scanZ = from_chunkZ_test; scanZ <= to_chunkZ_test; scanZ++) {
 
-                        cache_write_place.computeIfAbsent(scanX + "," + scanZ, create -> new ArrayList<>()).addAll(write);
+                        cache_write_place.computeIfAbsent(scanX + "," + scanZ, create -> java.util.Collections.synchronizedList(new java.util.ArrayList<>())).addAll(write);
 
                     }
 

@@ -970,7 +970,12 @@ public class TreePlacer {
 
     private static class DetailedDetection {
 
-        // private static final Object lock = new Object(); // [LMax Fix] Removed
+        // [LMax Fix V6] 纯内存级缓存：彻底废除 .bin 硬盘缓存与全局锁，消灭 TPS 尖峰与 LOD 覆盖问题。
+        private static class DetectionResult {
+            boolean pass; int posY; int deadTreeLevel;
+            DetectionResult(boolean p, int y, int d) { pass = p; posY = y; deadTreeLevel = d; }
+        }
+        private static final java.util.concurrent.ConcurrentHashMap<String, DetectionResult> memoryCache = new java.util.concurrent.ConcurrentHashMap<>();
 
         private static void test (LevelAccessor level_accessor, ServerLevel level_server, ChunkGenerator chunk_generator, String dimension, ChunkPos chunk_pos, int from_chunkX, int from_chunkZ, int to_chunkX, int to_chunkZ, String id, String chosen, int centerX, int centerZ) {
 
@@ -1017,48 +1022,17 @@ public class TreePlacer {
             BlockPos pos_center = new BlockPos(centerX, 0, centerZ);
             boolean pass = false;
 
-            // [LMax Fix V5] 废除 DetailedDetection 中的第三把全局锁，消除 30秒 TPS 尖峰。
-            // 原作者用这把锁来同步 .bin 文件读写，在多线程下是灾难。
-            // 我们直接废除这个文件缓存检查（反正生成阶段每次都是新算），或者后续可以换成 ConcurrentHashMap。
+            // [LMax Fix V6] 内存缓存读取
             {
                 boolean already_tested = false;
-                {
-                    ByteBuffer data = ByteBuffer.allocate(0); // 直接跳过文件读取缓存检查
-                    boolean get_pass = false;
-                    int get_posX = 0;
-                    int get_posY = 0;
-                    int get_posZ = 0;
-                    int get_dead_tree_level = 0;
-
-                    while (data.remaining() > 0) {
-
-                        try {
-
-                            get_pass = data.get() == 1;
-                            get_posX = data.getInt();
-                            get_posY = data.getShort();
-                            get_posZ = data.getInt();
-                            get_dead_tree_level = data.getShort();
-
-                        } catch (Exception exception) {
-
-                            OutsideUtils.exception(new Exception(), exception, "");
-                            return;
-
-                        }
-
-                        if (centerX == get_posX && centerZ == get_posZ) {
-
-                            already_tested = true;
-                            pass = get_pass;
-                            pos_center = pos_center.atY(get_posY);
-                            dead_tree_level = get_dead_tree_level;
-                            break;
-
-                        }
-
-                    }
-
+                String cacheKey = dimension + "_" + centerX + "_" + centerZ;
+                DetectionResult cachedResult = memoryCache.get(cacheKey);
+                
+                if (cachedResult != null) {
+                    already_tested = true;
+                    pass = cachedResult.pass;
+                    pos_center = pos_center.atY(cachedResult.posY);
+                    dead_tree_level = cachedResult.deadTreeLevel;
                 }
 
                 if (already_tested == false) {
@@ -1292,31 +1266,10 @@ public class TreePlacer {
 
                     }
 
-                    // Write File
+                    // [LMax Fix V6] 内存缓存写入 (废除极慢的硬盘 .bin 写入)
                     {
-
-                        int from_regionX = from_chunkX >> 5;
-                        int from_regionZ = from_chunkZ >> 5;
-                        int to_regionX = to_chunkX >> 5;
-                        int to_regionZ = to_chunkZ >> 5;
-
-                        List<String> write = new ArrayList<>();
-                        write.add("l" + pass);
-                        write.add("i" + pos_center.getX());
-                        write.add("s" + pos_center.getY());
-                        write.add("i" + pos_center.getZ());
-                        write.add("s" + dead_tree_level);
-
-                        for (int scanX = from_regionX; scanX <= to_regionX; scanX++) {
-
-                            for (int scanZ = from_regionZ; scanZ <= to_regionZ; scanZ++) {
-
-                                FileManager.writeBIN(Core.path_world_mod + "/world_gen/detailed_detection/" + dimension + "/" + scanX + "," + scanZ + ".bin", write, true);
-
-                            }
-
-                        }
-
+                        String writeCacheKey = dimension + "_" + centerX + "_" + centerZ;
+                        memoryCache.put(writeCacheKey, new DetectionResult(pass, pos_center.getY(), dead_tree_level));
                     }
 
                 }
@@ -1625,17 +1578,11 @@ public class TreePlacer {
 
     private static class LeafLitterGeneration {
 
-        // private static final Object lock = new Object(); // [LMax Fix] Removed
-        private static final Map<ChunkPos, Map<BlockPos, BlockState>> cache_locations = new HashMap<>();
+        // [LMax Fix V7] 替换为线程安全容器，解决 ForkJoinPool 并发修改异常
+        private static final Map<ChunkPos, Map<BlockPos, BlockState>> cache_locations = new java.util.concurrent.ConcurrentHashMap<>();
 
         private static void add (ChunkPos chunk_pos, BlockPos pos, BlockState block) {
-
-            {
-
-                cache_locations.computeIfAbsent(chunk_pos, create -> new HashMap<>()).put(pos, block);
-
-            }
-
+            cache_locations.computeIfAbsent(chunk_pos, create -> new java.util.concurrent.ConcurrentHashMap<>()).put(pos, block);
         }
 
         private static void  place (LevelAccessor level_accessor, ServerLevel level_server, ChunkGenerator chunk_generator, ChunkPos chunk_pos) {
@@ -1674,17 +1621,13 @@ public class TreePlacer {
 
     private static class Function {
 
-        // private static final Object lock = new Object(); // [LMax Fix] Removed
-        private static final Map<ChunkPos, Map<BlockPos, List<String>>> cache_functions = new HashMap<>();
+        // [LMax Fix V7] 替换为线程安全容器，解决 ForkJoinPool 并发修改异常
+        private static final Map<ChunkPos, Map<BlockPos, List<String>>> cache_functions = new java.util.concurrent.ConcurrentHashMap<>();
 
         private static void add (ChunkPos chunk_pos, BlockPos pos, String path) {
-
-            {
-
-                cache_functions.computeIfAbsent(chunk_pos, create -> new HashMap<>()).computeIfAbsent(pos, create -> new ArrayList<>()).add(path);
-
-            }
-
+            cache_functions.computeIfAbsent(chunk_pos, create -> new java.util.concurrent.ConcurrentHashMap<>())
+                           .computeIfAbsent(pos, create -> java.util.Collections.synchronizedList(new ArrayList<>()))
+                           .add(path);
         }
 
         private static void run (LevelAccessor level_accessor, ServerLevel level_server, ChunkPos chunk_pos) {

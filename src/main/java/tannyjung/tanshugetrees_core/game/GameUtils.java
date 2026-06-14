@@ -920,14 +920,11 @@ public class GameUtils {
 
 		}
 
+		// [LMax Fix V10] 废弃 execute()，改用专属的安全队列，彻底解决 Cupboard off-thread 警告
+		public static final java.util.concurrent.ConcurrentLinkedQueue<Runnable> entity_queue = new java.util.concurrent.ConcurrentLinkedQueue<>();
+
 		public static void summonWorldGen (ServerLevel level_server, Vec3 vec3, String id, String name, String tag, String custom) {
-
-			level_server.getServer().execute(() -> {
-
-				Mob.summon(level_server, vec3, id, name, tag, custom);
-
-			});
-
+			entity_queue.add(() -> Mob.summon(level_server, vec3, id, name, tag, custom));
 		}
 
 		public static boolean isCreativeMode (Entity entity) {
