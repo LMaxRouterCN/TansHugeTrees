@@ -124,7 +124,6 @@ public class FileManager {
                 OutsideUtils.exception(new Exception(), exception, "");
 
             }
-
         }
 
     }
@@ -148,7 +147,6 @@ public class FileManager {
                 OutsideUtils.exception(new Exception(), exception, "");
 
             }
-
         }
 
     }
@@ -208,56 +206,59 @@ public class FileManager {
 
 	}
 
+    private static final java.util.concurrent.ConcurrentHashMap<String, Object> file_locks = new java.util.concurrent.ConcurrentHashMap<>();
+
     public static void writeBIN (String path, List<String> write, boolean append) {
 
         createEmptyFile(path, false);
 
         if (write.size() > 0) {
+            Object lock = file_locks.computeIfAbsent(path, k -> new Object());
+            synchronized (lock) {
+                try {
 
-            try {
+                    DataOutputStream file_bin = new DataOutputStream(new FileOutputStream(path, append));
 
-                DataOutputStream file_bin = new DataOutputStream(new FileOutputStream(path, append));
+                    {
 
-                {
+                        String type = "";
+                        String value = "";
 
-                    String type = "";
-                    String value = "";
+                        for (String scan : write) {
 
-                    for (String scan : write) {
+                            type = scan.substring(0, 1);
+                            value = scan.substring(1);
 
-                        type = scan.substring(0, 1);
-                        value = scan.substring(1);
+                            if (type.equals("b") == true) {
 
-                        if (type.equals("b") == true) {
+                                file_bin.writeByte(Byte.parseByte(value));
 
-                            file_bin.writeByte(Byte.parseByte(value));
+                            } else if (type.equals("s") == true) {
 
-                        } else if (type.equals("s") == true) {
+                                file_bin.writeShort(Short.parseShort(value));
 
-                            file_bin.writeShort(Short.parseShort(value));
+                            } else if (type.equals("i") == true) {
 
-                        } else if (type.equals("i") == true) {
+                                file_bin.writeInt(Integer.parseInt(value));
 
-                            file_bin.writeInt(Integer.parseInt(value));
+                            } else if (type.equals("l") == true) {
 
-                        } else if (type.equals("l") == true) {
+                                file_bin.writeBoolean(Boolean.parseBoolean(value));
 
-                            file_bin.writeBoolean(Boolean.parseBoolean(value));
+                            }
 
                         }
 
                     }
 
+                    file_bin.close();
+
+                } catch (Exception exception) {
+
+                    OutsideUtils.exception(new Exception(), exception, "");
+
                 }
-
-                file_bin.close();
-
-            } catch (Exception exception) {
-
-                OutsideUtils.exception(new Exception(), exception, "");
-
             }
-
         }
 
     }

@@ -144,7 +144,22 @@ public class Handcode {
         public static int tree_generator_count_limit = 0;
         public static int tree_generator_tp_limit = 0;
 
+        
+
+          
         public static boolean world_gen_icon = false;
+
+        
+
+          
+        // [LMax Fix V7] 内存泄漏防护 — 缓存容量上限配置
+        // [执行代号33] 根据审计报告调整默认值
+        public static int memory_cache_max_entries = 4096; // DetailedDetection.memoryCache 最大条目数
+        public static int deferred_queue_max_size = 1000; // DeferredQueue 最大任务数 (原2048)
+        public static int deferred_queue_retry_limit = 400; // DeferredQueue 最大重试次数 (原200)
+        public static int deferred_queue_process_per_tick = 4; // DeferredQueue 每 tick 处理任务数 (原100)
+        public static int bin_convert_futures_max_entries = 256; // bin_convert_futures 最大条目数 (原64)
+        public static int cache_other_region_max = 256; // TreeLocation cache_other_region 最大区域数 (原64)
 
         public static void repair (String start, String end) {
 
@@ -298,7 +313,34 @@ public class Handcode {
                     
                     tree_generator_tp_limit = 16
                     | How many blocks the generators can move per time. Lower this can reduce lag spikes caused by placing blocks in many chunks at once. Set to 0 for no limit.
-                    
+        
+
+          
+
+        
+
+          
+                    memory_cache_max_entries = 4096
+                    | Maximum number of entries in DetailedDetection memory cache. Older entries will be evicted when limit is reached.
+
+                    deferred_queue_max_size = 1000
+                    | Maximum number of pending tasks in deferred tree placement queue. Oldest tasks will be discarded when limit is reached.
+
+                    deferred_queue_retry_limit = 400
+                    | Maximum retry attempts for deferred tree placement before giving up.
+
+                    deferred_queue_process_per_tick = 4
+                    | Maximum number of deferred tasks to process per tick.
+
+                    bin_convert_futures_max_entries = 256
+                    | Maximum number of region futures cached in memory for binary data conversion.
+
+                    cache_other_region_max = 256
+                    | Maximum number of other region caches to keep in memory for tree location distance tests.
+                    | Maximum number of region futures cached in memory for binary data conversion.
+
+                    cache_other_region_max = 64
+                    | Maximum number of other region caches to keep in memory for tree location distance tests.
                     ----------------------------------------------------------------------------------------------------
                     Miscellaneous
                     ----------------------------------------------------------------------------------------------------
@@ -370,8 +412,18 @@ public class Handcode {
             tree_generator_count_limit = Integer.parseInt(data.get("tree_generator_count_limit"));
             tree_generator_tp_limit = Integer.parseInt(data.get("tree_generator_tp_limit"));
 
+        
+
+          
             world_gen_icon = Boolean.parseBoolean(data.get("world_gen_icon"));
 
+            // [LMax Fix V7] 内存管理配置解析
+            memory_cache_max_entries = Integer.parseInt(data.get("memory_cache_max_entries"));
+            deferred_queue_max_size = Integer.parseInt(data.get("deferred_queue_max_size"));
+            deferred_queue_retry_limit = Integer.parseInt(data.get("deferred_queue_retry_limit"));
+            deferred_queue_process_per_tick = Integer.parseInt(data.get("deferred_queue_process_per_tick"));
+            bin_convert_futures_max_entries = Integer.parseInt(data.get("bin_convert_futures_max_entries"));
+            cache_other_region_max = Integer.parseInt(data.get("cache_other_region_max"));
         }
 
     }

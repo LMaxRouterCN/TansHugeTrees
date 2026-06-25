@@ -1,3 +1,9 @@
+
+
+
+        
+
+          
 package tannyjung.tanshugetrees_handcode.systems;
 
 import net.minecraft.server.level.ServerLevel;
@@ -17,7 +23,12 @@ public class Caches {
 
     public static class TreeShape {
 
-        private static void getTreeShape (String id) {
+        // [LMax Fix V13] 添加 synchronized 保证多线程下文件加载的安全，防止 CacheManager 内部非线程安全导致的死锁
+        private static synchronized void getTreeShape (String id) {
+            // [LMax Fix V13] 避免在锁竞争后重复加载已缓存的数据
+            if (CacheManager.DataShort.getArray("tree_shape_size").containsKey(id)) {
+                return;
+            }
 
             short[] data_size = null;
             int[] data_block_count = null;
@@ -25,69 +36,49 @@ public class Caches {
 
             // Get Data
             {
-
                 String path = "";
 
                 // Get path
                 {
-
                     try {
-
                         String[] split = id.split("\\|");
                         path = Core.path_config + "/dev/temporary/" + split[0] + "/" + split[1];
-
                     } catch (Exception exception) {
-
                         OutsideUtils.exception(new Exception(), exception, "");
                         return;
-
                     }
-
                 }
 
                 ByteBuffer buffer = FileManager.readBIN(path);
 
                 if (buffer.remaining() > 0) {
-
                     // Size
                     {
-
                         int count = 6;
                         data_size = new short[count];
 
                         for (int number = 0; number < count; number++) {
-
                             data_size[number] = buffer.getShort();
-
                         }
-
                     }
 
                     // Block Count
                     {
-
                         int count = 6;
                         data_block_count = new int[count];
 
                         for (int number = 0; number < count; number++) {
-
                             data_block_count[number] = buffer.getInt();
-
                         }
-
                     }
 
                     // Shape
                     {
-
                         ShortBuffer buffer_convert = buffer.asShortBuffer();
                         data_shape = new short[buffer_convert.remaining()];
                         buffer_convert.get(data_shape);
-
                     }
-
                 }
-
             }
 
             if (data_size == null) data_size = new short[0];
@@ -97,77 +88,57 @@ public class Caches {
             CacheManager.DataShort.setArray("tree_shape_size", id, data_size);
             CacheManager.DataInt.setArray("tree_shape_block_count", id, data_block_count);
             CacheManager.DataShort.setArray("tree_shape_data", id, data_shape);
-
         }
 
         public static short[] getTreeShapeSize (String id) {
-
-            short[] data = CacheManager.DataShort.getArray("tree_shape_size").get(id);
-
+            // [Poker Agent Fix] 优化延迟加载逻辑，减少对 CacheManager 的重复调用
+            Map<String, short[]> cache = CacheManager.DataShort.getArray("tree_shape_size");
+            short[] data = cache.get(id);
             if (data == null) {
-
                 getTreeShape(id);
-                data = CacheManager.DataShort.getArray("tree_shape_size").get(id);
-
-                if (data == null) {
-
-                    data = new short[0];
-
-                }
-
+                data = cache.getOrDefault(id, new short[0]);
             }
-
             return data;
-
         }
 
         public static int[] getTreeShapeBlockCount (String id) {
-
-            int[] data = CacheManager.DataInt.getArray("tree_shape_block_count").get(id);
-
+            // [Poker Agent Fix] 优化延迟加载逻辑，减少对 CacheManager 的重复调用
+            Map<String, int[]> cache = CacheManager.DataInt.getArray("tree_shape_block_count");
+            int[] data = cache.get(id);
             if (data == null) {
-
                 getTreeShape(id);
-                data = CacheManager.DataInt.getArray("tree_shape_block_count").get(id);
-
-                if (data == null) {
-
-                    data = new int[0];
-
-                }
-
+                data = cache.getOrDefault(id, new int[0]);
             }
-
             return data;
-
         }
 
         public static short[] getTreeShapeData (String id) {
-
-            short[] data = CacheManager.DataShort.getArray("tree_shape_data").get(id);
-
+            // [Poker Agent Fix] 优化延迟加载逻辑，减少对 CacheManager 的重复调用
+            Map<String, short[]> cache = CacheManager.DataShort.getArray("tree_shape_data");
+            short[] data = cache.get(id);
             if (data == null) {
-
                 getTreeShape(id);
-                data = CacheManager.DataShort.getArray("tree_shape_data").get(id);
-
-                if (data == null) {
-
-                    data = new short[0];
-
-                }
-
+                data = cache.getOrDefault(id, new short[0]);
             }
-
             return data;
-
         }
 
     }
 
     public static class TreeSettings {
 
-        private static void get (String id) {
+        // [执行代号22 - 任务 4.1] 引入 BlockState 缓存，避免每次种树都重新解析文本，解决 TPS 尖峰
+        private static final Map<String, Map<Short, BlockState>> blockStateCache = new java.util.concurrent.ConcurrentHashMap<>();
+
+        
+
+          
+        private static synchronized void get (String id) {
+
+        
+      
+            // [执行代号22 - 任务 4.1] 数据更新时清除旧的 BlockState 缓存
+            blockStateCache.remove(id);
 
             Map<String, String> data_normal = new HashMap<>();
             Map<String, String> data_block = new HashMap<>();
@@ -177,212 +148,159 @@ public class Caches {
 
             // Get Data
             {
-
                 String[] split = null;
                 String key = "";
                 String value = "";
                 byte leaves_type = 0;
 
-                for (String scan : FileManager.readTXT(Core.path_config + "/dev/temporary/" + id + ".txt")) {
+                // [执行代号22 - 任务 4.1] 捕获文件不存在的异常，防止 NPE 打断流程并确保后续缓存空数据
+                List<String> lines = null;
+                try {
+        
 
+          
+        
+
+          
+        
+
+          
+                    lines = new ArrayList<>(java.util.Arrays.asList(FileManager.readTXT(Core.path_config + "/dev/temporary/" + id + ".txt")));
+                } catch (Exception e) {
+                    lines = new ArrayList<>();
+                }
+                if (lines == null) lines = new ArrayList<>();
+
+                for (String scan : lines) {
                     if (scan.isEmpty() == false) {
-
                         try {
-
                             split = scan.split(" = ");
                             key = split[0];
                             value = split[1];
-
                         } catch (Exception exception) {
-
                             OutsideUtils.exception(new Exception(), exception, "");
                             break;
-
                         }
 
                         if (key.startsWith("Block ") == true) {
-
                             {
-
                                 key = key.substring("Block ### ".length());
 
                                 if (value.endsWith(" keep") == true) {
-
                                     value = value.substring(0, value.length() - " keep".length());
                                     data_keep.add(Short.parseShort(key));
-
                                 }
 
                                 data_block.put(key, value);
 
                                 if (key.startsWith("120") == true) {
-
                                     if (value.endsWith("]") == true) {
-
                                         value = value.substring(0, value.indexOf("["));
-
                                     }
 
                                     leaves_type = Byte.parseByte(key.substring("120".length()));
 
                                     if (Handcode.Config.deciduous_leaves_list.contains(value) == true) {
-
                                         data_leaves_type[leaves_type] = 1;
-
                                     } else if (Handcode.Config.coniferous_leaves_list.contains(value) == true) {
-
                                         data_leaves_type[leaves_type] = 2;
-
                                     }
-
                                 }
-
                             }
-
                         } else if (key.startsWith("Function ") == true) {
-
                             key = key.substring("Function ## ".length());
                             data_function.put(key, value);
-
                         } else {
-
                             data_normal.put(key, value);
-
                         }
-
                     }
-
                 }
-
             }
 
+            // [执行代号22 - 任务 4.1] 无论文件是否存在，都缓存结果，彻底解决缓存穿透
             CacheManager.DataText.setMap("tree_settings_normal", id, data_normal);
             CacheManager.DataText.setMap("tree_settings_block", id, data_block);
             CacheManager.DataText.setMap("tree_settings_function", id, data_function);
             CacheManager.DataShort.setSet("tree_settings_keep", id, data_keep);
             CacheManager.DataShort.setArray("tree_settings_leaves_type", id, data_leaves_type);
-
         }
 
         public static Map<String, String> getNormal (String id) {
-
             Map<String, String> data = CacheManager.DataText.getMap("tree_settings_normal").get(id);
-
             if (data == null) {
-
                 get(id);
                 data = CacheManager.DataText.getMap("tree_settings_normal").get(id);
-
                 if (data == null) {
-
-                    data = new  HashMap<>();
-
+                    data = new HashMap<>();
                 }
-
             }
-
             return data;
-
         }
 
         public static Map<Short, BlockState> getBlock (ServerLevel level_server, String id) {
+            // [执行代号22 - 任务 4.1] 命中缓存直接返回，避免重复解析 BlockState
+            Map<Short, BlockState> cachedState = blockStateCache.get(id);
+            if (cachedState != null) {
+                return cachedState;
+            }
 
             Map<String, String> data = CacheManager.DataText.getMap("tree_settings_block").get(id);
-
             if (data == null) {
-
                 get(id);
                 data = CacheManager.DataText.getMap("tree_settings_block").get(id);
-
                 if (data == null) {
-
                     data = new HashMap<>();
-
                 }
-
             }
 
             Map<Short, BlockState> convert = new HashMap<>();
-
             for (Map.Entry<String, String> entry : data.entrySet()) {
-
                 convert.put(Short.parseShort(entry.getKey()), GameUtils.Tile.fromText(level_server, entry.getValue()));
-
             }
 
+            blockStateCache.put(id, convert);
             return convert;
-
         }
 
         public static Map<Short, String> getFunction (String id) {
-
             Map<String, String> data = CacheManager.DataText.getMap("tree_settings_function").get(id);
-
             if (data == null) {
-
                 get(id);
                 data = CacheManager.DataText.getMap("tree_settings_function").get(id);
-
                 if (data == null) {
-
                     data = new HashMap<>();
-
                 }
-
             }
 
             Map<Short, String> convert = new HashMap<>();
-
             for (Map.Entry<String, String> entry : data.entrySet()) {
-
                 convert.put(Short.parseShort(entry.getKey()), entry.getValue());
-
             }
-
             return convert;
-
         }
 
         public static Set<Short> getKeep (String id) {
-
             Set<Short> data = CacheManager.DataShort.getSet("tree_settings_keep").get(id);
-
             if (data == null) {
-
                 get(id);
                 data = CacheManager.DataShort.getSet("tree_settings_keep").get(id);
-
                 if (data == null) {
-
                     data = new HashSet<>();
-
                 }
-
             }
-
             return data;
-
         }
 
         public static short[] getLeavesType (String id) {
-
             short[] data = CacheManager.DataShort.getArray("tree_settings_leaves_type").get(id);
-
             if (data == null) {
-
                 get(id);
                 data = CacheManager.DataShort.getArray("tree_settings_leaves_type").get(id);
-
                 if (data == null) {
-
                     data = new short[0];
-
                 }
-
             }
-
             return data;
-
         }
 
     }

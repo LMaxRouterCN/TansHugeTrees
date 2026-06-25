@@ -36,7 +36,17 @@ public class TreePlacer {
 
         private static final java.util.concurrent.ConcurrentLinkedQueue<DeferredTask> queue = new java.util.concurrent.ConcurrentLinkedQueue<>();
         
+        
+
+          
         public static void add(String dimension, ChunkPos chunk_pos) {
+            // [LMax Fix V7] 容量上限检查，防止无界队列导致 OOM
+            while (queue.size() >= Handcode.Config.deferred_queue_max_size) {
+                DeferredTask dropped = queue.poll();
+                if (dropped == null) break;
+                // 丢弃最旧的任务并记录警告
+                System.err.println("[TansHugeTrees] DeferredQueue overflow, dropping oldest task: " + dropped.dimension + " " + dropped.chunk_pos);
+            }
             queue.add(new DeferredTask(dimension, chunk_pos));
         }
         
@@ -45,8 +55,11 @@ public class TreePlacer {
             DeferredTask task;
             java.util.List<DeferredTask> retryList = new java.util.ArrayList<>();
             
-            // 每次 Tick 最多处理 100 个任务，防止主线程 TPS 暴跌
-            while (processed < 100 && (task = queue.poll()) != null) {
+        
+
+          
+            // 每次 Tick 最多处理 N 个任务（配置项 deferred_queue_process_per_tick），防止主线程 TPS 暴跌
+            while (processed < Handcode.Config.deferred_queue_process_per_tick && (task = queue.poll()) != null) {
                 processed++;
                 try {
                     net.minecraft.resources.ResourceKey<net.minecraft.world.level.Level> dimKey = 
@@ -65,9 +78,12 @@ public class TreePlacer {
                                 allReady = false;
                                 break;
                             }
-                            // 检查区块生成状态是否足够靠后 (Features 或 Full)
+        
+
+          
+                            // [执行代号33] 检查区块生成状态是否达到 FULL，避免跨区块树木劈树问题
                             net.minecraft.world.level.chunk.ChunkAccess chunk = targetLevel.getChunk(cx, cz);
-                            if (!chunk.getHighestGeneratedStatus().isOrAfter(net.minecraft.world.level.chunk.ChunkStatus.FEATURES)) {
+                            if (!chunk.getHighestGeneratedStatus().isOrAfter(net.minecraft.world.level.chunk.ChunkStatus.FULL)) {
                                 allReady = false;
                                 break;
                             }
@@ -77,7 +93,10 @@ public class TreePlacer {
                     
                     if (!allReady) {
                         task.retries++;
-                        if (task.retries < 200) { // 最多重试 200 Tick (约 10 秒)
+        
+
+          
+                        if (task.retries < Handcode.Config.deferred_queue_retry_limit) { // 最多重试 N Tick (配置项 deferred_queue_retry_limit)
                             retryList.add(task);
                         }
                     } else {
@@ -892,9 +911,25 @@ public class TreePlacer {
         private static ByteBuffer get (String dimension, ChunkPos chunk_pos) {
             int regionX = chunk_pos.x >> 5;
             int regionZ = chunk_pos.z >> 5;
+        
+
+          
             String key = dimension + "/" + regionX + "," + regionZ;
 
-            java.util.concurrent.CompletableFuture<Map<ChunkPos, ByteArrayOutputStream>> future = bin_convert_futures.computeIfAbsent(key, k -> 
+            // [LMax Fix V7] 容量上限淘汰，防止 bin_convert_futures 无限增长导致 OOM
+            if (!bin_convert_futures.containsKey(key)) {
+                while (bin_convert_futures.size() >= Handcode.Config.bin_convert_futures_max_entries) {
+                    java.util.Iterator<Map.Entry<String, java.util.concurrent.CompletableFuture<Map<ChunkPos, ByteArrayOutputStream>>>> it = bin_convert_futures.entrySet().iterator();
+                    if (it.hasNext()) {
+                        it.next();
+                        it.remove();
+                    } else {
+                        break;
+                    }
+                }
+            }
+
+            java.util.concurrent.CompletableFuture<Map<ChunkPos, ByteArrayOutputStream>> future = bin_convert_futures.computeIfAbsent(key, k ->
                 java.util.concurrent.CompletableFuture.supplyAsync(() -> {
                     Map<ChunkPos, ByteArrayOutputStream> regionData = new HashMap<>();
                     ByteBuffer bin = FileManager.readBIN(Core.path_world_mod + "/world_gen/place/" + k + ".bin");
@@ -1266,9 +1301,22 @@ public class TreePlacer {
 
                     }
 
+        
+
+          
                     // [LMax Fix V6] 内存缓存写入 (废除极慢的硬盘 .bin 写入)
                     {
                         String writeCacheKey = dimension + "_" + centerX + "_" + centerZ;
+                        // [LMax Fix V7] 容量上限淘汰，防止 memoryCache 无限增长导致 OOM
+                        while (memoryCache.size() >= Handcode.Config.memory_cache_max_entries) {
+                            java.util.Iterator<Map.Entry<String, DetectionResult>> it = memoryCache.entrySet().iterator();
+                            if (it.hasNext()) {
+                                it.next();
+                                it.remove();
+                            } else {
+                                break;
+                            }
+                        }
                         memoryCache.put(writeCacheKey, new DetectionResult(pass, pos_center.getY(), dead_tree_level));
                     }
 
