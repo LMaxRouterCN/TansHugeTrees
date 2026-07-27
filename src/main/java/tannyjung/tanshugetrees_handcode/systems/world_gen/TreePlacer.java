@@ -1,3 +1,6 @@
+        
+
+          
 package tannyjung.tanshugetrees_handcode.systems.world_gen;
 
 import it.unimi.dsi.fastutil.longs.LongSet;
@@ -31,14 +34,31 @@ public class TreePlacer {
             String dimension;
             ChunkPos chunk_pos;
             int retries;
-            DeferredTask(String d, ChunkPos c) { this.dimension = d; this.chunk_pos = c; this.retries = 0; }
+            // [方向A重构] 新增：目标 chunk 和是否强制补写标记
+            ChunkPos target_chunk; // 用于 PendingBlocks 补写，null 表示重新调 start
+            boolean is_forced;     // true 表示只补写 PendingBlocks，不重新调 start
+            
+            // 旧版构造函数（重新调 start）
+            DeferredTask(String d, ChunkPos c) {
+                this.dimension = d;
+                this.chunk_pos = c;
+                this.retries = 0;
+                this.target_chunk = null;
+                this.is_forced = false;
+            }
+            
+            // [方向A重构] 新增构造函数（PendingBlocks 补写）
+            DeferredTask(String d, ChunkPos c, ChunkPos target, boolean forced) {
+                this.dimension = d;
+                this.chunk_pos = c;
+                this.retries = 0;
+                this.target_chunk = target;
+                this.is_forced = forced;
+            }
         }
 
         private static final java.util.concurrent.ConcurrentLinkedQueue<DeferredTask> queue = new java.util.concurrent.ConcurrentLinkedQueue<>();
-        
-        
 
-          
         public static void add(String dimension, ChunkPos chunk_pos) {
             // [LMax Fix V7] 容量上限检查，防止无界队列导致 OOM
             while (queue.size() >= Handcode.Config.deferred_queue_max_size) {
@@ -49,60 +69,98 @@ public class TreePlacer {
             }
             queue.add(new DeferredTask(dimension, chunk_pos));
         }
-        
+
+        // [方向A重构] 新增：PendingBlocks 补写任务
+        public static void addForced(String dimension, ChunkPos chunk_pos, ChunkPos target_chunk) {
+            while (queue.size() >= Handcode.Config.deferred_queue_max_size) {
+                DeferredTask dropped = queue.poll();
+                if (dropped == null) break;
+                System.err.println("[TansHugeTrees] DeferredQueue overflow, dropping oldest task: " + dropped.dimension + " " + dropped.chunk_pos);
+            }
+            queue.add(new DeferredTask(dimension, chunk_pos, target_chunk, true));
+        }
+
         public static void processTick(net.minecraft.server.MinecraftServer server) {
             int processed = 0;
             DeferredTask task;
             java.util.List<DeferredTask> retryList = new java.util.ArrayList<>();
-            
-        
 
-          
             // 每次 Tick 最多处理 N 个任务（配置项 deferred_queue_process_per_tick），防止主线程 TPS 暴跌
             while (processed < Handcode.Config.deferred_queue_process_per_tick && (task = queue.poll()) != null) {
                 processed++;
                 try {
-                    net.minecraft.resources.ResourceKey<net.minecraft.world.level.Level> dimKey = 
-                        net.minecraft.resources.ResourceKey.create(net.minecraft.core.registries.Registries.DIMENSION, new net.minecraft.resources.ResourceLocation(task.dimension));
+                    net.minecraft.resources.ResourceKey<net.minecraft.world.level.Level> dimKey =
+        
+
+          
+                        net.minecraft.resources.ResourceKey.create(net.minecraft.core.registries.Registries.DIMENSION, net.minecraft.resources.ResourceLocation.parse(task.dimension));
                     ServerLevel targetLevel = server.getLevel(dimKey);
-                    
+
                     if (targetLevel == null) continue;
-                    
-                    // 核心：检查当前 Chunk 及 +-4 偏移的 Chunk 是否全部达到 FULL 状态
-                    boolean allReady = true;
-                    for (int dx = -4; dx <= 4; dx += 8) { // -4, +4
-                        for (int dz = -4; dz <= 4; dz += 8) {
-                            int cx = task.chunk_pos.x + dx;
-                            int cz = task.chunk_pos.z + dz;
-                            if (!targetLevel.getChunkSource().hasChunk(cx, cz)) {
-                                allReady = false;
-                                break;
-                            }
-        
 
-          
-                            // [执行代号33] 检查区块生成状态是否达到 FULL，避免跨区块树木劈树问题
-                            net.minecraft.world.level.chunk.ChunkAccess chunk = targetLevel.getChunk(cx, cz);
-                            if (!chunk.getHighestGeneratedStatus().isOrAfter(net.minecraft.world.level.chunk.ChunkStatus.FULL)) {
-                                allReady = false;
-                                break;
+                    // [方向A重构] 区分两种任务：重新调 start vs 只补写 PendingBlocks
+                    if (task.is_forced) {
+                        // PendingBlocks 补写任务
+                        // 检查目标 chunk 是否就绪
+                        boolean allReady = true;
+                        for (int dx = -4; dx <= 4; dx += 8) {
+                            for (int dz = -4; dz <= 4; dz += 8) {
+                                int cx = task.chunk_pos.x + dx;
+                                int cz = task.chunk_pos.z + dz;
+                                if (!targetLevel.getChunkSource().hasChunk(cx, cz)) {
+                                    allReady = false;
+                                    break;
+                                }
+                                net.minecraft.world.level.chunk.ChunkAccess chunk = targetLevel.getChunk(cx, cz);
+                                if (!chunk.getHighestGeneratedStatus().isOrAfter(net.minecraft.world.level.chunk.ChunkStatus.FULL)) {
+                                    allReady = false;
+                                    break;
+                                }
                             }
+                            if (!allReady) break;
                         }
-                        if (!allReady) break;
-                    }
-                    
-                    if (!allReady) {
-                        task.retries++;
-        
 
-          
-                        if (task.retries < Handcode.Config.deferred_queue_retry_limit) { // 最多重试 N Tick (配置项 deferred_queue_retry_limit)
-                            retryList.add(task);
+                        if (!allReady) {
+                            task.retries++;
+                            if (task.retries < Handcode.Config.deferred_queue_retry_limit) {
+                                retryList.add(task);
+                            }
+                        } else {
+                            // 区块已就绪，强制补写 PendingBlocks
+                            PendingBlocks.placeForced(targetLevel, task.target_chunk);
                         }
                     } else {
-                        // 区块已就绪，安全执行补种
-                        ChunkGenerator gen = targetLevel.getChunkSource().getGenerator();
-                        start(targetLevel, targetLevel, gen, task.dimension, task.chunk_pos);
+                        // 旧版逻辑：重新调 start
+                        // 核心：检查当前 Chunk 及 +-4 偏移的 Chunk 是否全部达到 FULL 状态
+                        boolean allReady = true;
+                        for (int dx = -4; dx <= 4; dx += 8) { // -4, +4
+                            for (int dz = -4; dz <= 4; dz += 8) {
+                                int cx = task.chunk_pos.x + dx;
+                                int cz = task.chunk_pos.z + dz;
+                                if (!targetLevel.getChunkSource().hasChunk(cx, cz)) {
+                                    allReady = false;
+                                    break;
+                                }
+                                // [执行代号33] 检查区块生成状态是否达到 FULL，避免跨区块树木劈树问题
+                                net.minecraft.world.level.chunk.ChunkAccess chunk = targetLevel.getChunk(cx, cz);
+                                if (!chunk.getHighestGeneratedStatus().isOrAfter(net.minecraft.world.level.chunk.ChunkStatus.FULL)) {
+                                    allReady = false;
+                                    break;
+                                }
+                            }
+                            if (!allReady) break;
+                        }
+
+                        if (!allReady) {
+                            task.retries++;
+                            if (task.retries < Handcode.Config.deferred_queue_retry_limit) { // 最多重试 N Tick (配置项 deferred_queue_retry_limit)
+                                retryList.add(task);
+                            }
+                        } else {
+                            // 区块已就绪，安全执行补种
+                            ChunkGenerator gen = targetLevel.getChunkSource().getGenerator();
+                            start(targetLevel, targetLevel, gen, task.dimension, task.chunk_pos);
+                        }
                     }
                 } catch (Exception e) {
                     e.printStackTrace();
@@ -117,14 +175,17 @@ public class TreePlacer {
         Core.GlobalLocking.test();
 
         ByteBuffer data = Data.get(dimension, chunk_pos);
-        
+
         if (data.remaining() == 0) {
-            // 数据未加载完成，加入延迟补种队列，绝不阻塞当前线程
             DeferredQueue.add(dimension, chunk_pos);
-            // 注意：这里绝对不能调用 Data.clearChunk，否则后续补种时数据就丢了！
             return;
         }
-        
+
+        // [LMax Debug] 追踪 TreePlacer 执行情况
+        int data_size = data.remaining();
+        long placer_start = System.currentTimeMillis();
+        System.out.println("[THT-DEBUG] TreePlacer.start() chunk " + chunk_pos + " data: " + data_size + " bytes");
+
         String id = "";
         String chosen = "";
         int centerX = 0;
@@ -160,11 +221,19 @@ public class TreePlacer {
             }
 
             DetailedDetection.test(level_accessor, level_server, chunk_generator, dimension, chunk_pos, from_chunkX, from_chunkZ, to_chunkX, to_chunkZ, id, chosen, centerX, centerZ);
-
-        }
+        // [方向A重构] 写入当前 chunk 缓存的所有方块，解决跨 chunk 写入时序问题
+        PendingBlocks.place(level_accessor, chunk_pos);
 
         LeafLitterGeneration.place(level_accessor, level_server, chunk_generator, chunk_pos);
         Function.run(level_accessor, level_server, chunk_pos);
+        Data.clearChunk(dimension, chunk_pos);
+
+        // [LMax Debug] 追踪 TreePlacer 完成时间
+        long placer_time = System.currentTimeMillis() - placer_start;
+        if (placer_time > 100) {
+            Core.logger.info("[THT-DEBUG] TreePlacer.start() chunk " + chunk_pos + " completed in " + placer_time + "ms (data was " + data_size + " bytes)");
+        }
+    }
         Data.clearChunk(dimension, chunk_pos);
 
     }
@@ -318,7 +387,9 @@ public class TreePlacer {
 
     }
 
-    private static void place (LevelAccessor level_accessor, ServerLevel level_server, ChunkPos chunk_pos, String id, String location, String path_settings, BlockPos pos_center, int[] rotation_mirrored, int dead_tree_level, int fallen_direction) {
+    // [方向A重构] 原 place() 拆分为 placeCalculate()（计算+分组缓存）+ PendingBlocks.place()（拉取+写入）
+    // 移除 chunk 过滤，所有方块统一存入 PendingBlocks，由各 chunk 的 place() 统一写入
+    private static void placeCalculate (LevelAccessor level_accessor, ServerLevel level_server, ChunkPos chunk_pos, String id, String location, String path_settings, BlockPos pos_center, int[] rotation_mirrored, int dead_tree_level, int fallen_direction) {
 
         boolean can_disable_roots = false;
         boolean can_leaves_decay = false;
@@ -625,15 +696,12 @@ public class TreePlacer {
 
                 }
 
-            }
+                pos = new BlockPos(posX, posY, posZ);
+                pos = OutsideUtils.convertPosRotationMirrored(pos, rotation_mirrored);
+                pos = OutsideUtils.convertPosFallen(pos, fallen_direction);
+                pos = pos.offset(pos_center.getX(), pos_center.getY(), pos_center.getZ());
 
-            pos = new BlockPos(posX, posY, posZ);
-            pos = OutsideUtils.convertPosRotationMirrored(pos, rotation_mirrored);
-            pos = OutsideUtils.convertPosFallen(pos, fallen_direction);
-            pos = pos.offset(pos_center.getX(), pos_center.getY(), pos_center.getZ());
-
-            if (chunk_pos.x == pos.getX() >> 4 && chunk_pos.z == pos.getZ() >> 4) {
-
+                // [方向A重构] 移除 chunk 过滤，所有方块统一处理
                 if (is_function == false) {
 
                     block = blocks.get(type);
@@ -719,11 +787,13 @@ public class TreePlacer {
 
                                     if (random.nextDouble() < leaf_litter_chance) {
 
-                                        LeafLitterGeneration.add(chunk_pos, pos, block);
+                                        // [方向A重构] 用方块所在 chunk 而非中心 chunk
+                                        LeafLitterGeneration.add(new ChunkPos(pos), pos, block);
 
                                     }
 
                                 }
+
                             }
 
                         }
@@ -741,7 +811,8 @@ public class TreePlacer {
 
                     }
 
-                    GameUtils.Tile.set(level_accessor, pos, block, true);
+                    // [方向A重构] 所有方块统一存入 PendingBlocks，由各 chunk 的 place() 统一写入
+                    PendingBlocks.add(pos, block);
 
                     // Tree Decoration
                     {
@@ -754,7 +825,8 @@ public class TreePlacer {
 
                                     if (tree_decoration_normal.isEmpty() == false) {
 
-                                        Function.add(chunk_pos, pos, tree_decoration_normal.get(random.nextInt(tree_decoration_normal.size())));
+                                        // [方向A重构] 用方块所在 chunk
+                                        Function.add(new ChunkPos(pos), pos, tree_decoration_normal.get(random.nextInt(tree_decoration_normal.size())));
 
                                     }
 
@@ -768,7 +840,8 @@ public class TreePlacer {
 
                                     if (tree_decoration_decay.isEmpty() == false) {
 
-                                        Function.add(chunk_pos, pos, tree_decoration_decay.get(random.nextInt(tree_decoration_decay.size())));
+                                        // [方向A重构] 用方块所在 chunk
+                                        Function.add(new ChunkPos(pos), pos, tree_decoration_decay.get(random.nextInt(tree_decoration_decay.size())));
 
                                     }
 
@@ -807,7 +880,6 @@ public class TreePlacer {
 
                     // Function
                     {
-
                         // Separate because start and end function no need to test "can run here?"
                         if (can_run_function == true || type == 210 || type == 220) {
 
@@ -819,7 +891,8 @@ public class TreePlacer {
 
                             }
 
-                            Function.add(chunk_pos, pos, function);
+                            // [方向A重构] 用方块所在 chunk
+                            Function.add(new ChunkPos(pos), pos, function);
 
                         }
 
@@ -911,9 +984,7 @@ public class TreePlacer {
         private static ByteBuffer get (String dimension, ChunkPos chunk_pos) {
             int regionX = chunk_pos.x >> 5;
             int regionZ = chunk_pos.z >> 5;
-        
 
-          
             String key = dimension + "/" + regionX + "," + regionZ;
 
             // [LMax Fix V7] 容量上限淘汰，防止 bin_convert_futures 无限增长导致 OOM
@@ -1002,17 +1073,21 @@ public class TreePlacer {
         }
 
     }
+            if (chunk_pos.x != centerX >> 4 || chunk_pos.z != centerZ >> 4) {
+                return;
+            }
 
-    private static class DetailedDetection {
-
-        // [LMax Fix V6] 纯内存级缓存：彻底废除 .bin 硬盘缓存与全局锁，消灭 TPS 尖峰与 LOD 覆盖问题。
-        private static class DetectionResult {
-            boolean pass; int posY; int deadTreeLevel;
-            DetectionResult(boolean p, int y, int d) { pass = p; posY = y; deadTreeLevel = d; }
-        }
-        private static final java.util.concurrent.ConcurrentHashMap<String, DetectionResult> memoryCache = new java.util.concurrent.ConcurrentHashMap<>();
+            // [LMax Debug] 追踪每棵树的放置
+            long tree_start = System.currentTimeMillis();
+            System.out.println("[THT-DEBUG] DetailedDetection: placing tree '" + id + "' at " + centerX + "," + centerZ + " in chunk " + chunk_pos);
+        // [方向A重构] 废除 memoryCache：中心 chunk 检测确保每棵树只被处理一次，无需跨 chunk 缓存
 
         private static void test (LevelAccessor level_accessor, ServerLevel level_server, ChunkGenerator chunk_generator, String dimension, ChunkPos chunk_pos, int from_chunkX, int from_chunkZ, int to_chunkX, int to_chunkZ, String id, String chosen, int centerX, int centerZ) {
+
+            // [方向A重构] 中心 chunk 检测：只有树中心所在的 chunk 才执行检测和分发，其余 chunk 直接返回
+            if (chunk_pos.x != centerX >> 4 || chunk_pos.z != centerZ >> 4) {
+                return;
+            }
 
             String location = "";
             String path_settings = "";
@@ -1057,52 +1132,71 @@ public class TreePlacer {
             BlockPos pos_center = new BlockPos(centerX, 0, centerZ);
             boolean pass = false;
 
-            // [LMax Fix V6] 内存缓存读取
+            // [方向A重构] 废除 memoryCache：中心 chunk 检测确保每棵树只被处理一次
             {
-                boolean already_tested = false;
-                String cacheKey = dimension + "_" + centerX + "_" + centerZ;
-                DetectionResult cachedResult = memoryCache.get(cacheKey);
-                
-                if (cachedResult != null) {
-                    already_tested = true;
-                    pass = cachedResult.pass;
-                    pos_center = pos_center.atY(cachedResult.posY);
-                    dead_tree_level = cachedResult.deadTreeLevel;
+
+                String type = "";
+                int start_height = 0;
+
+                // Scan Tree Settings
+                {
+
+                    Map<String, String> tree_settings = Caches.TreeSettings.getNormal(path_settings);
+                    type = tree_settings.getOrDefault("type", "");
+                    start_height = Integer.parseInt(tree_settings.getOrDefault("start_height", "0"));
+
                 }
 
-                if (already_tested == false) {
+                test:
+                {
 
-                    String type = "";
-                    int start_height = 0;
+                    BlockPos pos_original = new BlockPos(centerX, GameUtils.Space.getHeightWorldGen(level_accessor, level_server, chunk_generator, centerX, centerZ, "OCEAN_FLOOR_WG", "OCEAN_FLOOR_WG"), centerZ);
 
-                    // Scan Tree Settings
+                    // Ground Level
                     {
 
-                        Map<String, String> tree_settings = Caches.TreeSettings.getNormal(path_settings);
-                        type = tree_settings.getOrDefault("type", "");
-                        start_height = Integer.parseInt(tree_settings.getOrDefault("start_height", "0"));
+                        if (GameUtils.Space.testChunkStatus(level_accessor, new ChunkPos(pos_original), "carvers") == true) {
+
+                            BlockState block = level_accessor.getBlockState(pos_original.below());
+
+                            if (block.canBeReplaced() == true) {
+
+                                break test;
+
+                            } else if (GameUtils.Tile.test(block, ground_block) == false) {
+
+                                break test;
+
+                            }
+
+                        }
 
                     }
 
-                    test:
+                    RandomSource random = RandomSource.create(level_accessor.getServer().overworld().getSeed() ^ ((centerX * 341873128712L) + (centerZ * 132897987541L)));
+
+                    // Tree Type
                     {
 
-                        BlockPos pos_original = new BlockPos(centerX, GameUtils.Space.getHeightWorldGen(level_accessor, level_server, chunk_generator, centerX, centerZ, "OCEAN_FLOOR_WG", "OCEAN_FLOOR_WG"), centerZ);
+                        if (type.equals("special") == false && type.equals("emergent") == false) {
 
-                        // Ground Level
-                        {
+                            int highestY = GameUtils.Space.getHeightWorldGen(level_accessor, level_server, chunk_generator, centerX, centerZ, "WORLD_SURFACE_WG", "WORLD_SURFACE_WG");
 
-                            if (GameUtils.Space.testChunkStatus(level_accessor, new ChunkPos(pos_original), "carvers") == true) {
+        
 
-                                BlockState block = level_accessor.getBlockState(pos_original.below());
+          
+                            // [P0-2 修复] 使用可配置高度容差，避免超平坦世界中 getBaseHeight 噪声导致 1 格偏差时 terrestrial 树被误判为 unviable ecology
+                            if ((type.equals("terrestrial") == true && (pos_original.getY() < highestY - Handcode.Config.unviable_ecology_height_tolerance)) || (type.equals("aquatic") == true && (pos_original.getY() == highestY))) {
 
-                                if (block.canBeReplaced() == true) {
-
-                                    break test;
-
-                                } else if (GameUtils.Tile.test(block, ground_block) == false) {
+                                if (random.nextDouble() < Handcode.Config.unviable_ecology_skip_chance) {
 
                                     break test;
+
+                                }
+
+                                if (dead_tree_level == 0) {
+
+                                    dead_tree_level = TreeLocation.getDeadTreeLevel(level_accessor, id, location, centerX, centerZ, true);
 
                                 }
 
@@ -1110,158 +1204,150 @@ public class TreePlacer {
 
                         }
 
-                        RandomSource random = RandomSource.create(level_accessor.getServer().overworld().getSeed() ^ ((centerX * 341873128712L) + (centerZ * 132897987541L)));
+                    }
 
-                        // Tree Type
-                        {
+                    // Height Offset
+                    {
 
-                            if (type.equals("special") == false && type.equals("emergent") == false) {
+                        int offsetY = pos_original.getY() + start_height;
 
-                                int highestY = GameUtils.Space.getHeightWorldGen(level_accessor, level_server, chunk_generator, centerX, centerZ, "WORLD_SURFACE_WG", "WORLD_SURFACE_WG");
+                        if (dead_tree_level < 200) {
 
-                                if ((type.equals("terrestrial") == true && (pos_original.getY() < highestY)) || (type.equals("aquatic") == true && (pos_original.getY() == highestY))) {
-
-                                    if (random.nextDouble() < Handcode.Config.unviable_ecology_skip_chance) {
-
-                                        break test;
-
-                                    }
-
-                                    if (dead_tree_level == 0) {
-
-                                        dead_tree_level = TreeLocation.getDeadTreeLevel(level_accessor, id, location, centerX, centerZ, true);
-
-                                    }
-
-                                }
-
-                            }
+                            offsetY = offsetY + random.nextInt(Integer.parseInt(start_height_offset[0]), Integer.parseInt(start_height_offset[1]) + 1);
 
                         }
 
-                        // Height Offset
-                        {
+                        pos_center = pos_center.atY(pos_center.getY() + offsetY);
 
-                            int offsetY = pos_original.getY() + start_height;
+                    }
 
-                            if (dead_tree_level < 200) {
+                    int center_sizeX = 0;
+                    int center_sizeY = 0;
+                    int center_sizeZ = 0;
+                    int sizeX = 0;
+                    int sizeY = 0;
+                    int sizeZ = 0;
 
-                                offsetY = offsetY + random.nextInt(Integer.parseInt(start_height_offset[0]), Integer.parseInt(start_height_offset[1]) + 1);
+                    // Get Size
+                    {
 
-                            }
+                        try {
 
-                            pos_center = pos_center.atY(pos_center.getY() + offsetY);
+                            short[] size_data = Caches.TreeShape.getTreeShapeSize(location);
+                            sizeX = size_data[0];
+                            sizeY = size_data[1];
+                            sizeZ = size_data[2];
+                            center_sizeX = size_data[3];
+                            center_sizeY = size_data[4];
+                            center_sizeZ = size_data[5];
 
-                        }
+                        } catch (Exception exception) {
 
-                        int center_sizeX = 0;
-                        int center_sizeY = 0;
-                        int center_sizeZ = 0;
-                        int sizeX = 0;
-                        int sizeY = 0;
-                        int sizeZ = 0;
-
-                        // Get Size
-                        {
-
-                            try {
-
-                                short[] size_data = Caches.TreeShape.getTreeShapeSize(location);
-                                sizeX = size_data[0];
-                                sizeY = size_data[1];
-                                sizeZ = size_data[2];
-                                center_sizeX = size_data[3];
-                                center_sizeY = size_data[4];
-                                center_sizeZ = size_data[5];
-
-                            } catch (Exception exception) {
-
-                                OutsideUtils.exception(new Exception(), exception, "This is normal error when a tree shape is no longer in your world. Here is that shape ID [ " + location + " ].");
-                                break test;
-
-                            }
+                            OutsideUtils.exception(new Exception(), exception, "This is normal error when a tree shape is no longer in your world. Here is that shape ID [ " + location + " ].");
+                            break test;
 
                         }
 
-                        // Size Convert
-                        {
+                    }
 
-                            int[] convert = OutsideUtils.convertSizeRotationMirrored(rotation_mirrored, sizeX, sizeZ, center_sizeX, center_sizeZ);
+                    // Size Convert
+                    {
+
+                        int[] convert = OutsideUtils.convertSizeRotationMirrored(rotation_mirrored, sizeX, sizeZ, center_sizeX, center_sizeZ);
+                        sizeX = convert[0];
+                        sizeZ = convert[1];
+                        center_sizeX = convert[2];
+                        center_sizeZ = convert[3];
+
+                        if (fallen_direction > 0) {
+
+                            convert = OutsideUtils.convertSizeFallen(fallen_direction, sizeX, sizeY, sizeZ, center_sizeX, center_sizeY, center_sizeZ);
                             sizeX = convert[0];
-                            sizeZ = convert[1];
-                            center_sizeX = convert[2];
-                            center_sizeZ = convert[3];
+                            sizeY = convert[1];
+                            sizeZ = convert[2];
+                            center_sizeX = convert[3];
+                            center_sizeY = convert[4];
+                            center_sizeZ = convert[5];
 
-                            if (fallen_direction > 0) {
+                        }
 
-                                convert = OutsideUtils.convertSizeFallen(fallen_direction, sizeX, sizeY, sizeZ, center_sizeX, center_sizeY, center_sizeZ);
-                                sizeX = convert[0];
-                                sizeY = convert[1];
-                                sizeZ = convert[2];
-                                center_sizeX = convert[3];
-                                center_sizeY = convert[4];
-                                center_sizeZ = convert[5];
+                    }
+
+                    // Height Y Test
+                    {
+
+                        if ((sizeY - center_sizeY) + pos_center.getY() >= level_accessor.getMaxBuildHeight()) {
+
+                            break test;
+
+                        }
+
+                        if (pos_original.getY() == GameUtils.Space.getBuildHeight(level_accessor, false)) {
+
+                            break test;
+
+                        }
+
+                        if (Handcode.Config.max_height_spawn != 0) {
+
+                            if (pos_original.getY() > Handcode.Config.max_height_spawn) {
+
+                                break test;
 
                             }
 
                         }
 
-                        // Height Y Test
-                        {
+                    }
 
-                            if ((sizeY - center_sizeY) + pos_center.getY() >= level_accessor.getMaxBuildHeight()) {
+                    // Structure Detection
+                    {
 
-                                break test;
+                        int size = Handcode.Config.structure_detection_size;
+                        ChunkPos chunk_pos_test = null;
 
-                            }
+                        if (size >= 0) {
 
-                            if (pos_original.getY() == GameUtils.Space.getBuildHeight(level_accessor, false)) {
+        
 
-                                break test;
+          
+                            Map<Structure, LongSet> references = new HashMap<>();
+                            // [P2 修复] 限制扫描 chunk 数量，防止大范围扫描导致卡顿
+                            int chunk_scan_count = 0;
+                            boolean chunk_scan_limit_reached = false;
 
-                            }
+                            for (int scanX = from_chunkX - size; scanX <= to_chunkX + size; scanX++) {
 
-                            if (Handcode.Config.max_height_spawn != 0) {
+                                if (chunk_scan_limit_reached) {
 
-                                if (pos_original.getY() > Handcode.Config.max_height_spawn) {
-
-                                    break test;
+                                    break;
 
                                 }
 
-                            }
+                                for (int scanZ = from_chunkZ - size; scanZ <= to_chunkZ + size; scanZ++) {
 
-                        }
+                                    // [P2 修复] 超过最大扫描数量时停止，避免大范围扫描卡顿
+                                    if (chunk_scan_count >= Handcode.Config.structure_detection_max_chunks) {
 
-                        // Structure Detection
-                        {
+                                        chunk_scan_limit_reached = true;
+                                        break;
 
-                            int size = Handcode.Config.structure_detection_size;
-                            ChunkPos chunk_pos_test = null;
+                                    }
 
-                            if (size >= 0) {
+                                    chunk_scan_count = chunk_scan_count + 1;
+                                    chunk_pos_test = new ChunkPos(scanX, scanZ);
 
-                                Map<Structure, LongSet> references = new HashMap<>();
+                                    if (GameUtils.Space.testChunkStatus(level_accessor, chunk_pos_test, "structure_references") == true) {
 
-                                for (int scanX = from_chunkX - size; scanX <= to_chunkX + size; scanX++) {
+                                        references = level_accessor.getChunk(chunk_pos_test.x, chunk_pos_test.z).getAllReferences();
 
-                                    for (int scanZ = from_chunkZ - size; scanZ <= to_chunkZ + size; scanZ++) {
+                                        if (references.size() > 0) {
 
-                                        chunk_pos_test = new ChunkPos(scanX, scanZ);
+                                            for (Structure structure : references.keySet()) {
 
-                                        if (GameUtils.Space.testChunkStatus(level_accessor, chunk_pos_test, "structure_references") == true) {
+                                                if (structure.step() == GenerationStep.Decoration.SURFACE_STRUCTURES) {
 
-                                            references = level_accessor.getChunk(chunk_pos_test.x, chunk_pos_test.z).getAllReferences();
-
-                                            if (references.size() > 0) {
-
-                                                for (Structure structure : references.keySet()) {
-
-                                                    if (structure.step() == GenerationStep.Decoration.SURFACE_STRUCTURES) {
-
-                                                        break test;
-
-                                                    }
+                                                    break test;
 
                                                 }
 
@@ -1277,56 +1363,72 @@ public class TreePlacer {
 
                         }
 
-                        if (sizeX != 0 || sizeZ != 0) {
+                    }
 
-                            if (testSurfaceSmoothness(level_accessor, level_server, chunk_generator, pos_center, sizeX, sizeY, sizeZ, center_sizeX, center_sizeY, center_sizeZ, pos_original) == false) {
+                    if (sizeX != 0 || sizeZ != 0) {
+
+                        if (testSurfaceSmoothness(level_accessor, level_server, chunk_generator, pos_center, sizeX, sizeY, sizeZ, center_sizeX, center_sizeY, center_sizeZ, pos_original) == false) {
+
+                            break test;
+
+                        }
+
+                        if (dead_tree_level > 200) {
+
+                            if (testFallenArea(level_accessor, level_server, chunk_generator, location, pos_center, rotation_mirrored, fallen_direction, dead_tree_level) == false) {
 
                                 break test;
 
                             }
 
-                            if (dead_tree_level > 200) {
-
-                                if (testFallenArea(level_accessor, level_server, chunk_generator, location, pos_center, rotation_mirrored, fallen_direction, dead_tree_level) == false) {
-
-                                    break test;
-
-                                }
-
-                            }
-
                         }
-
-                        pass = true;
 
                     }
 
-        
-
-          
-                    // [LMax Fix V6] 内存缓存写入 (废除极慢的硬盘 .bin 写入)
-                    {
-                        String writeCacheKey = dimension + "_" + centerX + "_" + centerZ;
-                        // [LMax Fix V7] 容量上限淘汰，防止 memoryCache 无限增长导致 OOM
-                        while (memoryCache.size() >= Handcode.Config.memory_cache_max_entries) {
-                            java.util.Iterator<Map.Entry<String, DetectionResult>> it = memoryCache.entrySet().iterator();
-                            if (it.hasNext()) {
-                                it.next();
-                                it.remove();
-                            } else {
-                                break;
-                            }
-                        }
-                        memoryCache.put(writeCacheKey, new DetectionResult(pass, pos_center.getY(), dead_tree_level));
-                    }
+                    pass = true;
 
                 }
 
             }
 
+        
+
+          
             if (pass == true) {
 
-                place(level_accessor, level_server, chunk_pos, id, location, path_settings, pos_center, rotation_mirrored, dead_tree_level, fallen_direction);
+                // [方向A重构] 调用 placeCalculate() 替代旧 place()
+                placeCalculate(level_accessor, level_server, chunk_pos, id, location, path_settings, pos_center, rotation_mirrored, dead_tree_level, fallen_direction);
+
+                // [P0-1 修复] 遍历树覆盖的所有 chunk，对已 FULL 的非中心 chunk 立即补写 PendingBlocks
+                // 未 FULL 的加入 DeferredQueue，由 processTick 在 chunk 就绪后补写
+                // 这解决了"中心 chunk 写入 PendingBlocks 后，非中心 chunk 已跑完 start() 导致方块永远丢失"的劈树问题
+                for (int scanX = from_chunkX; scanX <= to_chunkX; scanX++) {
+                    for (int scanZ = from_chunkZ; scanZ <= to_chunkZ; scanZ++) {
+
+                        ChunkPos target_cp = new ChunkPos(scanX, scanZ);
+
+                        // 跳过中心 chunk（中心 chunk 的 PendingBlocks 已由 start() 末尾的 place() 写入）
+                        if (target_cp.equals(chunk_pos)) {
+                            continue;
+                        }
+
+                        // 检查目标 chunk 是否已 FULL
+                        if (level_server.getChunkSource().hasChunk(scanX, scanZ)) {
+                            net.minecraft.world.level.chunk.ChunkAccess chunk_access = level_server.getChunk(scanX, scanZ);
+                            if (chunk_access.getHighestGeneratedStatus().isOrAfter(net.minecraft.world.level.chunk.ChunkStatus.FULL)) {
+                                // 已 FULL，立即强制补写
+                                PendingBlocks.placeForced(level_server, target_cp);
+                            } else {
+                                // 未 FULL，加入延迟队列等待补写
+                                DeferredQueue.addForced(dimension, chunk_pos, target_cp);
+                            }
+                        } else {
+                            // chunk 未加载，加入延迟队列等待补写
+                            DeferredQueue.addForced(dimension, chunk_pos, target_cp);
+                        }
+
+                    }
+                }
 
             }
 
@@ -1406,7 +1508,12 @@ public class TreePlacer {
 
             boolean is_only_trunk = dead_tree_level >= 60;
             int distance_skip = (int) Math.floor(left_before_test / 16.0);
+        
+
+          
             int distance_skip_test = 0;
+            // [P1 修复] 高度检查计数器，用于限制 getHeightWorldGen 调用次数
+            int height_check_count = 0;
             BlockPos pos = null;
 
             int loop = 0;
@@ -1599,10 +1706,22 @@ public class TreePlacer {
 
                             }
 
+        
+
+          
                             pos = new BlockPos(posX, posY, posZ);
                             pos = OutsideUtils.convertPosRotationMirrored(pos, rotation_mirrored);
                             pos = OutsideUtils.convertPosFallen(pos, fallen_direction);
                             pos = pos.offset(pos_center.getX(), pos_center.getY(), pos_center.getZ());
+
+                            // [P1 修复] 超过最大高度检查次数时停止检测，避免大树形状导致大量噪声计算卡顿
+                            if (height_check_count >= Handcode.Config.test_fallen_area_max_height_checks) {
+
+                                return false;
+
+                            }
+
+                            height_check_count = height_check_count + 1;
 
                             if (pos.getY() <= GameUtils.Space.getHeightWorldGen(level_accessor, level_server, chunk_generator, pos.getX(), pos.getZ(), "OCEAN_FLOOR_WG", "OCEAN_FLOOR_WG")) {
 
@@ -1662,6 +1781,60 @@ public class TreePlacer {
                 cache_locations.remove(chunk_pos);
 
             }
+
+        }
+
+    }
+
+    // [方向A重构] 新增 PendingBlocks 类：按 chunk 分组缓存方块，解决跨 chunk 写入时序问题
+    private static class PendingBlocks {
+
+        // 线程安全容器：ChunkPos -> (BlockPos -> BlockState)
+        private static final Map<ChunkPos, Map<BlockPos, BlockState>> cache_blocks = new java.util.concurrent.ConcurrentHashMap<>();
+
+        // 添加方块到缓存（按方块所在 chunk 分组）
+        private static void add (BlockPos pos, BlockState block) {
+            ChunkPos chunk_pos = new ChunkPos(pos);
+            cache_blocks.computeIfAbsent(chunk_pos, create -> new java.util.concurrent.ConcurrentHashMap<>()).put(pos, block);
+        }
+
+        // 从缓存中拉取并写入指定 chunk 的所有方块（由各 chunk 的 start() 调用）
+        private static void place (LevelAccessor level_accessor, ChunkPos chunk_pos) {
+
+            Map<BlockPos, BlockState> data = cache_blocks.get(chunk_pos);
+
+            if (data == null) {
+                return;
+            }
+
+            for (Map.Entry<BlockPos, BlockState> entry : data.entrySet()) {
+
+                GameUtils.Tile.set(level_accessor, entry.getKey(), entry.getValue(), true);
+
+            }
+
+            // 写入完成后清除该 chunk 的缓存
+            cache_blocks.remove(chunk_pos);
+
+        }
+
+        // [方向A重构] 强制补写方法：用于 DeferredQueue 补写已 FULL 的 chunk
+        private static void placeForced (ServerLevel level_server, ChunkPos chunk_pos) {
+
+            Map<BlockPos, BlockState> data = cache_blocks.get(chunk_pos);
+
+            if (data == null) {
+                return;
+            }
+
+            for (Map.Entry<BlockPos, BlockState> entry : data.entrySet()) {
+
+                // 强制写入：使用 ServerLevel.setBlock 而非 GameUtils.Tile.set
+                level_server.setBlock(entry.getKey(), entry.getValue(), 3);
+
+            }
+
+            cache_blocks.remove(chunk_pos);
 
         }
 

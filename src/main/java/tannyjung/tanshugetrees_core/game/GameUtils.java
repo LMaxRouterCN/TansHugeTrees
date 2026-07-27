@@ -198,8 +198,14 @@ public class GameUtils {
 
 	public static class Command {
 
+        
+
+          
 		public static void run (ServerLevel level_server, Vec3 vec3, String command) {
-			
+
+			// [P1 修复] 记录执行的命令字符串，用于追踪 fillbiome 等可能导致主线程卡顿的命令来源
+			Core.logger.info("[TST Command] Executing at {} : {}", vec3, command);
+
 			/*
 			(1.20.1) (1.21.1)
 			level_server.getServer().getCommands().performPrefixedCommand(new CommandSourceStack(CommandSource.NULL, vec3, Vec2.ZERO, level_server, 4, "", Component.literal(""), level_server.getServer(), null).withSuppressedOutput(), command);
@@ -212,8 +218,13 @@ public class GameUtils {
 
 		public static void runEntity (Entity entity, String command) {
 
+        
+
+          
 			if (entity.level() instanceof ServerLevel level_server) {
 
+				// [P1 修复] 记录执行的命令字符串，用于追踪 fillbiome 等可能导致主线程卡顿的命令来源
+				Core.logger.info("[TST Command] Executing (entity) at {} : {}", entity.position(), command);
 				/*
 				(1.20.1) (1.21.1)
 				level_server.getServer().getCommands().performPrefixedCommand(new CommandSourceStack(CommandSource.NULL, entity.position(), entity.getRotationVector(), level_server, 4, entity.getName().getString(), entity.getDisplayName(), level_server.getServer(), entity), command);
@@ -253,7 +264,11 @@ public class GameUtils {
 				}
 
 			};
+        
 
+          
+			// [P1 修复] 记录执行的命令字符串，用于追踪 fillbiome 等可能导致主线程卡顿的命令来源
+			Core.logger.info("[TST Command] Executing (result) at {} : {}", vec3, command);
 			/*
 			(1.20.1) (1.21.1)
 			level_server.getServer().getCommands().performPrefixedCommand(new CommandSourceStack(data_consumer, vec3, Vec2.ZERO, level_server, 4, "", Component.literal(""), level_server.getServer(), null), command);
@@ -296,6 +311,14 @@ public class GameUtils {
 
 			if (entity.level() instanceof ServerLevel level_server) {
 
+				// [P1 修复] 记录执行的命令字符串，用于追踪 fillbiome 等可能导致主线程卡顿的命令来源
+				Core.logger.info("[TST Command] Executing (resultEntity) at {} : {}", entity.position(), command);
+				/*
+				(1.20.1) (1.21.1)
+				level_server.getServer().getCommands().performPrefixedCommand(new CommandSourceStack(data_consumer, entity.position(), entity.getRotationVector(), level_server, 4, entity.getName().getString(), entity.getDisplayName(), level_server.getServer(), entity), command);
+				(1.21.8)
+				level_server.getServer().getCommands().performPrefixedCommand(new CommandSourceStack(data_consumer, entity.position(), entity.getRotationVector(), level_server, PermissionSet.ALL_PERMISSIONS, entity.getName().getString(), entity.getDisplayName(), level_server.getServer(), entity), command);
+				*/
 				level_server.getServer().getCommands().performPrefixedCommand(new CommandSourceStack(data_consumer, entity.position(), entity.getRotationVector(), level_server, 4, entity.getName().getString(), entity.getDisplayName(), level_server.getServer(), entity), command);
 
 			}
@@ -438,8 +461,19 @@ public class GameUtils {
 					CacheManager.DataLogic.setNormal("test_block", key, result);
 
 				}
+        
 
-				return CacheManager.DataLogic.getNormal("test_block").get(key);
+          
+				// [P2-K-补充 修复] 移除不安全的链式调用，添加 null 安全检查
+				Map<String, Boolean> test_block = CacheManager.DataLogic.getNormal("test_block");
+
+				if (test_block == null) {
+
+					return false;
+
+				}
+
+				return test_block.getOrDefault(key, false);
 
 			}
 
@@ -1266,23 +1300,18 @@ public class GameUtils {
 
 				}
 
-				// TODO -> Remove this debug
+        
 
+          
 				Map<String, Boolean> test_biome = CacheManager.DataLogic.getNormal("test_biome");
 
 				if (test_biome == null) {
 
-					Core.logger.error("No Main -----> " + key);
+					return false;
 
 				}
 
-				if (test_biome.get(key) == null) {
-
-					Core.logger.error("No Key -----> " + key);
-
-				}
-
-				return test_biome.get(key);
+				return test_biome.getOrDefault(key, false);
 
 			}
 

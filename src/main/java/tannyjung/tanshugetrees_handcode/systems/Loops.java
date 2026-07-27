@@ -17,6 +17,13 @@ public class Loops {
 
     public static void tick (LevelAccessor level_accessor, ServerLevel level_server) {
 
+        
+
+          
+        // [LMax Fix] 看门狗埋点：更新 tick 时间戳
+        tannyjung.tanshugetrees_handcode.debug.Watchdog.updateTickTime();
+        // [LMax Fix] 看门狗：检查是否有待发送的卡顿报告
+        tannyjung.tanshugetrees_handcode.debug.Watchdog.checkPendingReport(level_server);
         LivingMechanics.Loop.runTick();
 
         if (have_tree_generator == true) {

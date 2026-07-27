@@ -113,17 +113,23 @@ public class ConfigDynamic {
 
         }
 
+        
+
+          
         // Apply
         {
-
+            // 修复：添加详细日志，确认数据注入是否成功执行
             Map<String, Map<String, String>> data = read(default_values, name);
-
-            for (Map.Entry<String, Map<String, String>> entry : data.entrySet()) {
-
-                CacheManager.DataText.setMap("config_" + name, entry.getKey(), entry.getValue());
-
+            System.out.println("[THT-DEBUG] ConfigDynamic.reorganize() read data size: " + data.size());
+            
+            if (data.isEmpty()) {
+                Core.logger.warn("[THT-DEBUG] ConfigDynamic.reorganize() - read() returned empty data for name: " + name);
+            } else {
+                for (Map.Entry<String, Map<String, String>> entry : data.entrySet()) {
+                    CacheManager.DataText.setMap("config_" + name, entry.getKey(), entry.getValue());
+                }
+                System.out.println("[THT-DEBUG] ConfigDynamic.reorganize() - injected " + data.size() + " entries into cache for config_" + name);
             }
-
         }
 
     }

@@ -9,6 +9,12 @@ import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.io.File;
+import java.io.InputStream;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.nio.file.StandardCopyOption;
+
 
 public class Handcode {
 
@@ -36,6 +42,27 @@ public class Handcode {
     public static void repairData (ServerLevel level_server) {
 
         FileManager.createEmptyFile(Core.path_config + "/dev/shape_file_converter", true);
+        // [LMax Fix] 初始化时如果主包不存在，立即从 JAR 资源解压内置包
+        // 修复原因：原逻辑中 runCheckUpdate() 在玩家加入100tick后才触发，
+        // 导致首次启动时 custom_packs/ 为空 → dev/temporary/world_gen/ 为空 → 缓存无数据 → 世界生成无树无雪
+        {
+            File main_pack = TannyPackManager.getCurrentFile();
+            if (main_pack.exists() == false) {
+                try {
+                    InputStream stream = Thread.currentThread().getContextClassLoader().getResourceAsStream("#main.zip");
+                    if (stream != null) {
+                        FileManager.createEmptyFile(Core.path_config + "/custom_packs", true);
+                        Files.copy(stream, Path.of(Core.path_config + "/custom_packs/#main.zip"), StandardCopyOption.REPLACE_EXISTING);
+                        stream.close();
+                        Core.logger.info("[THT] Main pack not found in custom_packs, extracted built-in #main.zip from JAR resources");
+                    } else {
+                        Core.logger.warn("[THT] Main pack not found and built-in #main.zip resource is missing from JAR!");
+                    }
+                } catch (Exception e) {
+                    Core.logger.error("[THT] Failed to extract built-in #main.zip from JAR", e);
+                }
+            }
+        }
         CustomPackOrganizing.start(level_server, "functions / presets / world_gen", "presets < _settings / world_gen", "functions / leaf_litter / tree_decoration");
 
         ConfigDynamic.reorganize("world_gen", "world_gen", """
@@ -93,7 +120,12 @@ public class Handcode {
         public static boolean tree_location = false;
         public static boolean world_gen_roots = false;
         public static int max_height_spawn = 0;
+        
+
+          
         public static double unviable_ecology_skip_chance = 0.0;
+        // [P0-2 修复] 高度容差，默认 1，解决超平坦世界中 OCEAN_FLOOR_WG 与 WORLD_SURFACE_WG 1 格偏差导致 terrestrial 树恒触发 unviable ecology
+        public static int unviable_ecology_height_tolerance = 1;
         public static boolean leaf_litter_world_gen = false;
         public static double leaf_litter_world_gen_chance = 0.0;
         public static double leaf_litter_world_gen_chance_coniferous = 0.0;
@@ -108,8 +140,14 @@ public class Handcode {
         public static int surface_smoothness_detection_percent = 0;
         public static int surface_smoothness_detection_height_up = 0;
         public static int surface_smoothness_detection_height_down = 0;
-        public static int structure_detection_size = 0;
+        
 
+          
+        public static int structure_detection_size = 0;
+        // [P1 修复] testFallenArea 性能优化：限制 getHeightWorldGen 调用次数，防止大树形状导致大量高度查询卡顿
+        public static int test_fallen_area_max_height_checks = 64;
+        // [P2 修复] Structure Detection 性能优化：限制扫描 chunk 数量，防止大范围扫描导致卡顿
+        public static int structure_detection_max_chunks = 64;
         public static boolean living_mechanics = false;
         public static int living_mechanics_tick = 0;
         public static int living_mechanics_process_limit = 0;
@@ -159,7 +197,19 @@ public class Handcode {
         public static int deferred_queue_retry_limit = 400; // DeferredQueue 最大重试次数 (原200)
         public static int deferred_queue_process_per_tick = 4; // DeferredQueue 每 tick 处理任务数 (原100)
         public static int bin_convert_futures_max_entries = 256; // bin_convert_futures 最大条目数 (原64)
+        
+
+          
+        
+
+          
         public static int cache_other_region_max = 256; // TreeLocation cache_other_region 最大区域数 (原64)
+
+        // [方向A重构] PendingBlocks 配置
+        public static int pending_blocks_max_chunks = 1024; // PendingBlocks 缓存的最大 chunk 数，超出时淘汰最旧条目
+        // [LMax Fix] 看门狗配置
+        public static boolean watchdog_enabled = true; // 是否启用看门狗主线程卡顿监控
+        public static long watchdog_threshold_ms = 50; // 看门狗触发阈值（毫秒），正常 tick 为 50ms
 
         public static void repair (String start, String end) {
 
@@ -186,8 +236,14 @@ public class Handcode {
                     max_height_spawn = 0
                     | Cancel the trees when their spawn center is above this Y level. As some world gen mods such as ReTerraForged, replacing mountain block and my trees can't detect those new block, make them spawn on blocks that not in the list. Set to 0 to disable this.
                     
+        
+
+          
                     unviable_ecology_skip_chance = 0.75
                     | Skip trees that generate in unviable ecosystems. For example, land trees that generate in water. This config only affect to dead trees, as normal trees already skip generate in unviable ecosystems.
+
+                    unviable_ecology_height_tolerance = 1
+                    | Height tolerance (in blocks) for terrestrial tree viability check. If the difference between OCEAN_FLOOR_WG and WORLD_SURFACE_WG height is within this tolerance, the tree will NOT be marked as unviable ecology. Set to 0 for strict check. Default 1 to handle superflat worlds where getBaseHeight noise may cause 1-block offset.
                     
                     leaf_litter_world_gen = true
                     leaf_litter_world_gen_chance = 0.1
@@ -224,9 +280,17 @@ public class Handcode {
                     surface_smoothness_detection_height_down = 25
                     | Set height down of surface smoothness. Set to 100 for same as Y size of the tree below its center.
                     
+        
+
+          
                     structure_detection_size = 0
                     | Cancel trees if they detect structure in their area based from their size. This number will be plus with their size, higher number bigger distance. Note that this feature is not perfect, trees with long size might not be canceled. Only support number between is 0 to 9. Set to 0 for only chunks that marked as having structures. Set to -1 to disable this feature.
-                    
+
+                    test_fallen_area_max_height_checks = 64
+                    | Maximum number of getHeightWorldGen calls in testFallenArea. Large tree shapes can trigger hundreds of height queries causing lag. Lower this to improve performance at the cost of fallen tree placement accuracy. Set to 0 for unlimited.
+
+                    structure_detection_max_chunks = 64
+                    | Maximum number of chunks to scan during structure detection. Large tree sizes can cause scanning of many chunks leading to lag. Lower this to improve performance. Set to 0 for unlimited.
                     ----------------------------------------------------------------------------------------------------
                     Living Mechanics
                     ----------------------------------------------------------------------------------------------------
@@ -334,13 +398,28 @@ public class Handcode {
 
                     bin_convert_futures_max_entries = 256
                     | Maximum number of region futures cached in memory for binary data conversion.
+        
 
+          
                     cache_other_region_max = 256
                     | Maximum number of other region caches to keep in memory for tree location distance tests.
-                    | Maximum number of region futures cached in memory for binary data conversion.
 
-                    cache_other_region_max = 64
+                    pending_blocks_max_chunks = 1024
+                    | Maximum number of chunks in PendingBlocks cache for cross-chunk tree placement. Older entries will be evicted when limit is reached.
+
+          
+                    cache_other_region_max = 256
                     | Maximum number of other region caches to keep in memory for tree location distance tests.
+
+                    ----------------------------------------------------------------------------------------------------
+                    Watchdog
+                    ----------------------------------------------------------------------------------------------------
+
+                    watchdog_enabled = true
+                    | Enable watchdog to monitor server thread stalls. When the server thread is stuck for longer than the threshold, a full stack trace will be printed to latest.log.
+
+                    watchdog_threshold_ms = 50
+                    | Watchdog trigger threshold in milliseconds. A normal tick is 50ms. Increase this if the watchdog is too sensitive.
                     ----------------------------------------------------------------------------------------------------
                     Miscellaneous
                     ----------------------------------------------------------------------------------------------------
@@ -361,7 +440,12 @@ public class Handcode {
             tree_location = Boolean.parseBoolean(data.get("tree_location"));
             world_gen_roots = Boolean.parseBoolean(data.get("world_gen_roots"));
             max_height_spawn = Integer.parseInt(data.get("max_height_spawn"));
+        
+
+          
             unviable_ecology_skip_chance = Double.parseDouble(data.get("unviable_ecology_skip_chance"));
+            // [P0-2 修复] 高度容差：terrestrial 树在 OCEAN_FLOOR_WG 和 WORLD_SURFACE_WG 高度差 <= tolerance 时不触发 unviable ecology
+            unviable_ecology_height_tolerance = Integer.parseInt(data.get("unviable_ecology_height_tolerance"));
             leaf_litter_world_gen = Boolean.parseBoolean(data.get("leaf_litter_world_gen"));
             leaf_litter_world_gen_chance = Double.parseDouble(data.get("leaf_litter_world_gen_chance"));
             leaf_litter_world_gen_chance_coniferous = Double.parseDouble(data.get("leaf_litter_world_gen_chance_coniferous"));
@@ -376,8 +460,14 @@ public class Handcode {
             surface_smoothness_detection_percent = Integer.parseInt(data.get("surface_smoothness_detection_percent"));
             surface_smoothness_detection_height_up = Integer.parseInt(data.get("surface_smoothness_detection_height_up"));
             surface_smoothness_detection_height_down = Integer.parseInt(data.get("surface_smoothness_detection_height_down"));
-            structure_detection_size = Integer.parseInt(data.get("structure_detection_size"));
+        
 
+          
+            structure_detection_size = Integer.parseInt(data.get("structure_detection_size"));
+            // [P1 修复] testFallenArea 性能优化配置解析
+            test_fallen_area_max_height_checks = Integer.parseInt(data.get("test_fallen_area_max_height_checks"));
+            // [P2 修复] Structure Detection 性能优化配置解析
+            structure_detection_max_chunks = Integer.parseInt(data.get("structure_detection_max_chunks"));
             living_mechanics = Boolean.parseBoolean(data.get("living_mechanics"));
             living_mechanics_tick = Integer.parseInt(data.get("living_mechanics_tick"));
             living_mechanics_process_limit = Integer.parseInt(data.get("living_mechanics_process_limit"));
@@ -415,15 +505,31 @@ public class Handcode {
         
 
           
-            world_gen_icon = Boolean.parseBoolean(data.get("world_gen_icon"));
+        
 
+          
+            cache_other_region_max = Integer.parseInt(data.get("cache_other_region_max"));
+
+            // [方向A重构] PendingBlocks 配置解析
+            pending_blocks_max_chunks = Integer.parseInt(data.get("pending_blocks_max_chunks"));
             // [LMax Fix V7] 内存管理配置解析
             memory_cache_max_entries = Integer.parseInt(data.get("memory_cache_max_entries"));
             deferred_queue_max_size = Integer.parseInt(data.get("deferred_queue_max_size"));
             deferred_queue_retry_limit = Integer.parseInt(data.get("deferred_queue_retry_limit"));
             deferred_queue_process_per_tick = Integer.parseInt(data.get("deferred_queue_process_per_tick"));
             bin_convert_futures_max_entries = Integer.parseInt(data.get("bin_convert_futures_max_entries"));
+        
+
+          
             cache_other_region_max = Integer.parseInt(data.get("cache_other_region_max"));
+
+            // [LMax Fix] 看门狗配置解析与启动
+            watchdog_enabled = Boolean.parseBoolean(data.get("watchdog_enabled"));
+            watchdog_threshold_ms = Long.parseLong(data.get("watchdog_threshold_ms"));
+            if (watchdog_enabled) {
+                tannyjung.tanshugetrees_handcode.debug.Watchdog.thresholdMs = watchdog_threshold_ms;
+                tannyjung.tanshugetrees_handcode.debug.Watchdog.start();
+            }
         }
 
     }

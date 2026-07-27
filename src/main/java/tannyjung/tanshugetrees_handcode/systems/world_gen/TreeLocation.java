@@ -127,57 +127,84 @@ public class TreeLocation {
         });
     }
 
+        
+
+          
+        
+
+          
     public static void start(LevelAccessor level_accessor, String dimension, ChunkPos chunk_pos) {
         Map<String, Map<String, String>> data = ConfigDynamic.getData("world_gen");
-        if (data.isEmpty() == false) {
-            TreeLocation.run(level_accessor, dimension, chunk_pos, data);
+        System.out.println("[THT-DEBUG] TreeLocation.start() called. Data empty: " + data.isEmpty() + ", Data size: " + data.size());
+        // 修复：data 为空时显式记录警告日志，而非静默跳过
+        if (data.isEmpty()) {
+            Core.logger.warn("[THT-DEBUG] TreeLocation.start() - config_world_gen data is empty! Tree generation will be skipped.");
+            return;
         }
+        TreeLocation.run(level_accessor, dimension, chunk_pos, data);
 }
+        
+
+          
     public static void run(LevelAccessor level_accessor, String dimension, ChunkPos chunk_pos, Map<String, Map<String, String>> data) {
+        // 修复：添加详细日志，追踪大树生成流程
+        System.out.println("[THT-DEBUG] TreeLocation.run() started - dimension: " + dimension + ", chunk: " + chunk_pos);
+        
+        // 检查传入数据是否为空
+        if (data == null || data.isEmpty()) {
+            Core.logger.warn("[THT-DEBUG] TreeLocation.run() - data parameter is null or empty! This may be why trees don't generate.");
+            System.out.println("[THT-DEBUG] TreeLocation.run() - data is null or empty, returning early");
+            return;
+        } else {
+            System.out.println("[THT-DEBUG] TreeLocation.run() - data size: " + data.size() + " entries");
+        }
+        
         int regionX = chunk_pos.x >> 5;
         int regionZ = chunk_pos.z >> 5;
         String regionKey = dimension + "," + regionX + "," + regionZ;
+        
+        // [LMax Fix V15] 修复空块 bug：原代码检查了 scanned_regions 但没有 return，
+        // 导致已扫描的区域每次都重新执行文件检查和可能的重复扫描
+        if (scanned_regions.contains(regionKey)) {
+            return;
+        }
 
-        // [Poker Agent Fix] 使用 Region 级别的锁，确保同一 Region 的扫描和文件创建只发生一次
-        Object regionLock = region_locks.computeIfAbsent(regionKey, k -> new Object());
+        File file_region = new File(Core.path_world_mod + "/world_gen/regions/" + dimension + "/" + regionX + "," + regionZ + ".bin");
 
-        synchronized (regionLock) {
-            // 快速路径：如果内存中已记录扫描完毕，直接跳过
-            if (scanned_regions.contains(regionKey)) {
-                return;
-            }
+        // 如果文件已存在，说明之前已经扫描过，记录到内存缓存并跳过
+        if (file_region.exists()) {
+            scanned_regions.add(regionKey);
+            return;
+        }
 
-            File file_region = new File(Core.path_world_mod + "/world_gen/regions/" + dimension + "/" + regionX + "," + regionZ + ".bin");
+        FileManager.writeBIN(file_region.getPath(), new ArrayList<>(), false);
+        world_gen_overlay_animation.set(4);
+        world_gen_overlay_bar.set(0);
+        if (Handcode.Config.world_gen_icon == true) {
+            CompletableFuture.runAsync(TreeLocation::scanning_overlay_loop);
+        }
 
-            // 如果文件已存在，说明之前已经扫描过，记录到内存缓存并跳过
-            if (file_region.exists()) {
-                scanned_regions.add(regionKey);
-                return;
-            }
-
-            FileManager.writeBIN(file_region.getPath(), new ArrayList<>(), false);
-            world_gen_overlay_animation.set(4);
-            world_gen_overlay_bar.set(0);
-            if (Handcode.Config.world_gen_icon == true) {
-                CompletableFuture.runAsync(TreeLocation::scanning_overlay_loop);
-            }
-
-            // Scanning
-            {
-                int posX = regionX * 32;
-                int posZ = regionZ * 32;
-                ChunkPos chunk_pos_scan = null;
-                for (int scanX = 0; scanX < 32; scanX++) {
-                    for (int scanZ = 0; scanZ < 32; scanZ++) {
-                        world_gen_overlay_bar.incrementAndGet();
-                        chunk_pos_scan = new ChunkPos(posX + scanX, posZ + scanZ);
-                        RandomSource random = RandomSource.create(level_accessor.getServer().overworld().getSeed() ^ ((chunk_pos_scan.x * 341873128712L) + (chunk_pos_scan.z * 132897987541L)));
-                        if (random.nextDouble() < Handcode.Config.region_scan_percent * 0.01) {
-                            getData(level_accessor, dimension, chunk_pos_scan, data);
-                        }
+        // Scanning
+        {
+            int posX = regionX * 32;
+            int posZ = regionZ * 32;
+            ChunkPos chunk_pos_scan = null;
+            long scan_start = System.currentTimeMillis();
+            int scan_count = 0;
+            for (int scanX = 0; scanX < 32; scanX++) {
+                for (int scanZ = 0; scanZ < 32; scanZ++) {
+                    world_gen_overlay_bar.incrementAndGet();
+                    chunk_pos_scan = new ChunkPos(posX + scanX, posZ + scanZ);
+                    RandomSource random = RandomSource.create(level_accessor.getServer().overworld().getSeed() ^ ((chunk_pos_scan.x * 341873128712L) + (chunk_pos_scan.z * 132897987541L)));
+                    if (random.nextDouble() < Handcode.Config.region_scan_percent * 0.01) {
+                        getData(level_accessor, dimension, chunk_pos_scan, data);
+                        scan_count++;
                     }
                 }
             }
+            long scan_time = System.currentTimeMillis() - scan_start;
+            Core.logger.info("[THT-DEBUG] Region " + regionKey + " scan completed: " + scan_count + " chunks scanned in " + scan_time + "ms");
+        }
 
         
 
@@ -191,9 +218,11 @@ public class TreeLocation {
         
       
             Core.logger.info("Completed!");
+        
+
+          
             // [Poker Agent Fix] 彻底移除全局 clear() 调用。在并发环境下，一个 Region 扫描完成不应清空全局缓存，
             // 这会导致其他正在生成的区块丢失数据并引发 NPE。缓存生命周期应由系统统一管理。
-        }
     }
 
     private static void scanning_overlay_loop() {

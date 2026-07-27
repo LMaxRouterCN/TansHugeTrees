@@ -77,7 +77,13 @@ public class CustomPackOrganizing {
             }
 
             pack_separate_multiple = " / " + pack_separate_multiple + " / ";
+        
+
+          
+            pack_separate_multiple = " / " + pack_separate_multiple + " / ";
             File main_pack = TannyPackManager.getCurrentFile();
+            System.out.println("[THT-DEBUG] CustomPackOrganizing main_pack: " + (main_pack != null ? main_pack.getPath() : "null") + ", exists: " + (main_pack != null && main_pack.exists()));
+            System.out.println("[THT-DEBUG] CustomPackOrganizing custom_packs count: " + (packs != null ? packs.length : 0));
 
             if (main_pack.exists() == true) {
 

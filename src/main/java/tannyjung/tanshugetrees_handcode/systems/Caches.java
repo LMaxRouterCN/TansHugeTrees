@@ -24,72 +24,87 @@ public class Caches {
     public static class TreeShape {
 
         // [LMax Fix V13] 添加 synchronized 保证多线程下文件加载的安全，防止 CacheManager 内部非线程安全导致的死锁
-        private static synchronized void getTreeShape (String id) {
-            // [LMax Fix V13] 避免在锁竞争后重复加载已缓存的数据
+        // [LMax Fix V15] 废除类级 synchronized，改为 per-key 锁。
+        // 原代码 synchronized 静态方法导致所有区块生成线程串行化，
+        // 在出生点区块生成时（~441个区块并发）造成极端锁竞争，世界生成卡死在0%。
+        private static final java.util.concurrent.ConcurrentHashMap<String, Object> shape_locks = new java.util.concurrent.ConcurrentHashMap<>();
+
+        private static void getTreeShape (String id) {
+            // 快速路径：已缓存则直接返回（无锁）
             if (CacheManager.DataShort.getArray("tree_shape_size").containsKey(id)) {
                 return;
             }
 
-            short[] data_size = null;
-            int[] data_block_count = null;
-            short[] data_shape = null;
+            // per-key 锁：只有加载同一个形状文件的线程才互相等待，不同形状文件可以并发加载
+            Object lock = shape_locks.computeIfAbsent(id, k -> new Object());
+            synchronized (lock) {
+                // 双重检查：可能在等锁期间已被其他线程加载
+                if (CacheManager.DataShort.getArray("tree_shape_size").containsKey(id)) {
+                    return;
+                }
 
-            // Get Data
-            {
-                String path = "";
+                short[] data_size = null;
+                int[] data_block_count = null;
+                short[] data_shape = null;
 
-                // Get path
+                // Get Data
                 {
-                    try {
-                        String[] split = id.split("\\|");
-                        path = Core.path_config + "/dev/temporary/" + split[0] + "/" + split[1];
-                    } catch (Exception exception) {
-                        OutsideUtils.exception(new Exception(), exception, "");
-                        return;
-                    }
-                }
+                    String path = "";
 
-                ByteBuffer buffer = FileManager.readBIN(path);
-
-                if (buffer.remaining() > 0) {
-                    // Size
+                    // Get path
                     {
-                        int count = 6;
-                        data_size = new short[count];
-
-                        for (int number = 0; number < count; number++) {
-                            data_size[number] = buffer.getShort();
+                        try {
+                            String[] split = id.split("\\|");
+                            path = Core.path_config + "/dev/temporary/" + split[0] + "/" + split[1];
+                        } catch (Exception exception) {
+                            OutsideUtils.exception(new Exception(), exception, "");
+                            return;
                         }
                     }
 
-                    // Block Count
-                    {
-                        int count = 6;
-                        data_block_count = new int[count];
+                    ByteBuffer buffer = FileManager.readBIN(path);
 
-                        for (int number = 0; number < count; number++) {
-                            data_block_count[number] = buffer.getInt();
+                    if (buffer.remaining() > 0) {
+                        // Size
+                        {
+                            int count = 6;
+                            data_size = new short[count];
+
+                            for (int number = 0; number < count; number++) {
+                                data_size[number] = buffer.getShort();
+                            }
+                        }
+
+                        // Block Count
+                        {
+                            int count = 6;
+                            data_block_count = new int[count];
+
+                            for (int number = 0; number < count; number++) {
+                                data_block_count[number] = buffer.getInt();
+                            }
+                        }
+
+                        // Shape
+                        {
+                            ShortBuffer buffer_convert = buffer.asShortBuffer();
+                            data_shape = new short[buffer_convert.remaining()];
+                            buffer_convert.get(data_shape);
                         }
                     }
-
-                    // Shape
-                    {
-                        ShortBuffer buffer_convert = buffer.asShortBuffer();
-                        data_shape = new short[buffer_convert.remaining()];
-                        buffer_convert.get(data_shape);
-                    }
                 }
+
+                if (data_size == null) data_size = new short[0];
+                if (data_block_count == null) data_block_count = new int[0];
+                if (data_shape == null) data_shape = new short[0];
+
+                CacheManager.DataShort.setArray("tree_shape_size", id, data_size);
+                CacheManager.DataInt.setArray("tree_shape_block_count", id, data_block_count);
+                CacheManager.DataShort.setArray("tree_shape_data", id, data_shape);
             }
-
-            if (data_size == null) data_size = new short[0];
-            if (data_block_count == null) data_block_count = new int[0];
-            if (data_shape == null) data_shape = new short[0];
-
-            CacheManager.DataShort.setArray("tree_shape_size", id, data_size);
-            CacheManager.DataInt.setArray("tree_shape_block_count", id, data_block_count);
-            CacheManager.DataShort.setArray("tree_shape_data", id, data_shape);
+            // 加载完成后移除锁对象，防止 shape_locks 无限增长
+            shape_locks.remove(id);
         }
-
         public static short[] getTreeShapeSize (String id) {
             // [Poker Agent Fix] 优化延迟加载逻辑，减少对 CacheManager 的重复调用
             Map<String, short[]> cache = CacheManager.DataShort.getArray("tree_shape_size");
@@ -130,99 +145,102 @@ public class Caches {
         // [执行代号22 - 任务 4.1] 引入 BlockState 缓存，避免每次种树都重新解析文本，解决 TPS 尖峰
         private static final Map<String, Map<Short, BlockState>> blockStateCache = new java.util.concurrent.ConcurrentHashMap<>();
 
-        
+        // [LMax Fix V15] 废除类级 synchronized，改为 per-key 锁（同 TreeShape 修复）
+        private static final java.util.concurrent.ConcurrentHashMap<String, Object> settings_locks = new java.util.concurrent.ConcurrentHashMap<>();
 
-          
-        private static synchronized void get (String id) {
+        private static void get (String id) {
 
-        
-      
-            // [执行代号22 - 任务 4.1] 数据更新时清除旧的 BlockState 缓存
-            blockStateCache.remove(id);
+            // 快速路径：已缓存则直接返回（无锁）
+            if (CacheManager.DataText.getMap("tree_settings_normal").containsKey(id)) {
+                return;
+            }
 
-            Map<String, String> data_normal = new HashMap<>();
-            Map<String, String> data_block = new HashMap<>();
-            Map<String, String> data_function = new HashMap<>();
-            Set<Short> data_keep = new HashSet<>();
-            short[] data_leaves_type = new short[2];
-
-            // Get Data
-            {
-                String[] split = null;
-                String key = "";
-                String value = "";
-                byte leaves_type = 0;
-
-                // [执行代号22 - 任务 4.1] 捕获文件不存在的异常，防止 NPE 打断流程并确保后续缓存空数据
-                List<String> lines = null;
-                try {
-        
-
-          
-        
-
-          
-        
-
-          
-                    lines = new ArrayList<>(java.util.Arrays.asList(FileManager.readTXT(Core.path_config + "/dev/temporary/" + id + ".txt")));
-                } catch (Exception e) {
-                    lines = new ArrayList<>();
+            Object lock = settings_locks.computeIfAbsent(id, k -> new Object());
+            synchronized (lock) {
+                // 双重检查
+                if (CacheManager.DataText.getMap("tree_settings_normal").containsKey(id)) {
+                    return;
                 }
-                if (lines == null) lines = new ArrayList<>();
 
-                for (String scan : lines) {
-                    if (scan.isEmpty() == false) {
-                        try {
-                            split = scan.split(" = ");
-                            key = split[0];
-                            value = split[1];
-                        } catch (Exception exception) {
-                            OutsideUtils.exception(new Exception(), exception, "");
-                            break;
-                        }
+                // [执行代号22 - 任务 4.1] 数据更新时清除旧的 BlockState 缓存
+                blockStateCache.remove(id);
 
-                        if (key.startsWith("Block ") == true) {
-                            {
-                                key = key.substring("Block ### ".length());
+                Map<String, String> data_normal = new HashMap<>();
+                Map<String, String> data_block = new HashMap<>();
+                Map<String, String> data_function = new HashMap<>();
+                Set<Short> data_keep = new HashSet<>();
+                short[] data_leaves_type = new short[2];
 
-                                if (value.endsWith(" keep") == true) {
-                                    value = value.substring(0, value.length() - " keep".length());
-                                    data_keep.add(Short.parseShort(key));
-                                }
+                // Get Data
+                {
+                    String[] split = null;
+                    String key = "";
+                    String value = "";
+                    byte leaves_type = 0;
 
-                                data_block.put(key, value);
+                    // [执行代号22 - 任务 4.1] 捕获文件不存在的异常，防止 NPE 打断流程并确保后续缓存空数据
+                    List<String> lines = null;
+                    try {
+                        lines = new ArrayList<>(java.util.Arrays.asList(FileManager.readTXT(Core.path_config + "/dev/temporary/" + id + ".txt")));
+                    } catch (Exception e) {
+                        lines = new ArrayList<>();
+                    }
+                    if (lines == null) lines = new ArrayList<>();
 
-                                if (key.startsWith("120") == true) {
-                                    if (value.endsWith("]") == true) {
-                                        value = value.substring(0, value.indexOf("["));
-                                    }
-
-                                    leaves_type = Byte.parseByte(key.substring("120".length()));
-
-                                    if (Handcode.Config.deciduous_leaves_list.contains(value) == true) {
-                                        data_leaves_type[leaves_type] = 1;
-                                    } else if (Handcode.Config.coniferous_leaves_list.contains(value) == true) {
-                                        data_leaves_type[leaves_type] = 2;
-                                    }
-                                }
+                    for (String scan : lines) {
+                        if (scan.isEmpty() == false) {
+                            try {
+                                split = scan.split(" = ");
+                                key = split[0];
+                                value = split[1];
+                            } catch (Exception exception) {
+                                OutsideUtils.exception(new Exception(), exception, "");
+                                break;
                             }
-                        } else if (key.startsWith("Function ") == true) {
-                            key = key.substring("Function ## ".length());
-                            data_function.put(key, value);
-                        } else {
-                            data_normal.put(key, value);
+
+                            if (key.startsWith("Block ") == true) {
+                                {
+                                    key = key.substring("Block ### ".length());
+
+                                    if (value.endsWith(" keep") == true) {
+                                        value = value.substring(0, value.length() - " keep".length());
+                                        data_keep.add(Short.parseShort(key));
+                                    }
+
+                                    data_block.put(key, value);
+
+                                    if (key.startsWith("120") == true) {
+                                        if (value.endsWith("]") == true) {
+                                            value = value.substring(0, value.indexOf("["));
+                                        }
+
+                                        leaves_type = Byte.parseByte(key.substring("120".length()));
+
+                                        if (Handcode.Config.deciduous_leaves_list.contains(value) == true) {
+                                            data_leaves_type[leaves_type] = 1;
+                                        } else if (Handcode.Config.coniferous_leaves_list.contains(value) == true) {
+                                            data_leaves_type[leaves_type] = 2;
+                                        }
+                                    }
+                                }
+                            } else if (key.startsWith("Function ") == true) {
+                                key = key.substring("Function ## ".length());
+                                data_function.put(key, value);
+                            } else {
+                                data_normal.put(key, value);
+                            }
                         }
                     }
                 }
-            }
 
-            // [执行代号22 - 任务 4.1] 无论文件是否存在，都缓存结果，彻底解决缓存穿透
-            CacheManager.DataText.setMap("tree_settings_normal", id, data_normal);
-            CacheManager.DataText.setMap("tree_settings_block", id, data_block);
-            CacheManager.DataText.setMap("tree_settings_function", id, data_function);
-            CacheManager.DataShort.setSet("tree_settings_keep", id, data_keep);
-            CacheManager.DataShort.setArray("tree_settings_leaves_type", id, data_leaves_type);
+                // [执行代号22 - 任务 4.1] 无论文件是否存在，都缓存结果，彻底解决缓存穿透
+                CacheManager.DataText.setMap("tree_settings_normal", id, data_normal);
+                CacheManager.DataText.setMap("tree_settings_block", id, data_block);
+                CacheManager.DataText.setMap("tree_settings_function", id, data_function);
+                CacheManager.DataShort.setSet("tree_settings_keep", id, data_keep);
+                CacheManager.DataShort.setArray("tree_settings_leaves_type", id, data_leaves_type);
+            }
+            settings_locks.remove(id);
         }
 
         public static Map<String, String> getNormal (String id) {

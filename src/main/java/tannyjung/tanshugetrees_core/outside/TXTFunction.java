@@ -434,7 +434,13 @@ public class TXTFunction {
 
                                                                     if (chunk_loaded == true) {
 
+        
+
+          
                                                                         String variable_text_final = variable_text;
+
+                                                                        // [P1 修复] 记录命令来源脚本路径，用于追踪 fillbiome 等卡顿命令的来源
+                                                                        Core.logger.info("[TST TXTFunction] Command from script '{}' at {} : {}", path, pos, variable_text_final);
 
                                                                         level_server.getServer().execute(() -> {
 
@@ -505,6 +511,12 @@ public class TXTFunction {
         if (level_server.isPositionEntityTicking(entity.blockPosition()) == true) {
 
             for (String command : GameUtils.Data.getEntityText(entity, "command").replace("*", "'").replace("$", "\"").split("\\|")) {
+
+        
+
+          
+                // [P1 修复] 记录延迟命令执行，用于追踪 fillbiome 等卡顿命令的来源
+                Core.logger.info("[TST TXTFunction] Delayed command at {} : {}", entity.position(), command);
 
                 level_server.getServer().execute(() -> {
 

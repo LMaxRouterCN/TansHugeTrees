@@ -15,11 +15,16 @@ public class WorldGenStepBeforePlants extends Feature <NoneFeatureConfiguration>
     public WorldGenStepBeforePlants() {
 
         super(NoneFeatureConfiguration.CODEC);
+        // [诊断] 确认 Feature 是否被注册实例化
+        System.out.println("[THT-DEBUG] WorldGenStepBeforePlants constructor called - Feature registered!");
 
     }
 
     @Override
-    public boolean place (FeaturePlaceContext <NoneFeatureConfiguration> context) {
+    public boolean place(FeaturePlaceContext<NoneFeatureConfiguration> context) {
+
+        // [诊断] 确认 MC 是否调用了 place()
+        System.out.println("[THT-DEBUG] WorldGenStepBeforePlants.place() called! Origin: " + context.origin());
 
         LevelAccessor level_accessor = context.level();
         ServerLevel level_server = context.level().getLevel();

@@ -38,10 +38,6 @@ public class CacheManager {
         private static final Map<String, Map<String, boolean[]>> array = new ConcurrentHashMap<>();
         private static final Map<String, Map<String, List<Boolean>>> list = new ConcurrentHashMap<>();
         private static final Map<String, Map<String, Map<String, Boolean>>> map = new ConcurrentHashMap<>();
-        private static final Object lock_normal = new Object();
-        private static final Object lock_array = new Object();
-        private static final Object lock_list = new Object();
-        private static final Object lock_map = new Object();
 
         private static int clear () {
 
@@ -50,80 +46,72 @@ public class CacheManager {
             // Normal
             {
 
-                synchronized (lock_normal) {
 
-                    for (Map.Entry<String, Map<String, Boolean>> entry : normal.entrySet()) {
+                for (Map.Entry<String, Map<String, Boolean>> entry : normal.entrySet()) {
 
-                        size = size + entry.getValue().size();
-
-                    }
-
-                    normal.clear();
+                    size = size + entry.getValue().size();
 
                 }
+
+                normal.clear();
+
 
             }
 
             // Array
             {
 
-                synchronized (lock_array) {
 
-                    for (Map.Entry<String, Map<String, boolean[]>> entry1 : array.entrySet()) {
+                for (Map.Entry<String, Map<String, boolean[]>> entry1 : array.entrySet()) {
 
-                        for (Map.Entry<String, boolean[]> entry2 : entry1.getValue().entrySet()) {
+                    for (Map.Entry<String, boolean[]> entry2 : entry1.getValue().entrySet()) {
 
-                            size = size + entry2.getValue().length;
-
-                        }
+                        size = size + entry2.getValue().length;
 
                     }
 
-                    array.clear();
-
                 }
+
+                array.clear();
+
 
             }
 
             // List
             {
 
-                synchronized (lock_list) {
 
-                    for (Map.Entry<String, Map<String, List<Boolean>>> entry1 : list.entrySet()) {
+                for (Map.Entry<String, Map<String, List<Boolean>>> entry1 : list.entrySet()) {
 
-                        for (Map.Entry<String, List<Boolean>> entry2 : entry1.getValue().entrySet()) {
+                    for (Map.Entry<String, List<Boolean>> entry2 : entry1.getValue().entrySet()) {
 
-                            size = size + entry2.getValue().size();
-
-                        }
+                        size = size + entry2.getValue().size();
 
                     }
 
-                    list.clear();
-
                 }
+
+                list.clear();
+
 
             }
 
             // Map
             {
 
-                synchronized (lock_map) {
 
-                    for (Map.Entry<String, Map<String, Map<String, Boolean>>> entry1 : map.entrySet()) {
+                for (Map.Entry<String, Map<String, Map<String, Boolean>>> entry1 : map.entrySet()) {
 
-                        for (Map.Entry<String, Map<String, Boolean>> entry2 : entry1.getValue().entrySet()) {
+                    for (Map.Entry<String, Map<String, Boolean>> entry2 : entry1.getValue().entrySet()) {
 
-                            size = size + entry2.getValue().size();
-
-                        }
+                        size = size + entry2.getValue().size();
 
                     }
 
-                    map.clear();
-
                 }
+
+                map.clear();
+
 
             }
 
@@ -133,123 +121,105 @@ public class CacheManager {
 
         public static boolean existNormal (String name, String key) {
 
-            synchronized (lock_normal) {
 
-                return normal.getOrDefault(name, new ConcurrentHashMap<>()).containsKey(key) == true;
+            return normal.computeIfAbsent(name, k -> new ConcurrentHashMap<>()).containsKey(key) == true;
 
-            }
 
         }
 
         public static Map<String, Boolean> getNormal (String name) {
 
-            synchronized (lock_normal) {
 
-                return normal.getOrDefault(name, new ConcurrentHashMap<>());
+            return normal.computeIfAbsent(name, k -> new ConcurrentHashMap<>());
 
-            }
 
         }
 
         public static void setNormal (String name, String key, boolean value) {
 
-            synchronized (lock_normal) {
 
-                if (key == null) {
+            if (key == null) {
 
-                    normal.put(name, new ConcurrentHashMap<>());
+                normal.put(name, new ConcurrentHashMap<>());
 
-                } else {
+            } else {
 
-                    normal.computeIfAbsent(name, create -> new ConcurrentHashMap<>()).put(key, value);
-
-                }
+                normal.computeIfAbsent(name, create -> new ConcurrentHashMap<>()).put(key, value);
 
             }
+
 
         }
 
         public static Map<String, boolean[]> getArray (String name) {
 
-            synchronized (lock_array) {
 
-                return array.getOrDefault(name, new ConcurrentHashMap<>());
+            return array.computeIfAbsent(name, k -> new ConcurrentHashMap<>());
 
-            }
 
         }
 
         public static void setArray (String name, String key, boolean[] value) {
 
-            synchronized (lock_array) {
 
-                if (key == null) {
+            if (key == null) {
 
-                    array.put(name, new ConcurrentHashMap<>());
+                array.put(name, new ConcurrentHashMap<>());
 
-                } else {
+            } else {
 
-                    array.computeIfAbsent(name, create -> new ConcurrentHashMap<>()).put(key, value);
-
-                }
+                array.computeIfAbsent(name, create -> new ConcurrentHashMap<>()).put(key, value);
 
             }
+
 
         }
 
         public static Map<String, List<Boolean>> getList (String name) {
 
-            synchronized (lock_list) {
 
-                return list.getOrDefault(name, new ConcurrentHashMap<>());
+            return list.computeIfAbsent(name, k -> new ConcurrentHashMap<>());
 
-            }
 
         }
 
         public static void setList (String name, String key, List<Boolean> value) {
 
-            synchronized (lock_list) {
 
-                if (key == null) {
+            if (key == null) {
 
-                    list.put(name, new ConcurrentHashMap<>());
+                list.put(name, new ConcurrentHashMap<>());
 
-                } else {
+            } else {
 
-                    list.computeIfAbsent(name, create -> new ConcurrentHashMap<>()).put(key, value);
-
-                }
+                list.computeIfAbsent(name, create -> new ConcurrentHashMap<>()).put(key, value);
 
             }
+
 
         }
 
         public static Map<String, Map<String, Boolean>> getMap (String name) {
 
-            synchronized (lock_map) {
 
-                return map.getOrDefault(name, new ConcurrentHashMap<>());
+            return map.computeIfAbsent(name, k -> new ConcurrentHashMap<>());
 
-            }
 
         }
 
         public static void setMap (String name, String key, Map<String, Boolean> value) {
 
-            synchronized (lock_map) {
 
-                if (key == null) {
+            if (key == null) {
 
-                    map.put(name, new ConcurrentHashMap<>());
+                map.put(name, new ConcurrentHashMap<>());
 
-                } else {
+            } else {
 
-                    map.computeIfAbsent(name, create -> new ConcurrentHashMap<>()).put(key, value);
-
-                }
+                map.computeIfAbsent(name, create -> new ConcurrentHashMap<>()).put(key, value);
 
             }
+
 
         }
 
@@ -262,11 +232,6 @@ public class CacheManager {
         private static final Map<String, Map<String, Set<String>>> set = new ConcurrentHashMap<>();
         private static final Map<String, Map<String, List<String>>> list = new ConcurrentHashMap<>();
         private static final Map<String, Map<String, Map<String, String>>> map = new ConcurrentHashMap<>();
-        private static final Object lock_normal = new Object();
-        private static final Object lock_array = new Object();
-        private static final Object lock_set = new Object();
-        private static final Object lock_list = new Object();
-        private static final Object lock_map = new Object();
 
         private static int clear () {
 
@@ -275,121 +240,111 @@ public class CacheManager {
             // Normal
             {
 
-                synchronized (lock_normal) {
 
-                    for (Map.Entry<String, Map<String, String>> entry1 : normal.entrySet()) {
+                for (Map.Entry<String, Map<String, String>> entry1 : normal.entrySet()) {
 
-                        for (Map.Entry<String, String> entry2 : entry1.getValue().entrySet()) {
+                    for (Map.Entry<String, String> entry2 : entry1.getValue().entrySet()) {
 
-                            size = size + (entry2.getValue().length() * Character.BYTES);
-
-                        }
+                        size = size + (entry2.getValue().length() * Character.BYTES);
 
                     }
 
-                    normal.clear();
-
                 }
+
+                normal.clear();
+
 
             }
 
             // Array
             {
 
-                synchronized (lock_array) {
 
-                    for (Map.Entry<String, Map<String, String[]>> entry1 : array.entrySet()) {
+                for (Map.Entry<String, Map<String, String[]>> entry1 : array.entrySet()) {
 
-                        for (Map.Entry<String, String[]> entry2 : entry1.getValue().entrySet()) {
+                    for (Map.Entry<String, String[]> entry2 : entry1.getValue().entrySet()) {
 
-                            for (String scan : entry2.getValue()) {
+                        for (String scan : entry2.getValue()) {
 
-                                size = size + (scan.length() * Character.BYTES);
-
-                            }
+                            size = size + (scan.length() * Character.BYTES);
 
                         }
 
                     }
 
-                    array.clear();
-
                 }
+
+                array.clear();
+
 
             }
 
             // Set
             {
 
-                synchronized (lock_set) {
 
-                    for (Map.Entry<String, Map<String, Set<String>>> entry1 : set.entrySet()) {
+                for (Map.Entry<String, Map<String, Set<String>>> entry1 : set.entrySet()) {
 
-                        for (Map.Entry<String, Set<String>> entry2 : entry1.getValue().entrySet()) {
+                    for (Map.Entry<String, Set<String>> entry2 : entry1.getValue().entrySet()) {
 
-                            for (String scan : entry2.getValue()) {
+                        for (String scan : entry2.getValue()) {
 
-                                size = size + (scan.length() * Character.BYTES);
-
-                            }
+                            size = size + (scan.length() * Character.BYTES);
 
                         }
 
                     }
 
-                    set.clear();
-
                 }
+
+                set.clear();
+
 
             }
 
             // List
             {
 
-                synchronized (lock_list) {
 
-                    for (Map.Entry<String, Map<String, List<String>>> entry1 : list.entrySet()) {
+                for (Map.Entry<String, Map<String, List<String>>> entry1 : list.entrySet()) {
 
-                        for (Map.Entry<String, List<String>> entry2 : entry1.getValue().entrySet()) {
+                    for (Map.Entry<String, List<String>> entry2 : entry1.getValue().entrySet()) {
 
-                            for (String scan : entry2.getValue()) {
+                        for (String scan : entry2.getValue()) {
 
-                                size = size + (scan.length() * Character.BYTES);
-
-                            }
+                            size = size + (scan.length() * Character.BYTES);
 
                         }
 
                     }
 
-                    list.clear();
-
                 }
+
+                list.clear();
+
 
             }
 
             // Map
             {
 
-                synchronized (lock_map) {
 
-                    for (Map.Entry<String, Map<String, Map<String, String>>> entry1 : map.entrySet()) {
+                for (Map.Entry<String, Map<String, Map<String, String>>> entry1 : map.entrySet()) {
 
-                        for (Map.Entry<String, Map<String, String>> entry2 : entry1.getValue().entrySet()) {
+                    for (Map.Entry<String, Map<String, String>> entry2 : entry1.getValue().entrySet()) {
 
-                            for (Map.Entry<String, String> entry3 : entry2.getValue().entrySet()) {
+                        for (Map.Entry<String, String> entry3 : entry2.getValue().entrySet()) {
 
-                                size = size + (entry3.getValue().length() * Character.BYTES);
-
-                            }
+                            size = size + (entry3.getValue().length() * Character.BYTES);
 
                         }
 
                     }
 
-                    map.clear();
-
                 }
+
+                map.clear();
+
 
             }
 
@@ -399,151 +354,133 @@ public class CacheManager {
 
         public static boolean existNormal (String name, String key) {
 
-            synchronized (lock_normal) {
 
-                return normal.getOrDefault(name, new ConcurrentHashMap<>()).containsKey(key) == true;
+            return normal.computeIfAbsent(name, k -> new ConcurrentHashMap<>()).containsKey(key) == true;
 
-            }
 
         }
 
         public static Map<String, String> getNormal (String name) {
 
-            synchronized (lock_normal) {
 
-                return normal.getOrDefault(name, new ConcurrentHashMap<>());
+            return normal.computeIfAbsent(name, k -> new ConcurrentHashMap<>());
 
-            }
 
         }
 
         public static void setNormal (String name, String key, String value) {
 
-            synchronized (lock_normal) {
 
-                if (key == null) {
+            if (key == null) {
 
-                    normal.put(name, new ConcurrentHashMap<>());
+                normal.put(name, new ConcurrentHashMap<>());
 
-                } else {
+            } else {
 
-                    normal.computeIfAbsent(name, create -> new ConcurrentHashMap<>()).put(key, value);
-
-                }
+                normal.computeIfAbsent(name, create -> new ConcurrentHashMap<>()).put(key, value);
 
             }
+
 
         }
 
         public static Map<String, String[]> getArray (String name) {
 
-            synchronized (lock_array) {
 
-                return array.getOrDefault(name, new ConcurrentHashMap<>());
+            return array.computeIfAbsent(name, k -> new ConcurrentHashMap<>());
 
-            }
 
         }
 
         public static void setArray (String name, String key, String[] value) {
 
-            synchronized (lock_array) {
 
-                if (key == null) {
+            if (key == null) {
 
-                    array.put(name, new ConcurrentHashMap<>());
+                array.put(name, new ConcurrentHashMap<>());
 
-                } else {
+            } else {
 
-                    array.computeIfAbsent(name, create -> new ConcurrentHashMap<>()).put(key, value);
-
-                }
+                array.computeIfAbsent(name, create -> new ConcurrentHashMap<>()).put(key, value);
 
             }
+
 
         }
 
         public static Map<String, Set<String>> getSet (String name) {
 
-            synchronized (lock_set) {
 
-                return set.getOrDefault(name, new ConcurrentHashMap<>());
+            return set.computeIfAbsent(name, k -> new ConcurrentHashMap<>());
 
-            }
 
         }
 
         public static void setSet (String name, String key, Set<String> value) {
 
-            synchronized (lock_set) {
 
-                if (key == null) {
+            if (key == null) {
 
-                    set.put(name, new ConcurrentHashMap<>());
+                set.put(name, new ConcurrentHashMap<>());
 
-                } else {
+            } else {
 
-                    set.computeIfAbsent(name, create -> new ConcurrentHashMap<>()).put(key, value);
-
-                }
+                set.computeIfAbsent(name, create -> new ConcurrentHashMap<>()).put(key, value);
 
             }
+
 
         }
 
         public static Map<String, List<String>> getList (String name) {
 
-            synchronized (lock_list) {
 
-                return list.getOrDefault(name, new ConcurrentHashMap<>());
+            return list.computeIfAbsent(name, k -> new ConcurrentHashMap<>());
 
-            }
 
         }
 
         public static void setList (String name, String key, List<String> value) {
 
-            synchronized (lock_list) {
 
-                if (key == null) {
+            if (key == null) {
 
-                    list.put(name, new ConcurrentHashMap<>());
+                list.put(name, new ConcurrentHashMap<>());
 
-                } else {
+            } else {
 
-                    list.computeIfAbsent(name, create -> new ConcurrentHashMap<>()).put(key, value);
-
-                }
+                list.computeIfAbsent(name, create -> new ConcurrentHashMap<>()).put(key, value);
 
             }
+
 
         }
 
+        
+
+          
         public static Map<String, Map<String, String>> getMap (String name) {
 
-            synchronized (lock_map) {
 
-                return map.getOrDefault(name, new ConcurrentHashMap<>());
+            // 修复：使用 computeIfAbsent 替代 getOrDefault，确保返回的是持久化 Map 而非一次性空 Map
+            return map.computeIfAbsent(name, create -> new ConcurrentHashMap<>());
 
-            }
 
         }
 
         public static void setMap (String name, String key, Map<String, String> value) {
 
-            synchronized (lock_map) {
 
-                if (key == null) {
+            if (key == null) {
 
-                    map.put(name, new ConcurrentHashMap<>());
+                map.put(name, new ConcurrentHashMap<>());
 
-                } else {
+            } else {
 
-                    map.computeIfAbsent(name, create -> new ConcurrentHashMap<>()).put(key, value);
-
-                }
+                map.computeIfAbsent(name, create -> new ConcurrentHashMap<>()).put(key, value);
 
             }
+
 
         }
 
@@ -556,11 +493,6 @@ public class CacheManager {
         private static final Map<String, Map<String, Set<Short>>> set = new ConcurrentHashMap<>();
         private static final Map<String, Map<String, List<Short>>> list = new ConcurrentHashMap<>();
         private static final Map<String, Map<String, Map<String, Short>>> map = new ConcurrentHashMap<>();
-        private static final Object lock_normal = new Object();
-        private static final Object lock_array = new Object();
-        private static final Object lock_set = new Object();
-        private static final Object lock_list = new Object();
-        private static final Object lock_map = new Object();
 
         private static int clear () {
 
@@ -569,101 +501,91 @@ public class CacheManager {
             // Normal
             {
 
-                synchronized (lock_normal) {
 
-                    for (Map.Entry<String, Map<String, Short>> entry : normal.entrySet()) {
+                for (Map.Entry<String, Map<String, Short>> entry : normal.entrySet()) {
 
-                        size = size + (entry.getValue().size() * Short.BYTES);
-
-                    }
-
-                    normal.clear();
+                    size = size + (entry.getValue().size() * Short.BYTES);
 
                 }
+
+                normal.clear();
+
 
             }
 
             // Array
             {
 
-                synchronized (lock_array) {
 
-                    for (Map.Entry<String, Map<String, short[]>> entry1 : array.entrySet()) {
+                for (Map.Entry<String, Map<String, short[]>> entry1 : array.entrySet()) {
 
-                        for (Map.Entry<String, short[]> entry2 : entry1.getValue().entrySet()) {
+                    for (Map.Entry<String, short[]> entry2 : entry1.getValue().entrySet()) {
 
-                            size = size + (entry2.getValue().length * Short.BYTES);
-
-                        }
+                        size = size + (entry2.getValue().length * Short.BYTES);
 
                     }
 
-                    array.clear();
-
                 }
+
+                array.clear();
+
 
             }
 
             // Set
             {
 
-                synchronized (lock_set) {
 
-                    for (Map.Entry<String, Map<String, Set<Short>>> entry1 : set.entrySet()) {
+                for (Map.Entry<String, Map<String, Set<Short>>> entry1 : set.entrySet()) {
 
-                        for (Map.Entry<String, Set<Short>> entry2 : entry1.getValue().entrySet()) {
+                    for (Map.Entry<String, Set<Short>> entry2 : entry1.getValue().entrySet()) {
 
-                            size = size + (entry2.getValue().size() * Short.BYTES);
-
-                        }
+                        size = size + (entry2.getValue().size() * Short.BYTES);
 
                     }
 
-                    set.clear();
-
                 }
+
+                set.clear();
+
 
             }
 
             // List
             {
 
-                synchronized (lock_list) {
 
-                    for (Map.Entry<String, Map<String, List<Short>>> entry1 : list.entrySet()) {
+                for (Map.Entry<String, Map<String, List<Short>>> entry1 : list.entrySet()) {
 
-                        for (Map.Entry<String, List<Short>> entry2 : entry1.getValue().entrySet()) {
+                    for (Map.Entry<String, List<Short>> entry2 : entry1.getValue().entrySet()) {
 
-                            size = size + (entry2.getValue().size() * Short.BYTES);
-
-                        }
+                        size = size + (entry2.getValue().size() * Short.BYTES);
 
                     }
 
-                    list.clear();
-
                 }
+
+                list.clear();
+
 
             }
 
             // Map
             {
 
-                synchronized (lock_map) {
 
-                    for (Map.Entry<String, Map<String, Map<String, Short>>> entry1 : map.entrySet()) {
+                for (Map.Entry<String, Map<String, Map<String, Short>>> entry1 : map.entrySet()) {
 
-                        for (Map.Entry<String, Map<String, Short>> entry2 : entry1.getValue().entrySet()) {
+                    for (Map.Entry<String, Map<String, Short>> entry2 : entry1.getValue().entrySet()) {
 
-                            size = size + (entry2.getValue().size() * Short.BYTES);
-
-                        }
+                        size = size + (entry2.getValue().size() * Short.BYTES);
 
                     }
 
-                    map.clear();
-
                 }
+
+                map.clear();
+
 
             }
 
@@ -673,151 +595,129 @@ public class CacheManager {
 
         public static boolean existNormal (String name) {
 
-            synchronized (lock_normal) {
 
-                return normal.containsKey(name);
+            return normal.containsKey(name);
 
-            }
 
         }
 
         public static Map<String, Short> getNormal (String name) {
 
-            synchronized (lock_normal) {
 
-                return normal.getOrDefault(name, new ConcurrentHashMap<>());
+            return normal.computeIfAbsent(name, k -> new ConcurrentHashMap<>());
 
-            }
 
         }
 
         public static void setNormal (String name, String key, short value) {
 
-            synchronized (lock_normal) {
 
-                if (key == null) {
+            if (key == null) {
 
-                    normal.put(name, new ConcurrentHashMap<>());
+                normal.put(name, new ConcurrentHashMap<>());
 
-                } else {
+            } else {
 
-                    normal.computeIfAbsent(name, create -> new ConcurrentHashMap<>()).put(key, value);
-
-                }
+                normal.computeIfAbsent(name, create -> new ConcurrentHashMap<>()).put(key, value);
 
             }
+
 
         }
 
         public static Map<String, short[]> getArray (String name) {
 
-            synchronized (lock_array) {
 
-                return array.getOrDefault(name, new ConcurrentHashMap<>());
+            return array.computeIfAbsent(name, k -> new ConcurrentHashMap<>());
 
-            }
 
         }
 
         public static void setArray (String name, String key, short[] value) {
 
-            synchronized (lock_array) {
 
-                if (key == null) {
+            if (key == null) {
 
-                    array.put(name, new ConcurrentHashMap<>());
+                array.put(name, new ConcurrentHashMap<>());
 
-                } else {
+            } else {
 
-                    array.computeIfAbsent(name, create -> new ConcurrentHashMap<>()).put(key, value);
-
-                }
+                array.computeIfAbsent(name, create -> new ConcurrentHashMap<>()).put(key, value);
 
             }
+
 
         }
 
         public static Map<String, Set<Short>> getSet (String name) {
 
-            synchronized (lock_set) {
 
-                return set.getOrDefault(name, new ConcurrentHashMap<>());
+            return set.computeIfAbsent(name, k -> new ConcurrentHashMap<>());
 
-            }
 
         }
 
         public static void setSet (String name, String key, Set<Short> value) {
 
-            synchronized (lock_set) {
 
-                if (key == null) {
+            if (key == null) {
 
-                    set.put(name, new ConcurrentHashMap<>());
+                set.put(name, new ConcurrentHashMap<>());
 
-                } else {
+            } else {
 
-                    set.computeIfAbsent(name, create -> new ConcurrentHashMap<>()).put(key, value);
-
-                }
+                set.computeIfAbsent(name, create -> new ConcurrentHashMap<>()).put(key, value);
 
             }
+
 
         }
 
         public static Map<String, List<Short>> getList (String name) {
 
-            synchronized (lock_list) {
 
-                return list.getOrDefault(name, new ConcurrentHashMap<>());
+            return list.computeIfAbsent(name, k -> new ConcurrentHashMap<>());
 
-            }
 
         }
 
         public static void setList (String name, String key, List<Short> value) {
 
-            synchronized (lock_list) {
 
-                if (key == null) {
+            if (key == null) {
 
-                    list.put(name, new ConcurrentHashMap<>());
+                list.put(name, new ConcurrentHashMap<>());
 
-                } else {
+            } else {
 
-                    list.computeIfAbsent(name, create -> new ConcurrentHashMap<>()).put(key, value);
-
-                }
+                list.computeIfAbsent(name, create -> new ConcurrentHashMap<>()).put(key, value);
 
             }
+
 
         }
 
         public static Map<String, Map<String, Short>> getMap (String name) {
 
-            synchronized (lock_map) {
 
-                return map.getOrDefault(name, new ConcurrentHashMap<>());
+            return map.computeIfAbsent(name, k -> new ConcurrentHashMap<>());
 
-            }
 
         }
 
         public static void setMap (String name, String key, Map<String, Short> value) {
 
-            synchronized (lock_map) {
 
-                if (key == null) {
+            if (key == null) {
 
-                    map.put(name, new ConcurrentHashMap<>());
+                map.put(name, new ConcurrentHashMap<>());
 
-                } else {
+            } else {
 
-                    map.computeIfAbsent(name, create -> new ConcurrentHashMap<>()).put(key, value);
-
-                }
+                map.computeIfAbsent(name, create -> new ConcurrentHashMap<>()).put(key, value);
 
             }
+
 
         }
 
@@ -830,11 +730,6 @@ public class CacheManager {
         private static final Map<String, Map<String, Set<Integer>>> set = new ConcurrentHashMap<>();
         private static final Map<String, Map<String, List<Integer>>> list = new ConcurrentHashMap<>();
         private static final Map<String, Map<String, Map<String, Integer>>> map = new ConcurrentHashMap<>();
-        private static final Object lock_normal = new Object();
-        private static final Object lock_array = new Object();
-        private static final Object lock_set = new Object();
-        private static final Object lock_list = new Object();
-        private static final Object lock_map = new Object();
 
         private static int clear () {
 
@@ -843,101 +738,91 @@ public class CacheManager {
             // Normal
             {
 
-                synchronized (lock_normal) {
 
-                    for (Map.Entry<String, Map<String, Integer>> entry : normal.entrySet()) {
+                for (Map.Entry<String, Map<String, Integer>> entry : normal.entrySet()) {
 
-                        size = size + (entry.getValue().size() * Integer.BYTES);
-
-                    }
-
-                    normal.clear();
+                    size = size + (entry.getValue().size() * Integer.BYTES);
 
                 }
+
+                normal.clear();
+
 
             }
 
             // Array
             {
 
-                synchronized (lock_array) {
 
-                    for (Map.Entry<String, Map<String, int[]>> entry1 : array.entrySet()) {
+                for (Map.Entry<String, Map<String, int[]>> entry1 : array.entrySet()) {
 
-                        for (Map.Entry<String, int[]> entry2 : entry1.getValue().entrySet()) {
+                    for (Map.Entry<String, int[]> entry2 : entry1.getValue().entrySet()) {
 
-                            size = size + (entry2.getValue().length * Integer.BYTES);
-
-                        }
+                        size = size + (entry2.getValue().length * Integer.BYTES);
 
                     }
 
-                    array.clear();
-
                 }
+
+                array.clear();
+
 
             }
 
             // Set
             {
 
-                synchronized (lock_set) {
 
-                    for (Map.Entry<String, Map<String, Set<Integer>>> entry1 : set.entrySet()) {
+                for (Map.Entry<String, Map<String, Set<Integer>>> entry1 : set.entrySet()) {
 
-                        for (Map.Entry<String, Set<Integer>> entry2 : entry1.getValue().entrySet()) {
+                    for (Map.Entry<String, Set<Integer>> entry2 : entry1.getValue().entrySet()) {
 
-                            size = size + (entry2.getValue().size() * Integer.BYTES);
-
-                        }
+                        size = size + (entry2.getValue().size() * Integer.BYTES);
 
                     }
 
-                    set.clear();
-
                 }
+
+                set.clear();
+
 
             }
 
             // List
             {
 
-                synchronized (lock_list) {
 
-                    for (Map.Entry<String, Map<String, List<Integer>>> entry1 : list.entrySet()) {
+                for (Map.Entry<String, Map<String, List<Integer>>> entry1 : list.entrySet()) {
 
-                        for (Map.Entry<String, List<Integer>> entry2 : entry1.getValue().entrySet()) {
+                    for (Map.Entry<String, List<Integer>> entry2 : entry1.getValue().entrySet()) {
 
-                            size = size + (entry2.getValue().size() * Integer.BYTES);
-
-                        }
+                        size = size + (entry2.getValue().size() * Integer.BYTES);
 
                     }
 
-                    list.clear();
-
                 }
+
+                list.clear();
+
 
             }
 
             // Map
             {
 
-                synchronized (lock_map) {
 
-                    for (Map.Entry<String, Map<String, Map<String, Integer>>> entry1 : map.entrySet()) {
+                for (Map.Entry<String, Map<String, Map<String, Integer>>> entry1 : map.entrySet()) {
 
-                        for (Map.Entry<String, Map<String, Integer>> entry2 : entry1.getValue().entrySet()) {
+                    for (Map.Entry<String, Map<String, Integer>> entry2 : entry1.getValue().entrySet()) {
 
-                            size = size + (entry2.getValue().size() * Integer.BYTES);
-
-                        }
+                        size = size + (entry2.getValue().size() * Integer.BYTES);
 
                     }
 
-                    map.clear();
-
                 }
+
+                map.clear();
+
 
             }
 
@@ -947,151 +832,129 @@ public class CacheManager {
 
         public static boolean existNormal (String name) {
 
-            synchronized (lock_normal) {
 
-                return normal.containsKey(name);
+            return normal.containsKey(name);
 
-            }
 
         }
 
         public static Map<String, Integer> getNormal (String name) {
 
-            synchronized (lock_normal) {
 
-                return normal.getOrDefault(name, new ConcurrentHashMap<>());
+            return normal.computeIfAbsent(name, k -> new ConcurrentHashMap<>());
 
-            }
 
         }
 
         public static void setNormal (String name, String key, int value) {
 
-            synchronized (lock_normal) {
 
-                if (key == null) {
+            if (key == null) {
 
-                    normal.put(name, new ConcurrentHashMap<>());
+                normal.put(name, new ConcurrentHashMap<>());
 
-                } else {
+            } else {
 
-                    normal.computeIfAbsent(name, create -> new ConcurrentHashMap<>()).put(key, value);
-
-                }
+                normal.computeIfAbsent(name, create -> new ConcurrentHashMap<>()).put(key, value);
 
             }
+
 
         }
 
         public static Map<String, int[]> getArray (String name) {
 
-            synchronized (lock_array) {
 
-                return array.getOrDefault(name, new ConcurrentHashMap<>());
+            return array.computeIfAbsent(name, k -> new ConcurrentHashMap<>());
 
-            }
 
         }
 
         public static void setArray (String name, String key, int[] value) {
 
-            synchronized (lock_array) {
 
-                if (key == null) {
+            if (key == null) {
 
-                    array.put(name, new ConcurrentHashMap<>());
+                array.put(name, new ConcurrentHashMap<>());
 
-                } else {
+            } else {
 
-                    array.computeIfAbsent(name, create -> new ConcurrentHashMap<>()).put(key, value);
-
-                }
+                array.computeIfAbsent(name, create -> new ConcurrentHashMap<>()).put(key, value);
 
             }
+
 
         }
 
         public static Map<String, Set<Integer>> getSet (String name) {
 
-            synchronized (lock_set) {
 
-                return set.getOrDefault(name, new ConcurrentHashMap<>());
+            return set.computeIfAbsent(name, k -> new ConcurrentHashMap<>());
 
-            }
 
         }
 
         public static void setSet (String name, String key, Set<Integer> value) {
 
-            synchronized (lock_set) {
 
-                if (key == null) {
+            if (key == null) {
 
-                    set.put(name, new ConcurrentHashMap<>());
+                set.put(name, new ConcurrentHashMap<>());
 
-                } else {
+            } else {
 
-                    set.computeIfAbsent(name, create -> new ConcurrentHashMap<>()).put(key, value);
-
-                }
+                set.computeIfAbsent(name, create -> new ConcurrentHashMap<>()).put(key, value);
 
             }
+
 
         }
 
         public static Map<String, List<Integer>> getList (String name) {
 
-            synchronized (lock_list) {
 
-                return list.getOrDefault(name, new ConcurrentHashMap<>());
+            return list.computeIfAbsent(name, k -> new ConcurrentHashMap<>());
 
-            }
 
         }
 
         public static void setList (String name, String key, List<Integer> value) {
 
-            synchronized (lock_list) {
 
-                if (key == null) {
+            if (key == null) {
 
-                    list.put(name, new ConcurrentHashMap<>());
+                list.put(name, new ConcurrentHashMap<>());
 
-                } else {
+            } else {
 
-                    list.computeIfAbsent(name, create -> new ConcurrentHashMap<>()).put(key, value);
-
-                }
+                list.computeIfAbsent(name, create -> new ConcurrentHashMap<>()).put(key, value);
 
             }
+
 
         }
 
         public static Map<String, Map<String, Integer>> getMap (String name) {
 
-            synchronized (lock_map) {
 
-                return map.getOrDefault(name, new ConcurrentHashMap<>());
+            return map.computeIfAbsent(name, k -> new ConcurrentHashMap<>());
 
-            }
 
         }
 
         public static void setMap (String name, String key, Map<String, Integer> value) {
 
-            synchronized (lock_map) {
 
-                if (key == null) {
+            if (key == null) {
 
-                    map.put(name, new ConcurrentHashMap<>());
+                map.put(name, new ConcurrentHashMap<>());
 
-                } else {
+            } else {
 
-                    map.computeIfAbsent(name, create -> new ConcurrentHashMap<>()).put(key, value);
-
-                }
+                map.computeIfAbsent(name, create -> new ConcurrentHashMap<>()).put(key, value);
 
             }
+
 
         }
 
