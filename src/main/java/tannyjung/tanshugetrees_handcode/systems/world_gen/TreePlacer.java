@@ -1073,13 +1073,8 @@ public class TreePlacer {
         }
 
     }
-            if (chunk_pos.x != centerX >> 4 || chunk_pos.z != centerZ >> 4) {
-                return;
-            }
+    private static class DetailedDetection {
 
-            // [LMax Debug] 追踪每棵树的放置
-            long tree_start = System.currentTimeMillis();
-            System.out.println("[THT-DEBUG] DetailedDetection: placing tree '" + id + "' at " + centerX + "," + centerZ + " in chunk " + chunk_pos);
         // [方向A重构] 废除 memoryCache：中心 chunk 检测确保每棵树只被处理一次，无需跨 chunk 缓存
 
         private static void test (LevelAccessor level_accessor, ServerLevel level_server, ChunkGenerator chunk_generator, String dimension, ChunkPos chunk_pos, int from_chunkX, int from_chunkZ, int to_chunkX, int to_chunkZ, String id, String chosen, int centerX, int centerZ) {
@@ -1089,6 +1084,9 @@ public class TreePlacer {
                 return;
             }
 
+            // [LMax Debug] 追踪每棵树的放置
+            long tree_start = System.currentTimeMillis();
+            System.out.println("[THT-DEBUG] DetailedDetection: placing tree '" + id + "' at " + centerX + "," + centerZ + " in chunk " + chunk_pos);
             String location = "";
             String path_settings = "";
             String ground_block = "";
