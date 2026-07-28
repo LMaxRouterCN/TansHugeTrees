@@ -122,6 +122,34 @@ public class EventCenter {
         public static void eventWorldStarted (ServerStartedEvent event) {
 
             ServerLevel level_server = event.getServer().overworld();
+
+            // [LMax Debug] 检查 biome modifier 是否生效
+            try {
+                net.minecraft.core.Holder<net.minecraft.world.level.biome.Biome> biome_holder = level_server.getBiome(new net.minecraft.core.BlockPos(0, 64, 0));
+                net.minecraft.world.level.biome.BiomeGenerationSettings gen_settings = biome_holder.value().getGenerationSettings();
+                boolean found = false;
+                for (net.minecraft.core.HolderSet<net.minecraft.world.level.levelgen.placement.PlacedFeature> step_features : gen_settings.features()) {
+                    for (net.minecraft.core.Holder<net.minecraft.world.level.levelgen.placement.PlacedFeature> pf : step_features) {
+                        if (pf.unwrapKey().map(k -> k.location().toString()).orElse("").contains("tanshugetrees")) {
+                            found = true;
+                            System.out.println("[THT-DEBUG] Found tanshugetrees feature in biome: " + pf.unwrapKey().get().location());
+                        }
+                    }
+                }
+                if (!found) {
+                    System.out.println("[THT-DEBUG] WARNING: No tanshugetrees features found in biome at spawn! Biome modifier NOT applied!");
+                    System.out.println("[THT-DEBUG] Biome: " + biome_holder.unwrapKey().map(k -> k.location().toString()).orElse("unknown"));
+                    System.out.println("[THT-DEBUG] Total feature steps: " + gen_settings.features().size());
+                    int total = 0;
+                    for (net.minecraft.core.HolderSet<net.minecraft.world.level.levelgen.placement.PlacedFeature> step_features : gen_settings.features()) {
+                        total += step_features.size();
+                    }
+                    System.out.println("[THT-DEBUG] Total features in biome: " + total);
+                }
+            } catch (Exception e) {
+                System.out.println("[THT-DEBUG] Error checking biome features: " + e);
+            }
+
             Core.restart(level_server, true, false);
 
         }
@@ -133,10 +161,17 @@ public class EventCenter {
 
         }
 
+        private static int chunk_load_count = 0;
+
         @SubscribeEvent
         public static void eventChunkLoaded (ChunkEvent.Load event) {
 
             if (event.isNewChunk() == true) {
+
+                chunk_load_count++;
+                if (chunk_load_count <= 5 || chunk_load_count % 100 == 0) {
+                    System.out.println("[THT-DEBUG] ChunkEvent.Load (new chunk) #" + chunk_load_count + ": " + event.getChunk().getPos());
+                }
 
                 LevelAccessor level_accessor = event.getLevel();
                 ServerLevel level_server = (ServerLevel) level_accessor;

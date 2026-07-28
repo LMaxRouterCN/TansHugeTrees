@@ -522,7 +522,11 @@ public class TreePlacer {
         short posY = 0;
         short posZ = 0;
 
-        for (short scan : Caches.TreeShape.getTreeShapeData(location)) {
+        // [LMax Debug] 追踪形状数据大小
+        short[] shape_data = Caches.TreeShape.getTreeShapeData(location);
+        System.out.println("[THT-DEBUG] placeCalculate '" + id + "' shape blocks: " + shape_data.length);
+
+        for (short scan : shape_data) {
 
             // Loop Skip
             {
@@ -1147,8 +1151,10 @@ public class TreePlacer {
 
                 test:
                 {
-
+                    // [LMax Debug] 检查点：高度查询前
+                    System.out.println("[THT-DEBUG] CP1: before getHeightWorldGen for '" + id + "' at " + centerX + "," + centerZ);
                     BlockPos pos_original = new BlockPos(centerX, GameUtils.Space.getHeightWorldGen(level_accessor, level_server, chunk_generator, centerX, centerZ, "OCEAN_FLOOR_WG", "OCEAN_FLOOR_WG"), centerZ);
+                    System.out.println("[THT-DEBUG] CP2: after getHeightWorldGen, Y=" + pos_original.getY());
 
                     // Ground Level
                     {
@@ -1394,36 +1400,28 @@ public class TreePlacer {
           
             if (pass == true) {
 
+                // [LMax Debug] 追踪 placeCalculate 耗时
+                long pc_start = System.currentTimeMillis();
                 // [方向A重构] 调用 placeCalculate() 替代旧 place()
                 placeCalculate(level_accessor, level_server, chunk_pos, id, location, path_settings, pos_center, rotation_mirrored, dead_tree_level, fallen_direction);
+                long pc_time = System.currentTimeMillis() - pc_start;
+                if (pc_time > 50) {
+                    System.out.println("[THT-DEBUG] placeCalculate '" + id + "' at " + centerX + "," + centerZ + " took " + pc_time + "ms");
+                }
 
-                // [P0-1 修复] 遍历树覆盖的所有 chunk，对已 FULL 的非中心 chunk 立即补写 PendingBlocks
-                // 未 FULL 的加入 DeferredQueue，由 processTick 在 chunk 就绪后补写
-                // 这解决了"中心 chunk 写入 PendingBlocks 后，非中心 chunk 已跑完 start() 导致方块永远丢失"的劈树问题
+                // [LMax Fix V16] 修复死锁：level_server.getChunk() 会阻塞等待目标区块 FULL，
+                // 在多线程区块生成中，两个区块互相等对方 FULL 导致永久死锁。
+                // 修复：全部走 DeferredQueue，不在生成期间直接访问邻近区块。
                 for (int scanX = from_chunkX; scanX <= to_chunkX; scanX++) {
                     for (int scanZ = from_chunkZ; scanZ <= to_chunkZ; scanZ++) {
 
                         ChunkPos target_cp = new ChunkPos(scanX, scanZ);
 
-                        // 跳过中心 chunk（中心 chunk 的 PendingBlocks 已由 start() 末尾的 place() 写入）
                         if (target_cp.equals(chunk_pos)) {
                             continue;
                         }
 
-                        // 检查目标 chunk 是否已 FULL
-                        if (level_server.getChunkSource().hasChunk(scanX, scanZ)) {
-                            net.minecraft.world.level.chunk.ChunkAccess chunk_access = level_server.getChunk(scanX, scanZ);
-                            if (chunk_access.getHighestGeneratedStatus().isOrAfter(net.minecraft.world.level.chunk.ChunkStatus.FULL)) {
-                                // 已 FULL，立即强制补写
-                                PendingBlocks.placeForced(level_server, target_cp);
-                            } else {
-                                // 未 FULL，加入延迟队列等待补写
-                                DeferredQueue.addForced(dimension, chunk_pos, target_cp);
-                            }
-                        } else {
-                            // chunk 未加载，加入延迟队列等待补写
-                            DeferredQueue.addForced(dimension, chunk_pos, target_cp);
-                        }
+                        DeferredQueue.addForced(dimension, chunk_pos, target_cp);
 
                     }
                 }
@@ -1436,11 +1434,11 @@ public class TreePlacer {
 
             if (Handcode.Config.surface_smoothness_detection == true) {
 
-                double distance_multiply = Handcode.Config.surface_smoothness_detection_percent * 0.01;
-                int test_center_sizeX = (int) Math.ceil(center_sizeX * distance_multiply);
-                int test_center_sizeZ = (int) Math.ceil(center_sizeZ * distance_multiply);
-                int test_sizeX = (int) Math.ceil((sizeX - center_sizeX) * distance_multiply);
-                int test_sizeZ = (int) Math.ceil((sizeZ - center_sizeZ) * distance_multiply);
+                int test_sizeX = sizeX - center_sizeX;
+                int test_sizeZ = sizeZ - center_sizeZ;
+                int test_center_sizeX = center_sizeX;
+                int test_center_sizeZ = center_sizeZ;
+
                 int pos1 = GameUtils.Space.getHeightWorldGen(level_accessor, level_server, chunk_generator, pos_center.getX() - test_center_sizeX, pos_center.getZ() - test_center_sizeZ, "OCEAN_FLOOR", "OCEAN_FLOOR_WG");
                 int pos2 = GameUtils.Space.getHeightWorldGen(level_accessor, level_server, chunk_generator, pos_center.getX() - test_center_sizeX, pos_center.getZ() + test_sizeZ, "OCEAN_FLOOR", "OCEAN_FLOOR_WG");
                 int pos3 = GameUtils.Space.getHeightWorldGen(level_accessor, level_server, chunk_generator, pos_center.getX() + test_sizeX, pos_center.getZ() - test_center_sizeZ, "OCEAN_FLOOR", "OCEAN_FLOOR_WG");
