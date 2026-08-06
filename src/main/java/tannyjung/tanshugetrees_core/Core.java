@@ -68,9 +68,9 @@ public class Core {
     public static Logger logger = null;
     public static boolean global_locking = false;
     public static String path_game = FMLPaths.GAMEDIR.get().toString();
-    public static String path_config = FMLPaths.CONFIGDIR.get().resolve(mod_id).toString();
-    public static String path_world_core = FMLPaths.GAMEDIR.get().resolve("saves").toString();
-    public static String path_world_mod = FMLPaths.GAMEDIR.get().resolve("saves").toString();
+    public static String path_config = null; // 延迟初始化，等 mod_id 赋值后再计算
+    public static String path_world_core = null;
+    public static String path_world_mod = null;
     public static final ExecutorService thread_main = Executors.newFixedThreadPool(1, name -> { Thread thread = new Thread(name); thread.setName(mod_name); return thread; });
 
     public static boolean auto_check_update = false;
@@ -88,6 +88,11 @@ public class Core {
         }
 
         Handcode.start();
+        // [LMax Fix V2] 必须在 Handcode.start() 赋值 mod_id 之后才能计算路径！
+        // 否则 mod_id 为空字符串，导致路径变成 config/ 而不是 config/tanshugetrees/
+        path_config = path_game + "/config/" + mod_id;
+        path_world_core = path_game + "/saves";
+        path_world_mod = path_game + "/saves";
         main_pack_type_original = main_pack_type;
         Registry.start(bus);
         DataMigration.run(false);
