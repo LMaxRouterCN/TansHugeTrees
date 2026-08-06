@@ -507,17 +507,19 @@ public class GameUtils {
 
 			}
 
-			int type = 0;
+            // [LMax Fix] 非服务器线程：直接用 LevelChunk.setBlockState() 写入，
+            // 完全绕过 Level.setBlock() 的 markAndNotifyBlock / sendBlockUpdated / neighbor update。
+            // 客户端通知由 EventCenter 在服务器线程上统一发送 chunk 刷新包。
+            if (is_world_gen == false && Thread.currentThread().getName().equals("Server thread")) {
+                level_accessor.setBlock(pos, block, 2);
+            } else if (level_accessor instanceof net.minecraft.server.level.ServerLevel sl) {
+                net.minecraft.world.level.chunk.LevelChunk lc = sl.getChunk(pos.getX() >> 4, pos.getZ() >> 4);
+                lc.setBlockState(pos, block, false);
+            } else {
+                level_accessor.setBlock(pos, block, 4);
+            }
 
-			if (is_world_gen == false) {
-
-				type = 2;
-
-			}
-
-			level_accessor.setBlock(pos, block, type);
-
-		}
+        }
 
 		public static void remove (LevelAccessor level_accessor, ServerLevel level_server, BlockPos pos, boolean is_world_gen) {
 
@@ -1131,23 +1133,25 @@ public class GameUtils {
 
 		}
 
-		public static void placeFeature (LevelAccessor level_accessor, BlockPos pos, String id) {
+        public static void placeFeature (LevelAccessor level_accessor, BlockPos pos, String id) {
 
-			WorldGenLevel level_world_gen = (WorldGenLevel) level_accessor;
-			HolderLookup.RegistryLookup<ConfiguredFeature<?, ?>> lookup = level_world_gen.registryAccess().lookupOrThrow(Registries.CONFIGURED_FEATURE);
-			ResourceKey<ConfiguredFeature<?, ?>> key = ResourceKey.create(Registries.CONFIGURED_FEATURE, ResourceLocation.parse(id));
-			ChunkGenerator chunk_generator = level_world_gen.getLevel().getChunkSource().getGenerator();
-			RandomSource random = level_world_gen.getRandom();
+            WorldGenLevel level_world_gen = (WorldGenLevel) level_accessor;
+            HolderLookup.RegistryLookup<ConfiguredFeature<?, ?>> lookup = level_world_gen.registryAccess().lookupOrThrow(Registries.CONFIGURED_FEATURE);
+            ResourceKey<ConfiguredFeature<?, ?>> key = ResourceKey.create(Registries.CONFIGURED_FEATURE, ResourceLocation.parse(id));
+            ChunkGenerator chunk_generator = level_world_gen.getLevel().getChunkSource().getGenerator();
+            // [LMax Fix] 创建线程安全的随机数生成器，避免多线程访问 LegacyRandomSource 导致崩溃
+            // 使用 pos 和 seed 生成确定性的随机数，保证同一位置的树木生成结果一致
+            RandomSource random = new net.minecraft.world.level.levelgen.XoroshiroRandomSource(pos.asLong() ^ level_world_gen.getSeed());
 
-			/*
-			(1.20.1) (1.21.1)
-			lookup.getOrThrow(key).value().place(level_world_gen, chunk_generator, random, pos);
-			(1.21.8)
-			lookup.getValueOrThrow(key).place(level_world_gen, chunk_generator, random, pos);
-			*/
-			lookup.getOrThrow(key).value().place(level_world_gen, chunk_generator, random, pos);
+            /*
+            (1.20.1) (1.21.1)
+            lookup.getOrThrow(key).value().place(level_world_gen, chunk_generator, random, pos);
+            (1.21.8)
+            lookup.getValueOrThrow(key).place(level_world_gen, chunk_generator, random, pos);
+            */
+            lookup.getOrThrow(key).value().place(level_world_gen, chunk_generator, random, pos);
 
-		}
+        }
 
 		public static Vec3 getPosLook (Entity entity, double offsetX, double offsetY, double offsetZ) {
 

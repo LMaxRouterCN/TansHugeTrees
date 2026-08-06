@@ -132,22 +132,22 @@ public class EventCenter {
                     for (net.minecraft.core.Holder<net.minecraft.world.level.levelgen.placement.PlacedFeature> pf : step_features) {
                         if (pf.unwrapKey().map(k -> k.location().toString()).orElse("").contains("tanshugetrees")) {
                             found = true;
-                            System.out.println("[THT-DEBUG] Found tanshugetrees feature in biome: " + pf.unwrapKey().get().location());
+                            if (Core.debug_log) System.out.println("[THT-DEBUG] Found tanshugetrees feature in biome: " + pf.unwrapKey().get().location());
                         }
                     }
                 }
                 if (!found) {
-                    System.out.println("[THT-DEBUG] WARNING: No tanshugetrees features found in biome at spawn! Biome modifier NOT applied!");
-                    System.out.println("[THT-DEBUG] Biome: " + biome_holder.unwrapKey().map(k -> k.location().toString()).orElse("unknown"));
-                    System.out.println("[THT-DEBUG] Total feature steps: " + gen_settings.features().size());
+                    if (Core.debug_log) System.out.println("[THT-DEBUG] WARNING: No tanshugetrees features found in biome at spawn! Biome modifier NOT applied!");
+                    if (Core.debug_log) System.out.println("[THT-DEBUG] Biome: " + biome_holder.unwrapKey().map(k -> k.location().toString()).orElse("unknown"));
+                    if (Core.debug_log) System.out.println("[THT-DEBUG] Total feature steps: " + gen_settings.features().size());
                     int total = 0;
                     for (net.minecraft.core.HolderSet<net.minecraft.world.level.levelgen.placement.PlacedFeature> step_features : gen_settings.features()) {
                         total += step_features.size();
                     }
-                    System.out.println("[THT-DEBUG] Total features in biome: " + total);
+                    if (Core.debug_log) System.out.println("[THT-DEBUG] Total features in biome: " + total);
                 }
             } catch (Exception e) {
-                System.out.println("[THT-DEBUG] Error checking biome features: " + e);
+                if (Core.debug_log) System.out.println("[THT-DEBUG] Error checking biome features: " + e);
             }
 
             Core.restart(level_server, true, false);
@@ -162,21 +162,106 @@ public class EventCenter {
         }
 
         private static int chunk_load_count = 0;
+        private static int chunk_event_count = 0;
 
+        // [LMax Fix] 防重复处理：记录已经处理过的 chunk
+        private static final java.util.Set<net.minecraft.world.level.ChunkPos> processed_chunks
+            = java.util.concurrent.ConcurrentHashMap.newKeySet();
+
+
+        // [LMax Fix] Region 级别扫描锁：确保 TreeLocation 扫描完成后才跑 TreePlacer
+        private static final java.util.concurrent.ConcurrentHashMap<String, java.util.concurrent.CompletableFuture<Void>> region_scans
+            = new java.util.concurrent.ConcurrentHashMap<>();
         @SubscribeEvent
         public static void eventChunkLoaded (ChunkEvent.Load event) {
+
+            chunk_event_count++;
+            if (chunk_event_count <= 3) {
+                if (Core.debug_log) System.out.println("[THT-DEBUG] ChunkEvent.Load fired #" + chunk_event_count + " isNewChunk=" + event.isNewChunk() + " pos=" + event.getChunk().getPos());
+            }
 
             if (event.isNewChunk() == true) {
 
                 chunk_load_count++;
                 if (chunk_load_count <= 5 || chunk_load_count % 100 == 0) {
-                    System.out.println("[THT-DEBUG] ChunkEvent.Load (new chunk) #" + chunk_load_count + ": " + event.getChunk().getPos());
+                    if (Core.debug_log) System.out.println("[THT-DEBUG] ChunkEvent.Load (new chunk) #" + chunk_load_count + ": " + event.getChunk().getPos());
                 }
 
                 LevelAccessor level_accessor = event.getLevel();
                 ServerLevel level_server = (ServerLevel) level_accessor;
                 String dimension = GameUtils.Space.getDimensionID(level_server).replace(":", "-");
                 ChunkPos chunk_pos = event.getChunk().getPos();
+
+                net.minecraft.world.level.chunk.ChunkGenerator generator = level_server.getChunkSource().getGenerator();
+                String gen_name = generator.getClass().getSimpleName();
+                boolean is_flat = gen_name.contains("Flat");
+
+                if (chunk_load_count <= 3) {
+                    if (Core.debug_log) System.out.println("[THT-DEBUG] Generator=" + gen_name + " isFlat=" + is_flat + " chunk=" + chunk_pos);
+                }
+
+                if (is_flat) {
+                    final String dim_final = dimension;
+                    final ChunkPos cp_final = chunk_pos;
+                    final net.minecraft.server.level.ServerLevel ls_final = level_server;
+                    final net.minecraft.world.level.chunk.ChunkGenerator gen_final = generator;
+
+                    // Region key: 同一 region (32x32 chunks) 共享一次扫描
+                    String regionKey = dim_final + "," + (cp_final.x >> 5) + "," + (cp_final.z >> 5);
+
+                    // 第一个 chunk 触发扫描，后续 chunk 复用同一个 Future
+                    java.util.concurrent.CompletableFuture<Void> scan_future = region_scans.computeIfAbsent(regionKey, key -> {
+                        if (Core.debug_log) System.out.println("[THT-DEBUG] Starting region scan for " + key);
+                        return java.util.concurrent.CompletableFuture.runAsync(() -> {
+                            try {
+                                tannyjung.tanshugetrees_handcode.systems.world_gen.TreeLocation.start(
+                                    ls_final, dim_final, cp_final);
+                                if (Core.debug_log) System.out.println("[THT-DEBUG] Region scan COMPLETED for " + key);
+                            } catch (Exception e) {
+                                if (Core.debug_log) System.err.println("[THT-DEBUG] Region scan error for " + key + ": " + e);
+                                e.printStackTrace();
+                            }
+                        });
+                    });
+
+                    // 扫描完成后，异步放置当前 chunk 的树
+                    // 扫描完成后，异步放置当前 chunk 的树
+                    scan_future.thenRunAsync(() -> {
+                        try {
+                            // [LMax Fix] 防重复处理：同一个 chunk 只处理一次
+                            if (processed_chunks.contains(cp_final)) {
+                                if (Core.debug_log) System.out.println("[THT-DEBUG] Chunk " + cp_final + " already processed, skipping");
+                                return;
+                            }
+                            processed_chunks.add(cp_final);
+                            
+                            tannyjung.tanshugetrees_handcode.systems.world_gen.TreePlacer.start(
+                                ls_final, ls_final, gen_final, dim_final, cp_final);
+                            ls_final.getServer().execute(() -> {
+                                try {
+                                    net.minecraft.world.level.chunk.LevelChunk lc =
+                                        ls_final.getChunk(cp_final.x, cp_final.z);
+                                    var pkt = new net.minecraft.network.protocol.game.ClientboundLevelChunkWithLightPacket(
+                                        lc, ls_final.getLightEngine(), null, null);
+                                    int count = 0;
+                                    for (net.minecraft.server.level.ServerPlayer sp :
+                                            ls_final.getChunkSource().chunkMap.getPlayers(cp_final, false)) {
+                                        sp.connection.send(pkt);
+                                        count++;
+                                    }
+                                    if (count == 0) {
+                                        if (Core.debug_log) System.out.println("[THT-DEBUG] Chunk refresh: no players tracking " + cp_final);
+                                    }
+                                } catch (Exception ex) {
+                                    if (Core.debug_log) System.err.println("[THT-DEBUG] Chunk refresh error for " + cp_final + ": " + ex);
+                                }
+                            });
+                        } catch (Exception e) {
+                            if (Core.debug_log) System.err.println("[THT-DEBUG] Async TreePlacer error for chunk " + cp_final + ": " + e);
+                            e.printStackTrace();
+                        }
+                    });
+                }
 
                 WorldGenStepEnd.start(dimension, chunk_pos);
 

@@ -171,19 +171,9 @@ public class TreeLocation {
 
         File file_region = new File(Core.path_world_mod + "/world_gen/regions/" + dimension + "/" + regionX + "," + regionZ + ".bin");
 
-        // 如果文件已存在，说明之前已经扫描过，记录到内存缓存并跳过
-        if (file_region.exists()) {
-            scanned_regions.add(regionKey);
-            return;
-        }
-
-        FileManager.writeBIN(file_region.getPath(), new ArrayList<>(), false);
-        world_gen_overlay_animation.set(4);
-        world_gen_overlay_bar.set(0);
-        if (Handcode.Config.world_gen_icon == true) {
-            CompletableFuture.runAsync(TreeLocation::scanning_overlay_loop);
-        }
-
+        // [LMax Fix] 不再用文件存在就跳过扫描。chunk 数据会被 Data.clearChunk() 清掉，
+        // 但 region 文件还在，导致下次启动扫描被跳过、树全部消失。
+        // 改用 scanned_regions 内存缓存（JVM 重启自动清空）防止同 session 重复扫描。
         // Scanning
         {
             int posX = regionX * 32;

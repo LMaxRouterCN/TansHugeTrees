@@ -1,40 +1,40 @@
 package tannyjung.tanshugetrees_core;
 
+import java.io.File;
+import java.util.AbstractMap;
+import java.util.Collection;
+import java.util.HashMap;
+import java.util.Map;
+import java.util.concurrent.ConcurrentLinkedQueue;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.ScheduledExecutorService;
+import java.util.concurrent.TimeUnit;
+import java.util.function.Supplier;
+
+import org.apache.logging.log4j.LogManager;
+import org.apache.logging.log4j.Logger;
+
 import net.minecraft.core.registries.Registries;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.world.entity.Entity;
 import net.minecraft.world.level.LevelAccessor;
 import net.minecraft.world.level.levelgen.feature.Feature;
-import org.apache.logging.log4j.Logger;
+import net.minecraftforge.eventbus.api.IEventBus;
+import net.minecraftforge.fml.loading.FMLPaths;
+import net.minecraftforge.registries.DeferredRegister;
 import tannyjung.tanshugetrees_core.game.GameUtils;
 import tannyjung.tanshugetrees_core.game.world_gen.FeatureAreaDirt;
 import tannyjung.tanshugetrees_core.game.world_gen.FeatureAreaGrass;
 import tannyjung.tanshugetrees_core.game.world_gen.WorldGenStepBeforePlants;
 import tannyjung.tanshugetrees_core.game.world_gen.WorldGenStepLast;
-import tannyjung.tanshugetrees_core.outside.*;
+import tannyjung.tanshugetrees_core.outside.CacheManager;
+import tannyjung.tanshugetrees_core.outside.ConfigClassic;
+import tannyjung.tanshugetrees_core.outside.CustomPackOrganizing;
+import tannyjung.tanshugetrees_core.outside.FileManager;
+import tannyjung.tanshugetrees_core.outside.TXTFunction;
 import tannyjung.tanshugetrees_handcode.Handcode;
 import tannyjung.tanshugetrees_handcode.systems.Loops;
-
-import java.io.File;
-import java.util.*;
-import java.util.concurrent.*;
-import java.util.function.Supplier;
-
-import org.apache.logging.log4j.LogManager;
-
-/*
-(1.20.1)
-import net.minecraftforge.eventbus.api.IEventBus;
-import net.minecraftforge.fml.loading.FMLPaths;
-import net.minecraftforge.registries.DeferredRegister;
-(1.21.1)
-import net.neoforged.bus.api.IEventBus;
-import net.neoforged.fml.loading.FMLPaths;
-import net.neoforged.neoforge.registries.DeferredRegister;
-*/
-import net.minecraftforge.eventbus.api.IEventBus;
-import net.minecraftforge.fml.loading.FMLPaths;
-import net.minecraftforge.registries.DeferredRegister;
 
 public class Core {
 
@@ -68,29 +68,52 @@ public class Core {
     public static Logger logger = null;
     public static boolean global_locking = false;
     public static String path_game = FMLPaths.GAMEDIR.get().toString();
-    public static String path_config = path_game + "/" + mod_id + "_error";
-    public static String path_world_core = path_game + "/" + mod_id + "_error";
-    public static String path_world_mod = path_game + "/" + mod_id + "_error";
+    public static String path_config = FMLPaths.CONFIGDIR.get().resolve(mod_id).toString();
+    public static String path_world_core = FMLPaths.GAMEDIR.get().resolve("saves").toString();
+    public static String path_world_mod = FMLPaths.GAMEDIR.get().resolve("saves").toString();
     public static final ExecutorService thread_main = Executors.newFixedThreadPool(1, name -> { Thread thread = new Thread(name); thread.setName(mod_name); return thread; });
 
     public static boolean auto_check_update = false;
     public static boolean wip_version = false;
     public static boolean developer_mode = false;
 
+    // [LMax] 调试日志开关，读取 config/tanshugetrees/lmax-debuglog.json
+    public static boolean debug_log = false;
+
     public static void start (IEventBus bus) {
 
-        Handcode.start();
-        mod_id_big = mod_id.toUpperCase();
-        main_pack_type_original = main_pack_type;
-        logger = LogManager.getLogger(mod_id);
-        path_config = path_game + "/config/" + mod_id;
+        // [LMax Fix] 确保 logger 在使用前已初始化
+        if (logger == null) {
+            logger = LogManager.getLogger(mod_name);
+        }
 
+        Handcode.start();
+        main_pack_type_original = main_pack_type;
         Registry.start(bus);
         DataMigration.run(false);
         restart(null, true, true);
 
+        // [LMax] 读取调试日志开关
+        // [LMax] 读取调试日志开关
+        loadDebugLogConfig();
+
     }
 
+    // [LMax] 从 config/tanshugetrees/lmax-debuglog.json 读取调试日志开关
+    private static void loadDebugLogConfig() {
+        try {
+            java.io.File file = new java.io.File(path_config + "/lmax-debuglog.json");
+            if (file.exists()) {
+                String content = new String(java.nio.file.Files.readAllBytes(file.toPath()));
+                if (content.contains("\"debug_log_print\"") && content.contains("true")) {
+                    debug_log = true;
+                    System.out.println("[LMax] Debug log enabled");
+                }
+            }
+        } catch (Exception e) {
+            System.err.println("[LMax] Failed to load debug log config: " + e.getMessage());
+        }
+    }
     public static void restart (ServerLevel level_server, boolean message, boolean config) {
 
         Runnable runnable = () -> {

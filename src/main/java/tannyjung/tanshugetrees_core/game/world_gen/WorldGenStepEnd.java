@@ -15,21 +15,24 @@ public class WorldGenStepEnd {
 
         if (Core.have_world_data_cleaner == true) {
 
-            String path_suffix = dimension + "/" + (chunk_pos.x >> 5) + "," + (chunk_pos.z >> 5) + ".bin";
+            // [LMax Fix] 移到异步线程执行，避免文件 I/O 阻塞服务器线程
+            java.util.concurrent.CompletableFuture.runAsync(() -> {
+                String path_suffix = dimension + "/" + (chunk_pos.x >> 5) + "," + (chunk_pos.z >> 5) + ".bin";
 
-            File file = new File(Core.path_world_mod + "/world_gen/regions/" + path_suffix);
-            List<String> test = new ArrayList<>();
-            test.add("b0");
-            FileManager.writeBIN(file.getPath(), test, true);
-
-            if (FileManager.readBIN(file.getPath()).capacity() >= 1024) {
-
-                test.clear();
+                File file = new File(Core.path_world_mod + "/world_gen/regions/" + path_suffix);
+                List<String> test = new ArrayList<>();
                 test.add("b0");
-                FileManager.writeBIN(file.getPath(), test, false);
-                WorldGen.stepEnd(dimension, chunk_pos);
+                FileManager.writeBIN(file.getPath(), test, true);
 
-            }
+                if (FileManager.readBIN(file.getPath()).capacity() >= 1024) {
+
+                    test.clear();
+                    test.add("b0");
+                    FileManager.writeBIN(file.getPath(), test, false);
+                    WorldGen.stepEnd(dimension, chunk_pos);
+
+                }
+            });
 
         }
 

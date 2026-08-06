@@ -184,7 +184,7 @@ public class TreePlacer {
         // [LMax Debug] 追踪 TreePlacer 执行情况
         int data_size = data.remaining();
         long placer_start = System.currentTimeMillis();
-        System.out.println("[THT-DEBUG] TreePlacer.start() chunk " + chunk_pos + " data: " + data_size + " bytes");
+        if (Core.debug_log) System.out.println("[THT-DEBUG] TreePlacer.start() chunk " + chunk_pos + " data: " + data_size + " bytes");
 
         String id = "";
         String chosen = "";
@@ -231,7 +231,7 @@ public class TreePlacer {
         // [LMax Debug] 追踪 TreePlacer 完成时间
         long placer_time = System.currentTimeMillis() - placer_start;
         if (placer_time > 100) {
-            Core.logger.info("[THT-DEBUG] TreePlacer.start() chunk " + chunk_pos + " completed in " + placer_time + "ms (data was " + data_size + " bytes)");
+            if (Core.debug_log) Core.logger.info("[THT-DEBUG] TreePlacer.start() chunk " + chunk_pos + " completed in " + placer_time + "ms (data was " + data_size + " bytes)");
         }
     }
         Data.clearChunk(dimension, chunk_pos);
@@ -524,7 +524,7 @@ public class TreePlacer {
 
         // [LMax Debug] 追踪形状数据大小
         short[] shape_data = Caches.TreeShape.getTreeShapeData(location);
-        System.out.println("[THT-DEBUG] placeCalculate '" + id + "' shape blocks: " + shape_data.length);
+        if (Core.debug_log) System.out.println("[THT-DEBUG] placeCalculate '" + id + "' shape blocks: " + shape_data.length);
 
         for (short scan : shape_data) {
 
@@ -1090,7 +1090,7 @@ public class TreePlacer {
 
             // [LMax Debug] 追踪每棵树的放置
             long tree_start = System.currentTimeMillis();
-            System.out.println("[THT-DEBUG] DetailedDetection: placing tree '" + id + "' at " + centerX + "," + centerZ + " in chunk " + chunk_pos);
+            if (Core.debug_log) System.out.println("[THT-DEBUG] DetailedDetection: placing tree '" + id + "' at " + centerX + "," + centerZ + " in chunk " + chunk_pos);
             String location = "";
             String path_settings = "";
             String ground_block = "";
@@ -1152,9 +1152,9 @@ public class TreePlacer {
                 test:
                 {
                     // [LMax Debug] 检查点：高度查询前
-                    System.out.println("[THT-DEBUG] CP1: before getHeightWorldGen for '" + id + "' at " + centerX + "," + centerZ);
+                    if (Core.debug_log) System.out.println("[THT-DEBUG] CP1: before getHeightWorldGen for '" + id + "' at " + centerX + "," + centerZ);
                     BlockPos pos_original = new BlockPos(centerX, GameUtils.Space.getHeightWorldGen(level_accessor, level_server, chunk_generator, centerX, centerZ, "OCEAN_FLOOR_WG", "OCEAN_FLOOR_WG"), centerZ);
-                    System.out.println("[THT-DEBUG] CP2: after getHeightWorldGen, Y=" + pos_original.getY());
+                    if (Core.debug_log) System.out.println("[THT-DEBUG] CP2: after getHeightWorldGen, Y=" + pos_original.getY());
 
                     // Ground Level
                     {
@@ -1238,6 +1238,10 @@ public class TreePlacer {
                         try {
 
                             short[] size_data = Caches.TreeShape.getTreeShapeSize(location);
+                            if (size_data == null || size_data.length < 6) {
+                                Core.logger.error("[THT] Tree shape data is missing or corrupted: " + location);
+                                break test;
+                            }
                             sizeX = size_data[0];
                             sizeY = size_data[1];
                             sizeZ = size_data[2];
@@ -1251,7 +1255,6 @@ public class TreePlacer {
                             break test;
 
                         }
-
                     }
 
                     // Size Convert
@@ -1406,7 +1409,7 @@ public class TreePlacer {
                 placeCalculate(level_accessor, level_server, chunk_pos, id, location, path_settings, pos_center, rotation_mirrored, dead_tree_level, fallen_direction);
                 long pc_time = System.currentTimeMillis() - pc_start;
                 if (pc_time > 50) {
-                    System.out.println("[THT-DEBUG] placeCalculate '" + id + "' at " + centerX + "," + centerZ + " took " + pc_time + "ms");
+                    if (Core.debug_log) System.out.println("[THT-DEBUG] placeCalculate '" + id + "' at " + centerX + "," + centerZ + " took " + pc_time + "ms");
                 }
 
                 // [LMax Fix V16] 修复死锁：level_server.getChunk() 会阻塞等待目标区块 FULL，
@@ -1825,8 +1828,9 @@ public class TreePlacer {
 
             for (Map.Entry<BlockPos, BlockState> entry : data.entrySet()) {
 
-                // 强制写入：使用 ServerLevel.setBlock 而非 GameUtils.Tile.set
-                level_server.setBlock(entry.getKey(), entry.getValue(), 3);
+                // [LMax Fix] flags=4 (UPDATE_INVISIBLE): 跳过所有更新。
+                // 客户端通知由 EventCenter 在服务器线程上统一发送。
+                level_server.setBlock(entry.getKey(), entry.getValue(), 4);
 
             }
 
@@ -1843,7 +1847,7 @@ public class TreePlacer {
 
         private static void add (ChunkPos chunk_pos, BlockPos pos, String path) {
             cache_functions.computeIfAbsent(chunk_pos, create -> new java.util.concurrent.ConcurrentHashMap<>())
-                           .computeIfAbsent(pos, create -> java.util.Collections.synchronizedList(new ArrayList<>()))
+                           .computeIfAbsent(pos, create -> new java.util.concurrent.CopyOnWriteArrayList<>())
                            .add(path);
         }
 
