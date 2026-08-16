@@ -221,21 +221,19 @@ public class TreePlacer {
             }
 
             DetailedDetection.test(level_accessor, level_server, chunk_generator, dimension, chunk_pos, from_chunkX, from_chunkZ, to_chunkX, to_chunkZ, id, chosen, centerX, centerZ);
-        // [方向A重构] 写入当前 chunk 缓存的所有方块，解决跨 chunk 写入时序问题
+        }
+
+        // [LMax Fix V20] 解除主线程封印：让 PendingBlocks 回归异步线程直接写入
+        // 彻底解决主线程被海量方块写入卡死，导致区块发包延迟和 TPS 归零的问题
         PendingBlocks.place(level_accessor, chunk_pos);
 
         LeafLitterGeneration.place(level_accessor, level_server, chunk_generator, chunk_pos);
-        Function.run(level_accessor, level_server, chunk_pos);
-        Data.clearChunk(dimension, chunk_pos);
 
         // [LMax Debug] 追踪 TreePlacer 完成时间
         long placer_time = System.currentTimeMillis() - placer_start;
         if (placer_time > 100) {
             if (Core.debug_log) Core.logger.info("[THT-DEBUG] TreePlacer.start() chunk " + chunk_pos + " completed in " + placer_time + "ms (data was " + data_size + " bytes)");
         }
-    }
-        Data.clearChunk(dimension, chunk_pos);
-
     }
 
     private static int[] getPartReduce (LevelAccessor level_accessor, String location, int centerX, int centerZ, int dead_tree_level) {

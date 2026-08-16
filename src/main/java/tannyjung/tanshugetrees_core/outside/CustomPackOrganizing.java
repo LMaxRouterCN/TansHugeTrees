@@ -175,6 +175,8 @@ public class CustomPackOrganizing {
         }
 
         Map<String, String> locations = new HashMap<>();
+        // 缓存：pack_id -> File 对象（用于依赖检查，快速通过 ID 查找包）
+        Map<String, File> cache_pack_files = new HashMap<>();
 
         // Get Location
         {
@@ -205,11 +207,27 @@ public class CustomPackOrganizing {
         }
 
         // Get Pack ID
+        // 填充两个缓存：
+        // 1. cache_pack_files: pack_id -> File (用于依赖检查，通过 ID 查找包)
+        // 2. cache_pack_ids: 文件名 -> pack_id (用于从文件名获取 ID，保持原有逻辑)
         {
 
             for (Map.Entry<String, String> entry : locations.entrySet()) {
 
-                cache_pack_ids.put(entry.getKey(), OutsideUtils.convertFileToDataMap(entry.getValue()).get("pack_id"));
+                String fileName = entry.getKey();
+                String filePath = entry.getValue();
+                Map<String, String> data = OutsideUtils.convertFileToDataMap(filePath);
+                String packId = data != null ? data.get("pack_id") : null;
+                
+                // 只有当 pack_id 不为空时才注册
+                if (packId != null && !packId.isEmpty()) {
+                    // 构建完整的 File 对象
+                    File packFile = new File(filePath).getParentFile().toPath().resolve(fileName).toFile();
+                    
+                    // 注册到两个缓存
+                    cache_pack_files.put(packId, packFile);
+                    cache_pack_ids.put(fileName, packId);
+                }
 
             }
 
@@ -308,11 +326,67 @@ public class CustomPackOrganizing {
 
                         for (String scan : required_packs.split(" / ")) {
 
-                            if (cache_pack_ids.containsValue(scan) == false) {
+                            // [修复] 如果包列表中包含自己，跳过验证
+                            // 防止主包因为引用自己而被标记为不兼容
+                            if (scan.equals(pack_id)) {
+                                continue;
+                            }
 
+                            boolean found = false;
+                            
+                            // 0. 预处理：去除依赖 ID 前后的空格
+                            scan = scan.trim();
+                            
+                            // 1. 首先检查 cache_pack_files (Key=pack_id, Value=File)
+                            if (cache_pack_files.containsKey(scan)) {
+                                found = true;
+                            } else {
+                                // 1.1 尝试不区分大小写匹配（防止 ID 大小写不一致）
+                                for (String id : cache_pack_files.keySet()) {
+                                    if (id.equalsIgnoreCase(scan)) {
+                                        found = true;
+                                        break;
+                                    }
+                                }
+                            }
+                            
+                            // 2. 如果在已注册列表中没找到（可能依赖包还没加载），遍历所有包进行匹配
+                            if (!found) {
+                                for (File p : packs) {
+                                    // 2.1 匹配文件名（忽略大小写和扩展名）
+                                    String fileName = p.getName().toLowerCase();
+                                    String scanLower = scan.toLowerCase();
+                                    if (fileName.equals(scanLower) || fileName.startsWith(scanLower + ".")) {
+                                        found = true;
+                                        break;
+                                    }
+                                    
+                                    // 2.2 尝试读取 info.txt 中的 pack_id 来匹配
+                                    File infoFile = null;
+                                    if (p.getName().endsWith(".zip")) {
+                                        infoFile = new File(Core.path_config + "/dev/temporary/pack_zip/" + p.getName() + "/info.txt");
+                                    } else {
+                                        infoFile = new File(p.getPath() + "/info.txt");
+                                    }
+                                    if (infoFile != null && infoFile.exists()) {
+                                        Map<String, String> d = OutsideUtils.convertFileToDataMap(infoFile.toString());
+                                        if (d != null) {
+                                            String p_id = d.get("pack_id");
+                                            // 如果 ID 不为空，进行不区分大小写匹配
+                                            if (p_id != null && !p_id.isEmpty()) {
+                                                if (p_id.equalsIgnoreCase(scan)) {
+                                                    found = true;
+                                                    break;
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                            
+                            if (!found) {
                                 Error.add("pack", "packs / required packs not found. This will results skipping these packs. Make sure you install required packs to allow these packs to work.", pack.getPath(), pack.getName() + " > " + scan);
                                 pass = false;
-
                             }
 
                         }
@@ -429,6 +503,13 @@ public class CustomPackOrganizing {
 
         boolean is_separate_multiple = false;
 
+        // [修复] 提前获取 pack_id，如果为 null 使用包名作为 fallback
+        String pack_id = cache_pack_ids.get(pack.getName());
+        if (pack_id == null) {
+            pack_id = pack.getName();
+            Core.logger.warn("[THT] pack_id is null for pack: " + pack.getName() + ", using filename as fallback");
+        }
+
         for (File file : files) {
 
             if (file.isDirectory() == true) {
@@ -447,7 +528,7 @@ public class CustomPackOrganizing {
 
                             if (is_separate_multiple_final == true) {
 
-                                path_copy_to = path_copy_to.resolve(cache_pack_ids.get(pack.getName()));
+                                path_copy_to = path_copy_to.resolve(pack_id);
 
                             }
 

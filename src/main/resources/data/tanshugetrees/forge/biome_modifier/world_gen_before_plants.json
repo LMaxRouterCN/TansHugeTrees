@@ -1,8 +1,1 @@
-{
-  "type": "forge:add_features",
-  "biomes": {
-    "type": "forge:any"
-  },
-  "features": "tanshugetrees:world_gen_before_plants",
-  "step": "underground_decoration"
-}
+{ "type": "forge:add_features", "biomes": { "type": "forge:any" }, "features": "tanshugetrees:world_gen_before_plants", "step": "vegetal_decoration" }

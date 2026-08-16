@@ -55,6 +55,10 @@ public class Caches {
                     {
                         try {
                             String[] split = id.split("\\|");
+                            // [LMax Fix V16] 防御性校验：如果 split[1] 不是 .bin 文件，说明是目录名污染了字典，直接返回空
+                            if (split.length < 2 || !split[1].endsWith(".bin")) {
+                                return;
+                            }
                             path = Core.path_config + "/dev/temporary/" + split[0] + "/" + split[1];
                         } catch (Exception exception) {
                             OutsideUtils.exception(new Exception(), exception, "");

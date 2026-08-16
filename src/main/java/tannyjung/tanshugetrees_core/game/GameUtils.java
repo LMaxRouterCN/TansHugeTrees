@@ -507,58 +507,60 @@ public class GameUtils {
 
 			}
 
-            // [LMax Fix] 非服务器线程：直接用 LevelChunk.setBlockState() 写入，
-            // 完全绕过 Level.setBlock() 的 markAndNotifyBlock / sendBlockUpdated / neighbor update。
-            // 客户端通知由 EventCenter 在服务器线程上统一发送 chunk 刷新包。
+            // [LMax Fix V19] 恢复 lc.setBlockState 高性能写入，绕过昂贵的光照和邻居更新
+            // 客户端通知由 EventCenter 在服务器线程上统一发送 chunk 刷新包
             if (is_world_gen == false && Thread.currentThread().getName().equals("Server thread")) {
                 level_accessor.setBlock(pos, block, 2);
             } else if (level_accessor instanceof net.minecraft.server.level.ServerLevel sl) {
                 net.minecraft.world.level.chunk.LevelChunk lc = sl.getChunk(pos.getX() >> 4, pos.getZ() >> 4);
                 lc.setBlockState(pos, block, false);
+                // [LMax Fix V27] 恢复 setUnsaved(true)：打通 MC 存盘闭环
+                // 必须告诉 MC 这个区块被修改过，否则区块卸载时树不会被写入硬盘，导致下次加载时树彻底消失
+                lc.setUnsaved(true);
             } else {
                 level_accessor.setBlock(pos, block, 4);
             }
 
         }
 
-		public static void remove (LevelAccessor level_accessor, ServerLevel level_server, BlockPos pos, boolean is_world_gen) {
+        public static void remove (LevelAccessor level_accessor, ServerLevel level_server, BlockPos pos, boolean is_world_gen) {
 
-			// World Height Limit
-			{
+            // World Height Limit
+            {
 
-				if (Space.getBuildHeight(level_accessor, false) > pos.getY()) {
+                if (Space.getBuildHeight(level_accessor, false) > pos.getY()) {
 
-					return;
+                    return;
 
-				} else if (Space.getBuildHeight(level_accessor, true) < pos.getY()) {
+                } else if (Space.getBuildHeight(level_accessor, true) < pos.getY()) {
 
-					return;
+                    return;
 
-				}
+                }
 
-			}
+            }
 
-			BlockState block = null;
+            BlockState block = null;
 
-			if (level_accessor.isWaterAt(pos) == true) {
+            if (level_accessor.isWaterAt(pos) == true) {
 
-				block = Blocks.WATER.defaultBlockState();
+                block = Blocks.WATER.defaultBlockState();
 
-			} else {
+            } else {
 
-				block = Blocks.AIR.defaultBlockState();
+                block = Blocks.AIR.defaultBlockState();
 
-			}
+            }
 
-			set(level_accessor, pos, block, is_world_gen);
+            set(level_accessor, pos, block, is_world_gen);
 
-			if (is_world_gen == false) {
+            if (is_world_gen == false) {
 
-				level_server.neighborChanged(pos.above(), level_server.getBlockState(pos.above()).getBlock(), pos);
+                level_server.neighborChanged(pos.above(), level_server.getBlockState(pos.above()).getBlock(), pos);
 
-			}
+            }
 
-		}
+        }
 
 		public static void removeDrop (LevelAccessor level_accessor, ServerLevel level_server, BlockPos pos) {
 

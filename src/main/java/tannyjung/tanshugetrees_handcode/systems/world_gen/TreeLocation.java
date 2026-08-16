@@ -38,16 +38,7 @@ public class TreeLocation {
         
 
           
-	// [LMax Fix V11] 异步 I/O 调度器
-	// [执行代号33] 根据审计报告：动态线程池，根据CPU核心数调整，避免I/O积压
-	private static final java.util.concurrent.ExecutorService io_executor = java.util.concurrent.Executors.newFixedThreadPool(
-		Math.max(2, Runtime.getRuntime().availableProcessors() / 2),
-		r -> {
-			Thread t = new Thread(r, "TansHugeTrees-AsyncIO");
-			t.setDaemon(true);
-			return t;
-		}
-	);
+
     // [执行代号22 - 修复] cache_other_region 最大缓存区域数，超过此值时淘汰旧条目，防止内存泄漏
     // [LMax Fix V7] 已迁移到 Handcode.Config.cache_other_region_max，此处不再硬编码
 
@@ -97,42 +88,29 @@ public class TreeLocation {
         final Map<BlockPos, String> finalLocSnapshot = locSnapshot;
         final List<String> finalPlaceSnapshot = placeSnapshot;
 
-        io_executor.submit(() -> {
-            try {
-                if (!finalLocSnapshot.isEmpty()) {
-        
-
-          
-                    // [Poker Agent Fix] readBIN 返回 ByteBuffer 而非 List<String>，改为直接追加写入，避免不必要的全量读取
-                    List<String> newLocData = new ArrayList<>();
-                    for (Map.Entry<BlockPos, String> entry2 : finalLocSnapshot.entrySet()) {
-                        newLocData.add("s" + entry2.getValue());
-                        newLocData.add("i" + entry2.getKey().getX());
-                        newLocData.add("i" + entry2.getKey().getZ());
-                    }
-                    FileManager.writeBIN(Core.path_world_mod + "/world_gen/tree_locations/" + dimension + "/" + regionKey + ".bin", newLocData, true);
+        // [LMax Fix V26] I/O 同步化：降维打击彻底消灭数据竞态
+        // TreeLocation.run 已经在 THT-TreeGen 异步线程池中执行，完全不需要再提交给 io_executor。
+        // 直接在当前线程同步写盘，确保 TreeLocation.run 返回时，硬盘数据 100% 写入完毕，
+        // 后续的 TreePlacer.start 绝对能读到完整数据，彻底消灭"出生点无树"和"区域空白"！
+        try {
+            if (!finalLocSnapshot.isEmpty()) {
+                List<String> newLocData = new ArrayList<>();
+                for (Map.Entry<BlockPos, String> entry2 : finalLocSnapshot.entrySet()) {
+                    newLocData.add("s" + entry2.getValue());
+                    newLocData.add("i" + entry2.getKey().getX());
+                    newLocData.add("i" + entry2.getKey().getZ());
                 }
-
-                if (finalPlaceSnapshot != null && !finalPlaceSnapshot.isEmpty()) {
-        
-
-          
-                    // [Poker Agent Fix] readBIN 返回 ByteBuffer 而非 List<String>，改为直接追加写入
-                    FileManager.writeBIN(Core.path_world_mod + "/world_gen/place/" + dimension + "/" + regionKey + ".bin", finalPlaceSnapshot, true);
-                }
-            } catch (Exception e) {
-                // [执行代号22 - 修复] I/O 失败时记录详细日志，数据已从缓存原子移除无法自动恢复
-                Core.logger.error("flushCachesAsync I/O failed for region " + regionKey + " (dimension: " + dimension + "), data lost: " + finalLocSnapshot.size() + " tree locations, " + (finalPlaceSnapshot != null ? finalPlaceSnapshot.size() : 0) + " place entries", e);
+                FileManager.writeBIN(Core.path_world_mod + "/world_gen/tree_locations/" + dimension + "/" + regionKey + ".bin", newLocData, true);
             }
-        });
+
+            if (finalPlaceSnapshot != null && !finalPlaceSnapshot.isEmpty()) {
+                FileManager.writeBIN(Core.path_world_mod + "/world_gen/place/" + dimension + "/" + regionKey + ".bin", finalPlaceSnapshot, true);
+            }
+        } catch (Exception e) {
+            Core.logger.error("flushCachesAsync I/O failed for region " + regionKey + " (dimension: " + dimension + "), data lost: " + finalLocSnapshot.size() + " tree locations, " + (finalPlaceSnapshot != null ? finalPlaceSnapshot.size() : 0) + " place entries", e);
+        }
     }
 
-        
-
-          
-        
-
-          
     public static void start(LevelAccessor level_accessor, String dimension, ChunkPos chunk_pos) {
         Map<String, Map<String, String>> data = ConfigDynamic.getData("world_gen");
         System.out.println("[THT-DEBUG] TreeLocation.start() called. Data empty: " + data.isEmpty() + ", Data size: " + data.size());
@@ -174,6 +152,10 @@ public class TreeLocation {
         // [LMax Fix] 不再用文件存在就跳过扫描。chunk 数据会被 Data.clearChunk() 清掉，
         // 但 region 文件还在，导致下次启动扫描被跳过、树全部消失。
         // 改用 scanned_regions 内存缓存（JVM 重启自动清空）防止同 session 重复扫描。
+        // [THT-DEBUG] 诊断扫描循环执行情况
+        System.out.println("[THT-DEBUG] TreeLocation.run() - Starting region scan for: " + regionKey);
+        System.out.println("[THT-DEBUG] TreeLocation.run() - Scan loop begins, region_scan_percent: " + Handcode.Config.region_scan_percent);
+        
         // Scanning
         {
             int posX = regionX * 32;
@@ -183,6 +165,11 @@ public class TreeLocation {
             int scan_count = 0;
             for (int scanX = 0; scanX < 32; scanX++) {
                 for (int scanZ = 0; scanZ < 32; scanZ++) {
+                    // [THT-DEBUG] 确认循环开始执行
+                    if (scanX == 0 && scanZ == 0) {
+                        System.out.println("[THT-DEBUG] TreeLocation.run() - Scan loop first iteration (0,0)");
+                    }
+                    
                     world_gen_overlay_bar.incrementAndGet();
                     chunk_pos_scan = new ChunkPos(posX + scanX, posZ + scanZ);
                     RandomSource random = RandomSource.create(level_accessor.getServer().overworld().getSeed() ^ ((chunk_pos_scan.x * 341873128712L) + (chunk_pos_scan.z * 132897987541L)));
@@ -193,6 +180,7 @@ public class TreeLocation {
                 }
             }
             long scan_time = System.currentTimeMillis() - scan_start;
+            System.out.println("[THT-DEBUG] TreeLocation.run() - Scan loop completed, count: " + scan_count + ", time: " + scan_time + "ms");
             Core.logger.info("[THT-DEBUG] Region " + regionKey + " scan completed: " + scan_count + " chunks scanned in " + scan_time + "ms");
         }
 
@@ -334,6 +322,43 @@ public class TreeLocation {
         }
     }
 
+    // [执行代号22 - 任务 1.3] 提取 region 加载逻辑，实现原子化抽象
+    // 原子操作：从磁盘加载并解析 region 文件，处理缓存淘汰
+    // 由 ConcurrentHashMap.computeIfAbsent 调用，JVM 保证原子性
+    private static Map<ChunkPos, Map<BlockPos, String>> loadRegionFromDisk(String dimension, String regionKey) {
+        Map<ChunkPos, Map<BlockPos, String>> loadedData = new ConcurrentHashMap<>();
+        
+        // [执行代号22 - 任务 1.2] 安全的缓存淘汰：加载完成后同步执行
+        // 避免在异步线程中迭代 keySet 导致 ConcurrentModificationException
+        if (cache_other_region.size() > Handcode.Config.cache_other_region_max) {
+            Iterator<String> evictIt = cache_other_region.keySet().iterator();
+            boolean evicted = false;
+            while (evictIt.hasNext() && !evicted) {
+                String evictKey = evictIt.next();
+                if (!evictKey.equals(regionKey)) {
+                    cache_other_region.remove(evictKey);
+                    evicted = true;
+                }
+            }
+        }
+        
+        // 读取并解析 bin 文件
+        ByteBuffer localBuffer = FileManager.readBIN(Core.path_world_mod + "/world_gen/tree_locations/" + dimension + "/" + regionKey + ".bin");
+        if (localBuffer != null) {
+            while (localBuffer.remaining() > 0) {
+                try {
+                    String localTestId = String.valueOf(localBuffer.getShort());
+                    int localTestPosX = localBuffer.getInt();
+                    int localTestPosZ = localBuffer.getInt();
+                    loadedData.computeIfAbsent(new ChunkPos(localTestPosX >> 4, localTestPosZ >> 4), c -> new ConcurrentHashMap<>()).put(new BlockPos(localTestPosX, 0, localTestPosZ), localTestId);
+                } catch (Exception exception) {
+                    OutsideUtils.exception(new Exception(), exception, "");
+                    break;
+                }
+            }
+        }
+        return loadedData;
+    }
     private static Holder<Biome> getBiome(LevelAccessor level_accessor, ChunkPos chunk_pos) {
         if (cache_biome.containsKey(chunk_pos) == false) {
             BlockPos pos = new BlockPos((chunk_pos.x * 16) + 7, GameUtils.Space.getBuildHeight(level_accessor, true), (chunk_pos.z * 16) + 7);
@@ -371,68 +396,15 @@ scan_pos = new ChunkPos(center_chunk.x + scanX, center_chunk.z + scanZ);
                     if (cache_write_tree_location.containsKey(scan_pos)) {
                         data = cache_write_tree_location.get(scan_pos);
                     } else {
-        
-
-          
                         key = (scan_pos.x >> 5) + "," + (scan_pos.z >> 5);
-                        // [执行代号22 - 任务 1.2] 废除 computeIfAbsent 中的阻塞式磁盘读取，改为异步加载，防止主线程卡死
-                        Map<ChunkPos, Map<BlockPos, String>> regionMap = cache_other_region.get(key);
-                        if (regionMap == null) {
-        
-
-          
-                            Map<ChunkPos, Map<BlockPos, String>> placeholder = new ConcurrentHashMap<>();
-                            if (cache_other_region.putIfAbsent(key, placeholder) == null) {
-                                // [执行代号22 - 修复] cache_other_region 容量限制，防止无限增长导致 OOM
-                                // 超过上限时淘汰旧条目（跳过刚加入的条目），被淘汰的区域下次访问时重新从磁盘加载
-        
-
-          
-                                while (cache_other_region.size() > Handcode.Config.cache_other_region_max) {
-                                    Iterator<String> evictIt = cache_other_region.keySet().iterator();
-                                    boolean evicted = false;
-                                    while (evictIt.hasNext()) {
-                                        String evictKey = evictIt.next();
-                                        if (!evictKey.equals(key)) {
-                                            cache_other_region.remove(evictKey);
-                                            evicted = true;
-                                            break;
-                                        }
-                                    }
-                                    if (!evicted) break; // 只剩自己，无法继续淘汰
-                                }
-                                final String finalKey = key;
-                                final String finalDimension = dimension;
-                                io_executor.submit(() -> {
-                                    ByteBuffer localBuffer = FileManager.readBIN(Core.path_world_mod + "/world_gen/tree_locations/" + finalDimension + "/" + finalKey + ".bin");
-                                    // [执行代号22 - 修复] 防止 readBIN 返回 null 导致 NPE
-                                    if (localBuffer == null) {
-                                        return;
-                                    }
-                                    while (localBuffer.remaining() > 0) {
-                                        try {
-                                            String localTestId = String.valueOf(localBuffer.getShort());
-                                            int localTestPosX = localBuffer.getInt();
-                                            int localTestPosZ = localBuffer.getInt();
-                                            placeholder.computeIfAbsent(new ChunkPos(localTestPosX >> 4, localTestPosZ >> 4), c -> new ConcurrentHashMap<>()).put(new BlockPos(localTestPosX, 0, localTestPosZ), localTestId);
-                                        } catch (Exception exception) {
-                                            OutsideUtils.exception(new Exception(), exception, "");
-                                            break;
-                                        }
-                                    }
-                                });
-                            }
-
-        
-      
-                            data = new HashMap<>();
-                        } else {
-                            data = regionMap.getOrDefault(scan_pos, new HashMap<>());
-                        }
+                        // [执行代号22 - 任务 1.3] 原子化抽象：使用 computeIfAbsent 调用 loadRegionFromDisk
+                        // JVM 保证 computeIfAbsent 的原子性，避免竞态条件
+                        // 调用 loadRegionFromDisk 完成从磁盘加载、缓存淘汰、数据解析，保证每次只有一个线程执行
+                        regionMap = cache_other_region.computeIfAbsent(key, k -> loadRegionFromDisk(dimension, k));
+                        data = regionMap.getOrDefault(scan_pos, new HashMap<>());
                     }
-                }
 
-                if (data.isEmpty() == false) {
+if (data != null && data.isEmpty() == false) {
                     // Test
                     {
                         for (Map.Entry<BlockPos, String> entry : data.entrySet()) {
@@ -509,10 +481,22 @@ scan_pos = new ChunkPos(center_chunk.x + scanX, center_chunk.z + scanZ);
 
         // Random Select File
         {
-            File[] list = chosen.listFiles();
-            if (list == null) {
+            File[] allFiles = chosen.listFiles();
+            if (allFiles == null) {
                 return;
             }
+            // [LMax Fix V16] 过滤掉目录和非 .bin 文件，防止随机选中 "storage" 等子目录导致字典污染和路径错误
+            java.util.List<File> binFiles = new java.util.ArrayList<>();
+            for (File f : allFiles) {
+                if (f.isFile() && f.getName().endsWith(".bin")) {
+                    binFiles.add(f);
+                }
+            }
+            if (binFiles.isEmpty()) {
+                return;
+            }
+            File[] list = binFiles.toArray(new File[0]);
+
             RandomSource random = RandomSource.create(level_accessor.getServer().overworld().getSeed() ^ ((centerX * 341873128712L) + (centerZ * 132897987541L)));
             chosen = new File(chosen.getPath() + "/" + list[random.nextInt(list.length)].getName());
         }

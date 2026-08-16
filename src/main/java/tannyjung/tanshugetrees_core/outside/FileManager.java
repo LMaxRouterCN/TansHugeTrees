@@ -263,15 +263,31 @@ public class FileManager {
 
     }
 
+    // [LMax Fix V19] .bin 文件内存缓存，解决同步 I/O 导致的 CPU 空转和生成缓慢
+    private static final Map<String, byte[]> BIN_CACHE = java.util.Collections.synchronizedMap(
+        new java.util.LinkedHashMap<String, byte[]>(256, 0.75f, true) {
+            @Override
+            protected boolean removeEldestEntry(Map.Entry<String, byte[]> eldest) {
+                return size() > 512; // 最多缓存 512 个 .bin 文件
+            }
+        }
+    );
+
     public static ByteBuffer readBIN (String path) {
+        // 优先从内存缓存读取
+        byte[] cached = BIN_CACHE.get(path);
+        if (cached != null) {
+            return ByteBuffer.wrap(cached).asReadOnlyBuffer().order(ByteOrder.BIG_ENDIAN);
+        }
 
         File file = new File(path);
 
         if (file.exists() == true) {
 
             try {
-
-                return ByteBuffer.wrap(Files.readAllBytes(file.toPath())).order(ByteOrder.BIG_ENDIAN);
+                byte[] bytes = Files.readAllBytes(file.toPath());
+                BIN_CACHE.put(path, bytes); // 存入缓存
+                return ByteBuffer.wrap(bytes).asReadOnlyBuffer().order(ByteOrder.BIG_ENDIAN);
 
             } catch (Exception exception) {
 

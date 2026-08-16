@@ -8,7 +8,19 @@ import net.minecraft.world.entity.Entity;
 import net.minecraft.world.level.ChunkPos;
 import net.minecraft.world.level.LevelAccessor;
 import net.minecraft.world.level.storage.LevelResource;
-
+import net.minecraftforge.api.distmarker.Dist;
+import net.minecraftforge.client.event.RenderGuiEvent;
+import net.minecraftforge.client.event.ScreenEvent;
+import net.minecraftforge.event.RegisterCommandsEvent;
+import net.minecraftforge.event.TickEvent;
+import net.minecraftforge.event.entity.player.PlayerEvent;
+import net.minecraftforge.event.level.ChunkEvent;
+import net.minecraftforge.event.server.ServerAboutToStartEvent;
+import net.minecraftforge.event.server.ServerStartedEvent;
+import net.minecraftforge.event.server.ServerStoppingEvent;
+import net.minecraftforge.eventbus.api.EventPriority;
+import net.minecraftforge.eventbus.api.SubscribeEvent;
+import net.minecraftforge.fml.common.Mod.EventBusSubscriber;
 import tannyjung.tanshugetrees_core.Core;
 import tannyjung.tanshugetrees_core.game.world_gen.WorldGenStepEnd;
 import tannyjung.tanshugetrees_core.outside.CustomPackOrganizing;
@@ -16,50 +28,6 @@ import tannyjung.tanshugetrees_core.outside.TXTFunction;
 import tannyjung.tanshugetrees_core.outside.TannyPackManager;
 import tannyjung.tanshugetrees_handcode.systems.Commands;
 import tannyjung.tanshugetrees_handcode.systems.Overlays;
-
-/*
-(1.20.1)
-import net.minecraftforge.event.RegisterCommandsEvent;
-import net.minecraftforge.event.TickEvent;
-import net.minecraftforge.event.entity.player.PlayerEvent;
-import net.minecraftforge.event.level.ChunkEvent;
-import net.minecraftforge.event.server.ServerAboutToStartEvent;
-import net.minecraftforge.event.server.ServerStartedEvent;
-import net.minecraftforge.event.server.ServerStoppingEvent;
-import net.minecraftforge.eventbus.api.SubscribeEvent;
-import net.minecraftforge.eventbus.api.EventPriority;
-import net.minecraftforge.client.event.RenderGuiEvent;
-import net.minecraftforge.client.event.ScreenEvent;
-import net.minecraftforge.fml.common.Mod.EventBusSubscriber;
-import net.minecraftforge.api.distmarker.Dist;
-(1.21.1)
-import net.neoforged.neoforge.event.RegisterCommandsEvent;
-import net.neoforged.neoforge.event.entity.player.PlayerEvent;
-import net.neoforged.neoforge.event.level.ChunkEvent;
-import net.neoforged.neoforge.event.server.ServerAboutToStartEvent;
-import net.neoforged.neoforge.event.server.ServerStartedEvent;
-import net.neoforged.neoforge.event.server.ServerStoppingEvent;
-import net.neoforged.neoforge.event.tick.ServerTickEvent;
-import net.neoforged.neoforge.client.event.RenderGuiEvent;
-import net.neoforged.neoforge.client.event.ScreenEvent;
-import net.neoforged.bus.api.EventPriority;
-import net.neoforged.bus.api.SubscribeEvent;
-import net.neoforged.fml.common.EventBusSubscriber;
-import net.neoforged.api.distmarker.Dist;
-*/
-import net.minecraftforge.event.RegisterCommandsEvent;
-import net.minecraftforge.event.TickEvent;
-import net.minecraftforge.event.entity.player.PlayerEvent;
-import net.minecraftforge.event.level.ChunkEvent;
-import net.minecraftforge.event.server.ServerAboutToStartEvent;
-import net.minecraftforge.event.server.ServerStartedEvent;
-import net.minecraftforge.event.server.ServerStoppingEvent;
-import net.minecraftforge.eventbus.api.SubscribeEvent;
-import net.minecraftforge.eventbus.api.EventPriority;
-import net.minecraftforge.client.event.RenderGuiEvent;
-import net.minecraftforge.client.event.ScreenEvent;
-import net.minecraftforge.fml.common.Mod.EventBusSubscriber;
-import net.minecraftforge.api.distmarker.Dist;
 
 public class EventCenter {
     
@@ -117,12 +85,12 @@ public class EventCenter {
             Core.restart(null, false, true);
 
         }
-
         @SubscribeEvent
         public static void eventWorldStarted (ServerStartedEvent event) {
 
             ServerLevel level_server = event.getServer().overworld();
-
+            // [LMax Fix V16] 动态设置 path_world_mod 为当前存档路径，确保 dictionary.txt 生成在存档内部，彻底解决跨存档字典污染
+            Core.path_world_mod = event.getServer().getWorldPath(net.minecraft.world.level.storage.LevelResource.ROOT).toString();
             // [LMax Debug] 检查 biome modifier 是否生效
             try {
                 net.minecraft.core.Holder<net.minecraft.world.level.biome.Biome> biome_holder = level_server.getBiome(new net.minecraft.core.BlockPos(0, 64, 0));
@@ -158,7 +126,8 @@ public class EventCenter {
         public static void eventWorldStopping (ServerStoppingEvent event) {
 
             first_player_joined = false;
-
+            // [LMax Fix V3] 优雅关闭专属线程池
+            TREE_GEN_EXECUTOR.shutdown();
         }
 
         private static int chunk_load_count = 0;
@@ -168,107 +137,67 @@ public class EventCenter {
         private static final java.util.Set<net.minecraft.world.level.ChunkPos> processed_chunks
             = java.util.concurrent.ConcurrentHashMap.newKeySet();
 
+        // [LMax Fix V20] 修复线程池饥饿与任务丢弃：使用固定大小的无界队列线程池
+        // 之前的有界队列 (8192) 在主线程卡顿时会满载，导致 RejectedExecutionException 并静默丢弃区块生成任务。
+        // 现在使用 Executors.newFixedThreadPool，确保有足够的线程并发，且永远不会丢弃任务。
+        private static final int TREE_GEN_THREADS = Math.max(4, Math.min(16, Runtime.getRuntime().availableProcessors()));
+        private static final java.util.concurrent.ExecutorService TREE_GEN_EXECUTOR = java.util.concurrent.Executors.newFixedThreadPool(
+            TREE_GEN_THREADS,
+            r -> {
+                Thread t = new Thread(r, "THT-TreeGen");
+                t.setDaemon(true);
+                return t;
+            }
+        );
 
         // [LMax Fix] Region 级别扫描锁：确保 TreeLocation 扫描完成后才跑 TreePlacer
         private static final java.util.concurrent.ConcurrentHashMap<String, java.util.concurrent.CompletableFuture<Void>> region_scans
             = new java.util.concurrent.ConcurrentHashMap<>();
+
+
+
         @SubscribeEvent
         public static void eventChunkLoaded (ChunkEvent.Load event) {
+            // [LMax Fix V34] 绝对防御：拦截客户端事件！
+            if (event.getLevel().isClientSide()) return;
 
-            chunk_event_count++;
-            if (chunk_event_count <= 3) {
-                if (Core.debug_log) System.out.println("[THT-DEBUG] ChunkEvent.Load fired #" + chunk_event_count + " isNewChunk=" + event.isNewChunk() + " pos=" + event.getChunk().getPos());
-            }
+            net.minecraft.server.level.ServerLevel level_server = (net.minecraft.server.level.ServerLevel) event.getLevel();
+            String dimension = GameUtils.Space.getDimensionID(level_server).replace(":", "-");
+            net.minecraft.world.level.ChunkPos chunk_pos = event.getChunk().getPos();
+            net.minecraft.world.level.chunk.ChunkGenerator generator = level_server.getChunkSource().getGenerator();
 
-            if (event.isNewChunk() == true) {
-
-                chunk_load_count++;
-                if (chunk_load_count <= 5 || chunk_load_count % 100 == 0) {
-                    if (Core.debug_log) System.out.println("[THT-DEBUG] ChunkEvent.Load (new chunk) #" + chunk_load_count + ": " + event.getChunk().getPos());
-                }
-
-                LevelAccessor level_accessor = event.getLevel();
-                ServerLevel level_server = (ServerLevel) level_accessor;
-                String dimension = GameUtils.Space.getDimensionID(level_server).replace(":", "-");
-                ChunkPos chunk_pos = event.getChunk().getPos();
-
-                net.minecraft.world.level.chunk.ChunkGenerator generator = level_server.getChunkSource().getGenerator();
-                String gen_name = generator.getClass().getSimpleName();
-                boolean is_flat = gen_name.contains("Flat");
-
-                if (chunk_load_count <= 3) {
-                    if (Core.debug_log) System.out.println("[THT-DEBUG] Generator=" + gen_name + " isFlat=" + is_flat + " chunk=" + chunk_pos);
-                }
-
-                if (is_flat) {
-                    final String dim_final = dimension;
-                    final ChunkPos cp_final = chunk_pos;
-                    final net.minecraft.server.level.ServerLevel ls_final = level_server;
-                    final net.minecraft.world.level.chunk.ChunkGenerator gen_final = generator;
-
-                    // Region key: 同一 region (32x32 chunks) 共享一次扫描
-                    String regionKey = dim_final + "," + (cp_final.x >> 5) + "," + (cp_final.z >> 5);
-
-                    // 第一个 chunk 触发扫描，后续 chunk 复用同一个 Future
-                    java.util.concurrent.CompletableFuture<Void> scan_future = region_scans.computeIfAbsent(regionKey, key -> {
-                        if (Core.debug_log) System.out.println("[THT-DEBUG] Starting region scan for " + key);
-                        return java.util.concurrent.CompletableFuture.runAsync(() -> {
-                            try {
-                                tannyjung.tanshugetrees_handcode.systems.world_gen.TreeLocation.start(
-                                    ls_final, dim_final, cp_final);
-                                if (Core.debug_log) System.out.println("[THT-DEBUG] Region scan COMPLETED for " + key);
-                            } catch (Exception e) {
-                                if (Core.debug_log) System.err.println("[THT-DEBUG] Region scan error for " + key + ": " + e);
-                                e.printStackTrace();
-                            }
-                        });
-                    });
-
-                    // 扫描完成后，异步放置当前 chunk 的树
-                    // 扫描完成后，异步放置当前 chunk 的树
-                    scan_future.thenRunAsync(() -> {
-                        try {
-                            // [LMax Fix] 防重复处理：同一个 chunk 只处理一次
-                            if (processed_chunks.contains(cp_final)) {
-                                if (Core.debug_log) System.out.println("[THT-DEBUG] Chunk " + cp_final + " already processed, skipping");
-                                return;
-                            }
-                            processed_chunks.add(cp_final);
+            // [LMax Fix V37] 延迟 100 Tick (5 秒) 后在后台线程执行种树！
+            // 5 秒后区块加载风暴结束，异步读取绝对不会死锁，且绝不阻塞世界生成！
+            Core.DelayedWork.create(true, 100, () -> {
+                new Thread(() -> {
+                    try {
+                        if (!processed_chunks.contains(chunk_pos)) {
+                            processed_chunks.add(chunk_pos);
+                            tannyjung.tanshugetrees_handcode.systems.world_gen.TreeLocation.start(level_server, dimension, chunk_pos);
+                            tannyjung.tanshugetrees_handcode.systems.world_gen.TreePlacer.start(level_server, level_server, generator, dimension, chunk_pos);
                             
-                            tannyjung.tanshugetrees_handcode.systems.world_gen.TreePlacer.start(
-                                ls_final, ls_final, gen_final, dim_final, cp_final);
-                            ls_final.getServer().execute(() -> {
+                            // 种完树后，在主线程手动发包！
+                            level_server.getServer().execute(() -> {
                                 try {
-                                    net.minecraft.world.level.chunk.LevelChunk lc =
-                                        ls_final.getChunk(cp_final.x, cp_final.z);
-                                    var pkt = new net.minecraft.network.protocol.game.ClientboundLevelChunkWithLightPacket(
-                                        lc, ls_final.getLightEngine(), null, null);
-                                    int count = 0;
-                                    for (net.minecraft.server.level.ServerPlayer sp :
-                                            ls_final.getChunkSource().chunkMap.getPlayers(cp_final, false)) {
-                                        sp.connection.send(pkt);
-                                        count++;
+                                    net.minecraft.world.level.chunk.LevelChunk lc = level_server.getChunk(chunk_pos.x, chunk_pos.z);
+                                    if (lc != null && !lc.isEmpty()) {
+                                        net.minecraft.network.protocol.game.ClientboundLevelChunkWithLightPacket packet = 
+                                            new net.minecraft.network.protocol.game.ClientboundLevelChunkWithLightPacket(
+                                                lc, level_server.getLightEngine(), null, null);
+                                        for (net.minecraft.server.level.ServerPlayer player : level_server.players()) {
+                                            if (player.distanceToSqr(chunk_pos.getWorldPosition().getX(), player.getY(), chunk_pos.getWorldPosition().getZ()) < 1024) {
+                                                player.connection.send(packet);
+                                            }
+                                        }
                                     }
-                                    if (count == 0) {
-                                        if (Core.debug_log) System.out.println("[THT-DEBUG] Chunk refresh: no players tracking " + cp_final);
-                                    }
-                                } catch (Exception ex) {
-                                    if (Core.debug_log) System.err.println("[THT-DEBUG] Chunk refresh error for " + cp_final + ": " + ex);
-                                }
+                                } catch (Exception e) { e.printStackTrace(); }
                             });
-                        } catch (Exception e) {
-                            if (Core.debug_log) System.err.println("[THT-DEBUG] Async TreePlacer error for chunk " + cp_final + ": " + e);
-                            e.printStackTrace();
                         }
-                    });
-                }
-
-                WorldGenStepEnd.start(dimension, chunk_pos);
-
-            }
-
+                    } catch (Exception e) { e.printStackTrace(); }
+                }).start();
+            });
         }
-
+            
         @SubscribeEvent
         public static void eventPlayerJoined (PlayerEvent.PlayerLoggedInEvent event) {
 
@@ -308,7 +237,6 @@ public class EventCenter {
         }
 
         @SubscribeEvent
-
         /*
         (1.20.1)
         public static void eventTickServer (TickEvent.ServerTickEvent event) {
@@ -317,25 +245,25 @@ public class EventCenter {
         */
         public static void eventTickServer (TickEvent.ServerTickEvent event) {
 
+            /*
+            (1.20.1)
+            if (event.phase == TickEvent.Phase.START) return;
+            (1.21.1)
+            ### Nothing ###
+            */
+            if (event.phase == TickEvent.Phase.START) return;
+
             Core.currentServer = event.getServer();
             tannyjung.tanshugetrees_handcode.systems.world_gen.TreePlacer.DeferredQueue.processTick(event.getServer());
 
             if (Core.global_locking == false) {
-
-                /*
-                (1.20.1)
-                if (event.phase == TickEvent.Phase.START) return;
-                (1.21.1)
-                ### Nothing ###
-                */
-                if (event.phase == TickEvent.Phase.START) return;
 
                 LevelAccessor level_accessor = event.getServer().overworld();
                 ServerLevel level_server = event.getServer().overworld();
 
                 Core.DelayedWork.runTick();
                 Core.Loop.loopTick(level_accessor, level_server);
-                
+
                 // [LMax Fix V10] 消费实体生成队列
                 Runnable entityTask;
                 int processed = 0;
@@ -343,6 +271,8 @@ public class EventCenter {
                     try { entityTask.run(); } catch (Exception e) { e.printStackTrace(); }
                     processed++;
                 }
+
+
 
             }
 

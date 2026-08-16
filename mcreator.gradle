@@ -1,0 +1,5 @@
+// MCreator Gradle configuration  
+  
+processResources {  
+    duplicatesStrategy = DuplicatesStrategy.INCLUDE  
+} 
