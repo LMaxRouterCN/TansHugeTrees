@@ -378,6 +378,7 @@ public class TreeLocation {
         int explorer_step = 0;
         boolean is_first = true;
         Map<BlockPos, String> data = new java.util.concurrent.ConcurrentHashMap<>();
+        Map<ChunkPos, Map<BlockPos, String>> regionMap = null;
         ByteBuffer buffer = null;
         String key = "";
         String test_id = "";
@@ -392,7 +393,7 @@ public class TreeLocation {
             while (true) {
                 // Get Data
                 {
-scan_pos = new ChunkPos(center_chunk.x + scanX, center_chunk.z + scanZ);
+                    scan_pos = new ChunkPos(center_chunk.x + scanX, center_chunk.z + scanZ);
                     if (cache_write_tree_location.containsKey(scan_pos)) {
                         data = cache_write_tree_location.get(scan_pos);
                     } else {
@@ -404,7 +405,8 @@ scan_pos = new ChunkPos(center_chunk.x + scanX, center_chunk.z + scanZ);
                         data = regionMap.getOrDefault(scan_pos, new HashMap<>());
                     }
 
-if (data != null && data.isEmpty() == false) {
+                }
+                if (data != null && data.isEmpty() == false) {
                     // Test
                     {
                         for (Map.Entry<BlockPos, String> entry : data.entrySet()) {

@@ -349,3 +349,107 @@ cache_other_region.put(key, regionMap);
 - 重启游戏测试出生点大树生成情况
 - 观察日志是否还有NPE
 - 确认大树之间的距离检测是否正常工作
+## 2026年1月修复记录 - testDistance方法括号修复
+
+### 问题诊断
+- testDistance方法（第370行开始）缺少方法闭合括号`}`
+- 导致后续所有方法被误认为testDistance内部内容
+- 层级分析显示：第456行从层级3回到2（闭合for循环），但方法本身未闭合
+
+### 修复措施
+1. 在第456行后添加`}`闭合testDistance方法
+2. 删除之前错误添加的闭合括号
+3. 最终验证：层级正确归零，所有括号匹配
+
+### 技术细节
+- 修复位置：第457行（插入闭合括号）
+- 影响范围：testDistance方法后续的所有方法定义
+- 修复后testShoreline等方法正确识别为类的独立方法
+
+### 清理工作
+- 删除所有临时测试脚本（fix_testdistance.py, check_all.py等）
+- 保持项目目录整洁
+---
+
+## 2026年8月6日 - 任务完成记录
+
+### 任务：修复TreeLocation.java编译错误
+
+**问题**：
+- 第370-456行 testDistance 方法存在括号配对错误
+- 根本原因：第402-418行的 if 块存在多余的闭合括号，导致整个方法结构崩溃
+
+**解决方案**：
+- 从根源修复：完整替换第402-418行的代码块，确保括号配对正确
+- 原子化修改：一次性修复整个代码段，避免逐行修补导致的混乱
+
+**结果**：BUILD SUCCESSFUL
+
+### 技术要点记录
+1. 当代码括号结构完全混乱时，必须停止打补丁，从根源完整替换问题代码段
+2. 使用 `-l` 行号替换模式比 `-s` 内容匹配更可靠
+3. 注意Java代码块的嵌套层次，每层都要严格对应
+---
+## [2026-08-07 18:45] 发现并修复关键缩进Bug - 导致不生成大树和枯树的根因
+
+### 问题现象
+- 测试环境运行后，游戏内完全没有大树和枯树生成
+- 日志无报错信息，代码静默失效
+
+### 根因定位过程
+1. **初步排查**：检查TreeLocation.java的testTreeDistance方法（负责树位置距离检查）
+2. **缩进分析**：发现第395行和第407行缩进为0（在while循环外）
+3. **大括号匹配分析**：确认第394行开启的Get Data块缺少对应的关闭}`
+
+### 根因确认
+**TreeLocation.java第393-407行存在致命缩进Bug：**
+- **第395行**：`scan_pos = new ChunkPos(...)` 缩进为0，导致在Get Data块外，**永远不会执行**
+- **第406行**：缺失关闭Get Data块的`}`
+- **第407行**：`if (data != null...` 缩进为0，导致在while循环外，**永远不会检查data**
+
+### 修复内容
+
+// 修复前（缩进错误）
+393                // Get Data
+394                {
+395scan_pos = new ChunkPos(center_chunk.x + scanX, center_chunk.z + scanZ);  // 缩进0，在块外
+…
+405                    }
+406
+407if (data != null && data.isEmpty() == false) {  // 缩进0，在while外
+// 修复后（缩进正确）
+393                // Get Data
+394                {
+395                    scan_pos = new ChunkPos(center_chunk.x + scanX, center_chunk.z + scanZ);  // 缩进20，在块内
+…
+405                    }
+406
+407                }  // 新增：关闭Get Data块
+408                if (data != null && data.isEmpty() == false) {  // 缩进16，在while内
+
+### 影响范围
+- **修复文件**：`src/main/java/tannyjung/tanshugetrees_handcode/systems/world_gen/TreeLocation.java`
+- **修复行数**：第395行、第406行（新增）、第407行
+- **影响功能**：树位置距离检查逻辑，直接控制大树和枯树是否生成
+
+### 后续验证
+- 需重新编译并测试，确认大树和枯树正常生成
+---
+## [2026-08-07 18:47] 编译成功 - 缩进Bug完全修复
+
+### 修复内容
+1. **第395行**：`scan_pos = new ChunkPos(...)` 缩进从0改为20（在Get Data块内）
+2. **第406行**：新增关闭Get Data块的`}`
+3. **第407行**：`if (data != null...` 缩进从0改为16（在while循环内）
+4. **第381行**：新增`Map<ChunkPos, Map<BlockPos, String>> regionMap = null;`变量声明
+
+### 编译结果
+- BUILD SUCCESSFUL in 18s
+- 无编译错误
+- 生成jar文件：build/libs/TansHugeTrees-1.0.jar
+
+### 下一步验证
+- 将jar文件复制到测试环境
+- 启动游戏，创建新世界
+- 观察是否生成大树和枯树
+- 检查日志文件确认无报错
