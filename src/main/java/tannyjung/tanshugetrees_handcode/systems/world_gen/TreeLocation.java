@@ -216,14 +216,20 @@ public class TreeLocation {
     }
 
     private static void getData(LevelAccessor level_accessor, String dimension, ChunkPos chunk_pos, Map<String, Map<String, String>> data) {
+        // [THT-DEBUG] 方法入口日志
+        System.out.println("[THT-DEBUG] getData() ENTER - chunk: " + chunk_pos);
         Holder<Biome> biome_center = getBiome(level_accessor, chunk_pos);
         String biome_id = GameUtils.Environment.toID(biome_center);
+        // [THT-DEBUG] 群系ID
+        System.out.println("[THT-DEBUG] getData() - biome_id: " + biome_id);
         world_gen_overlay_details_biome = biome_id;
         world_gen_overlay_details_tree = "No Matching";
 
         Set<String> set_tree = null;
         {
             set_tree = CacheManager.DataText.getSet("set_tree").get(biome_id);
+            // [THT-DEBUG] set_tree大小
+            System.out.println("[THT-DEBUG] getData() - set_tree size: " + (set_tree == null ? "NULL" : set_tree.size()));
             if (set_tree == null) {
                 set_tree = new HashSet<>();
                 for (Map.Entry<String, Map<String, String>> entry : data.entrySet()) {

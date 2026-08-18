@@ -9,3 +9,5 @@
 /run
 
 .vscode/
+.agent_temp_files/
+.agent_trash/
