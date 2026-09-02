@@ -1,0 +1,206 @@
+{
+  "next_id": 16,
+  "memory": {
+    "1": {
+      "temp": "∞",
+      "tags": [
+        "TansHugeTrees",
+        "项目背景"
+      ],
+      "pin": true,
+      "created_at": 1787394479.252338,
+      "last_accessed": 1787394479.2523386
+    },
+    "2": {
+      "temp": "∞",
+      "tags": [
+        "工具bug",
+        "exec恢复",
+        "PowerShell"
+      ],
+      "pin": false,
+      "created_at": 1787394479.265206,
+      "last_accessed": 1787394479.2652063
+    },
+    "3": {
+      "temp": "∞",
+      "tags": [
+        "TansHugeTrees",
+        "根因",
+        "性能",
+        "线程安全"
+      ],
+      "pin": true,
+      "created_at": 1787404550.0217671,
+      "last_accessed": 1787404550.0217674
+    },
+    "4": {
+      "temp": "∞",
+      "tags": [
+        "TansHugeTrees",
+        "架构决策",
+        "测试方法论"
+      ],
+      "pin": true,
+      "created_at": 1787405870.7594821,
+      "last_accessed": 1787405870.7594821
+    },
+    "5": {
+      "temp": "∞",
+      "tags": [
+        "TansHugeTrees",
+        "A方案",
+        "V38",
+        "遗留问题",
+        "测试方法论"
+      ],
+      "pin": true,
+      "created_at": 1787410102.1770408,
+      "last_accessed": 1787410102.1770408
+    },
+    "6": {
+      "temp": "∞",
+      "tags": [
+        "TansHugeTrees",
+        "V38",
+        "exec不可用",
+        "死代码清理",
+        "原子回滚"
+      ],
+      "pin": true,
+      "created_at": 1787483674.0061586,
+      "last_accessed": 1787483674.006159
+    },
+    "7": {
+      "temp": "∞",
+      "initial_temp": 100,
+      "tags": [
+        "根因",
+        "线程安全",
+        "架构决策",
+        "V39",
+        "诊断"
+      ],
+      "pin": true,
+      "created_at": 1787553490.8128803,
+      "last_accessed": 1787553490.812881
+    },
+    "8": {
+      "temp": "∞",
+      "initial_temp": 100,
+      "tags": [
+        "exec恢复",
+        "工具bug"
+      ],
+      "pin": true,
+      "created_at": 1787558081.128396,
+      "last_accessed": 1787558081.1283965
+    },
+    "9": {
+      "temp": "∞",
+      "initial_temp": 100,
+      "tags": [
+        "TansHugeTrees",
+        "根因",
+        "架构决策",
+        "诊断",
+        "V39",
+        "遗留问题"
+      ],
+      "pin": true,
+      "created_at": 1787575193.5027487,
+      "last_accessed": 1787575193.5027494
+    },
+    "10": {
+      "temp": "∞",
+      "initial_temp": 100,
+      "tags": [
+        "根因",
+        "V40",
+        "TansHugeTrees",
+        "诊断方法论",
+        "修复"
+      ],
+      "pin": true,
+      "created_at": 1787588827.0498555,
+      "last_accessed": 1787588827.0498564
+    },
+    "11": {
+      "temp": 5.6561627350252905,
+      "initial_temp": 100,
+      "tags": [
+        "工具bug",
+        "PowerShell",
+        "PokerAgent",
+        "exec",
+        "编码"
+      ],
+      "pin": false,
+      "created_at": 1787588827.082363,
+      "last_accessed": 1787588827.0823634
+    },
+    "12": {
+      "temp": "∞",
+      "initial_temp": 100,
+      "tags": [
+        "根因",
+        "V41",
+        "TansHugeTrees",
+        "负缓存",
+        "诊断方法论",
+        "修复",
+        "遗留问题"
+      ],
+      "pin": true,
+      "created_at": 1788344206.5434368,
+      "last_accessed": 1788344206.5434372
+    },
+    "13": {
+      "temp": 20.390682574579035,
+      "initial_temp": 100,
+      "tags": [
+        "V41",
+        "验证",
+        "出生点",
+        "幽灵方块",
+        "遗留问题",
+        "性能",
+        "TansHugeTrees"
+      ],
+      "pin": false,
+      "created_at": 1788351648.7243636,
+      "last_accessed": 1788351648.7243638
+    },
+    "14": {
+      "temp": 23.782688525533217,
+      "initial_temp": 100,
+      "tags": [
+        "V42",
+        "幽灵方块",
+        "根因",
+        "队列溢出",
+        "churn",
+        "TansHugeTrees",
+        "遗留问题",
+        "性能"
+      ],
+      "pin": false,
+      "created_at": 1788355480.8380518,
+      "last_accessed": 1788355480.838052
+    },
+    "15": {
+      "temp": 95.0,
+      "initial_temp": 100,
+      "tags": [
+        "测试方法论",
+        "验证",
+        "工具bug",
+        "字节校验",
+        "内部类"
+      ],
+      "pin": false,
+      "created_at": 1788366840.0872118,
+      "last_accessed": 1788366840.0872118
+    }
+  }
+}
