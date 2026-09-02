@@ -651,3 +651,4 @@ exec指令仍有item变量bug（UnboundLocalError），无法远程编译。max�
 【观察点】①树长出（V41 验证不回退）；②TERMINAL 行出现（3×3 邻完+无数据=确定无树，属正常地形）；③wake 行出现（region 完成唤醒等待 chunk）；④EARLY RETURN 洪泛断崖（旧 646156/日 → 数量级=region 完成事件数）；⑤队列 size 收敛排空而非永久平台；⑥幽灵方块消失（快速跑图回看，树可见）；⑦canary/overflow 行 = 0；⑧键控分桶：全关无输出，单开某桶只出该桶。
 【回滚】六文件 .bak-v42 覆盖回 → gradlew build → 20260902182757.jar.disabled 改回 jar 名。
 【遗留/记档】守卫区与 put 行缩进歪（编译无碍，运行验证后统一整理入 V43）；极端竞争吞唤醒 → 树延迟到 reload（严格优于旧 400 retry 后静默丢）；claims 键含维度前缀（此前误记无前缀，已纠正）。
+【更正·2026-09-03 00:3x】上文字节校验条目有两处路径笔误：evictOldest 实位于 TreePlacer$DeferredQueue.class（非外部类）、chunk_status_guard 实位于 Handcode$Config.class。按正确内部类路径重验全部七路 OK（TreePlacer$DeferredQueue / Handcode$Config / TreePlacer / TreeLocation / EventCenter$Server / Core），SHA256 源/部署一致。校验结论不变：产物完整，首报 FAIL 为校验脚本自身的路径错误。方法论备忘：canary 必须锚定到方法/字段真正所在的 class 文件——嵌套类编译为独立的 Outer$Inner.class。
