@@ -197,6 +197,13 @@ public class Handcode {
         public static int deferred_queue_retry_limit = 400; // DeferredQueue 最大重试次数 (原200)
         public static int deferred_queue_process_per_tick = 32; // DeferredQueue 每 tick 处理任务数 (原4)
         public static int bin_convert_futures_max_entries = 256; // bin_convert_futures 最大条目数 (原64)
+
+        // [LMax Fix V42] Test Exist Chunk 守卫开关（默认关=废除）[长期记忆: 014]
+        // 守卫原逻辑：writeData 写入前扫描 ±4 chunk 的 features 状态，任一命中即整棵丢树。
+        // 实锤副作用：出生点/快速跑图轨迹后方的地形已过 features 阶段，树在写入前被整棵拦截
+        // （世界22 的 0,0.bin 735 桶中 spawn 圈 ±10 chunk 零桶零条）。前放后放功能等价
+        // （唯一差异是客户端同步，已由 V42 EventCenter.resyncChunk 补齐），故默认废除。
+        public static boolean chunk_status_guard = false;
         
 
           
@@ -396,6 +403,9 @@ public class Handcode {
                     deferred_queue_process_per_tick = 32
                     | Maximum number of deferred tasks to process per tick.
 
+                      chunk_status_guard = false
+                      | [LMax V42] Skip writing tree data when any chunk in the +-4 range has already passed the "features" stage. Default false (guard removed): the guard discarded whole trees near spawn and behind fast travel. Enable only for debugging.
+
                     bin_convert_futures_max_entries = 256
                     | Maximum number of region futures cached in memory for binary data conversion.
         
@@ -517,6 +527,8 @@ public class Handcode {
             deferred_queue_max_size = Integer.parseInt(data.get("deferred_queue_max_size"));
             deferred_queue_retry_limit = Integer.parseInt(data.get("deferred_queue_retry_limit"));
             deferred_queue_process_per_tick = Integer.parseInt(data.get("deferred_queue_process_per_tick"));
+            // [LMax Fix V42] 守卫开关：parseBoolean 对缺失键安全返回 false（旧配置文件无需手动迁移）
+            chunk_status_guard = Boolean.parseBoolean(data.get("chunk_status_guard"));
             bin_convert_futures_max_entries = Integer.parseInt(data.get("bin_convert_futures_max_entries"));
         
 

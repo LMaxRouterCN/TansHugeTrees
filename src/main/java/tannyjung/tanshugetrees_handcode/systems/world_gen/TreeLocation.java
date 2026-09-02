@@ -118,7 +118,7 @@ public class TreeLocation {
 
     public static void start(LevelAccessor level_accessor, String dimension, ChunkPos chunk_pos) {
         Map<String, Map<String, String>> data = ConfigDynamic.getData("world_gen");
-        if (Core.debug_log) System.out.println("[THT-DEBUG] TreeLocation.start() called. Data empty: " + data.isEmpty() + ", Data size: " + data.size());
+        if (Core.log_tree_location) System.out.println("[THT-DEBUG] TreeLocation.start() called. Data empty: " + data.isEmpty() + ", Data size: " + data.size());
         // 修复：data 为空时显式记录警告日志，而非静默跳过
         if (data.isEmpty()) {
             Core.logger.warn("[THT-DEBUG] TreeLocation.start() - config_world_gen data is empty! Tree generation will be skipped.");
@@ -129,17 +129,78 @@ public class TreeLocation {
         
 
           
+    // [LMax Fix V42] churn 斩杀：空数据 chunk 等待集 [长期记忆: 014]
+    // TreePlacer.start() 读不到树数据时登记于此，不再无限重入 DeferredQueue
+    // （旧实现单日 646156 次 EARLY RETURN 空转，队列永久满载 4096/4096，挤压真实任务）。
+    // 事件驱动唤醒：region 扫描完成时经 wakeOnRegionComplete 重跑一次；
+    // 3×3 邻 region 全部完成仍无数据 = 确定终态，注销退出。
+    private static final java.util.concurrent.ConcurrentHashMap<String, java.util.Set<ChunkPos>> pendingEmptyChunks = new java.util.concurrent.ConcurrentHashMap<>();
+
+    // [LMax Fix V42] 登记：start() 空数据时调用。Set.add 幂等，重复登记无副作用。
+    public static void registerPendingEmpty(String dimension, ChunkPos chunk_pos) {
+        pendingEmptyChunks.computeIfAbsent(dimension, k -> java.util.concurrent.ConcurrentHashMap.newKeySet()).add(chunk_pos);
+    }
+
+    // [LMax Fix V42] 注销：拿到树数据 / 判定终态时调用。
+    public static void unregisterPendingEmpty(String dimension, ChunkPos chunk_pos) {
+        java.util.Set<ChunkPos> set = pendingEmptyChunks.get(dimension);
+        if (set != null) set.remove(chunk_pos);
+    }
+
+    // [LMax Fix V42] 终态判定：chunk 的 3×3 邻 region 全部扫描完成（TRUE）仍无数据 → 覆盖本 chunk 的
+    // 树记录确定不存在（place 数据按树途经 region 写入，半径 >512m 的跨 region 超大树不在保证范围）。
+    public static boolean allNeighborRegionsComplete(String dimension, ChunkPos chunk_pos) {
+        int rx = chunk_pos.x >> 5;
+        int rz = chunk_pos.z >> 5;
+        for (int dx = -1; dx <= 1; dx++) {
+            for (int dz = -1; dz <= 1; dz++) {
+                if (region_scan_claims.get(dimension + "," + (rx + dx) + "," + (rz + dz)) != Boolean.TRUE) {
+                    return false;
+                }
+            }
+        }
+        return true;
+    }
+
+    // [LMax Fix V42] 事件唤醒：region 扫描完成时调用。等待集中所有 3×3 邻域含此 region 的空数据 chunk
+    // 经 TreePlacer.requeueChunk 重新入队（NORMAL 路径，processTick 带 FULL 就绪检查与重试）。
+    // 每 chunk 至多被唤醒 9 次（3×3 region 各完成一次），有界收敛，永动消失。
+    // 必须在 flushCachesAsync 之后调用：保证被唤醒的 start() 读到失效重建后的最新数据。
+    public static void wakeOnRegionComplete(String dimension, int regionX, int regionZ, LevelAccessor level_accessor) {
+        java.util.Set<ChunkPos> set = pendingEmptyChunks.get(dimension);
+        if (set == null || set.isEmpty() == true) return;
+        java.util.List<ChunkPos> woke = null;
+        for (ChunkPos p : set) {
+            if (Math.abs((p.x >> 5) - regionX) <= 1 && Math.abs((p.z >> 5) - regionZ) <= 1) {
+                if (woke == null) woke = new java.util.ArrayList<>();
+                woke.add(p);
+            }
+        }
+        if (woke == null) return;
+        for (ChunkPos p : woke) {
+            // [LMax Fix V42] instanceof 收窄：run() 的 level_accessor 运行时实为 ServerLevel
+            // （eventChunkLoaded 传入），但参数类型 LevelAccessor 接口没有 dimension()。
+            // 仅 Server 上下文执行唤醒；理论外的非 Server 上下文保留等待（与 region 未扫描同语义，不丢正确性）
+            if (level_accessor instanceof net.minecraft.server.level.ServerLevel sl_wake) {
+                set.remove(p);
+                tannyjung.tanshugetrees_handcode.systems.world_gen.TreePlacer.requeueChunk(dimension, sl_wake.dimension(), p);
+                if (Core.log_tree_location) System.out.println("[THT-DEBUG] wakeOnRegionComplete: chunk " + p + " requeued after region " + regionX + "," + regionZ + " completed");
+            }
+        }
+    }
+
+
     public static void run(LevelAccessor level_accessor, String dimension, ChunkPos chunk_pos, Map<String, Map<String, String>> data) {
         // 修复：添加详细日志，追踪大树生成流程
-        if (Core.debug_log) System.out.println("[THT-DEBUG] TreeLocation.run() started - dimension: " + dimension + ", chunk: " + chunk_pos);
+        if (Core.log_tree_location) System.out.println("[THT-DEBUG] TreeLocation.run() started - dimension: " + dimension + ", chunk: " + chunk_pos);
         
         // 检查传入数据是否为空
         if (data == null || data.isEmpty()) {
             Core.logger.warn("[THT-DEBUG] TreeLocation.run() - data parameter is null or empty! This may be why trees don't generate.");
-            if (Core.debug_log) System.out.println("[THT-DEBUG] TreeLocation.run() - data is null or empty, returning early");
+            if (Core.log_tree_location) System.out.println("[THT-DEBUG] TreeLocation.run() - data is null or empty, returning early");
             return;
         } else {
-            if (Core.debug_log) System.out.println("[THT-DEBUG] TreeLocation.run() - data size: " + data.size() + " entries");
+            if (Core.log_tree_location) System.out.println("[THT-DEBUG] TreeLocation.run() - data size: " + data.size() + " entries");
         }
         
         int regionX = chunk_pos.x >> 5;
@@ -157,8 +218,8 @@ public class TreeLocation {
         // 但 region 文件还在，导致下次启动扫描被跳过、树全部消失。
         // [LMax Fix V38] 改用 region_scan_claims 三态内存缓存（JVM 重启自动清空）防止同 session 重复扫描。
         // [THT-DEBUG] 诊断扫描循环执行情况
-        if (Core.debug_log) System.out.println("[THT-DEBUG] TreeLocation.run() - Starting region scan for: " + regionKey);
-        if (Core.debug_log) System.out.println("[THT-DEBUG] TreeLocation.run() - Scan loop begins, region_scan_percent: " + Handcode.Config.region_scan_percent);
+        if (Core.log_tree_location) System.out.println("[THT-DEBUG] TreeLocation.run() - Starting region scan for: " + regionKey);
+        if (Core.log_tree_location) System.out.println("[THT-DEBUG] TreeLocation.run() - Scan loop begins, region_scan_percent: " + Handcode.Config.region_scan_percent);
 
         // [LMax Fix V38] try-finally 兜底：扫描中途抛异常时回滚认领（remove FALSE），
         // 否则 region 永远卡 FALSE、后续所有 chunk（含 DeferredQueue 重试）永久跳过，该 region 树全部消失
@@ -174,7 +235,7 @@ public class TreeLocation {
                     for (int scanZ = 0; scanZ < 32; scanZ++) {
                         // [THT-DEBUG] 确认循环开始执行
                         if (scanX == 0 && scanZ == 0) {
-                            if (Core.debug_log) System.out.println("[THT-DEBUG] TreeLocation.run() - Scan loop first iteration (0,0)");
+                            if (Core.log_tree_location) System.out.println("[THT-DEBUG] TreeLocation.run() - Scan loop first iteration (0,0)");
                         }
 
                         world_gen_overlay_bar.incrementAndGet();
@@ -187,14 +248,19 @@ public class TreeLocation {
                     }
                 }
                 long scan_time = System.currentTimeMillis() - scan_start;
-                if (Core.debug_log) System.out.println("[THT-DEBUG] TreeLocation.run() - Scan loop completed, count: " + scan_count + ", time: " + scan_time + "ms");
+                if (Core.log_tree_location) System.out.println("[THT-DEBUG] TreeLocation.run() - Scan loop completed, count: " + scan_count + ", time: " + scan_time + "ms");
                 Core.logger.info("[THT-DEBUG] Region " + regionKey + " scan completed: " + scan_count + " chunks scanned in " + scan_time + "ms");
             }
 
             // [LMax Fix V38] 扫描完成标记：FALSE→TRUE，后续chunk的TreePlacer.start可读到落盘数据
             // [长期记忆: 004] 先A后B决策的A1：region原子认领消除600×冗余
-            region_scan_claims.put(regionKey, Boolean.TRUE);
+            // [LMax Fix V42] 顺序修正：先同步落盘再置 TRUE（V26 起 flushCachesAsync 已是同步写盘）。
+            // claims=TRUE 从此严格蕴含「数据已落盘且解析缓存已失效」，终态判定与事件唤醒共享此不变量。
             flushCachesAsync(dimension, regionX, regionZ);
+        region_scan_claims.put(regionKey, Boolean.TRUE); // [LMax Fix V42] 移至同步落盘之后（原在 flush 之前，存在"TRUE但数据在途"窗口）
+            // [LMax Fix V42] 事件唤醒：本 region 扫描完成 → 唤醒等待集中 3×3 邻域含本 region 的空数据 chunk
+            // 重跑一次。必须在 flushCachesAsync 之后（数据先落盘失效，唤醒的 start() 才能读到最新）。[长期记忆: 014]
+            wakeOnRegionComplete(dimension, regionX, regionZ, level_accessor);
             world_gen_overlay_animation.set(0);
             Core.logger.info("Completed!");
 
@@ -221,11 +287,11 @@ public class TreeLocation {
 
     private static void getData(LevelAccessor level_accessor, String dimension, ChunkPos chunk_pos, Map<String, Map<String, String>> data) {
         // [THT-DEBUG] 方法入口日志
-        if (Core.debug_log) System.out.println("[THT-DEBUG] getData() ENTER - chunk: " + chunk_pos);
+        if (Core.log_tree_location) System.out.println("[THT-DEBUG] getData() ENTER - chunk: " + chunk_pos);
         Holder<Biome> biome_center = getBiome(level_accessor, chunk_pos);
         String biome_id = GameUtils.Environment.toID(biome_center);
         // [THT-DEBUG] 群系ID
-        if (Core.debug_log) System.out.println("[THT-DEBUG] getData() - biome_id: " + biome_id);
+        if (Core.log_tree_location) System.out.println("[THT-DEBUG] getData() - biome_id: " + biome_id);
         world_gen_overlay_details_biome = biome_id;
         world_gen_overlay_details_tree = "No Matching";
 
@@ -233,7 +299,7 @@ public class TreeLocation {
         {
             set_tree = CacheManager.DataText.getSet("set_tree").get(biome_id);
             // [THT-DEBUG] set_tree大小
-            if (Core.debug_log) System.out.println("[THT-DEBUG] getData() - set_tree size: " + (set_tree == null ? "NULL" : set_tree.size()));
+            if (Core.log_tree_location) System.out.println("[THT-DEBUG] getData() - set_tree size: " + (set_tree == null ? "NULL" : set_tree.size()));
             if (set_tree == null) {
                 set_tree = new HashSet<>();
                 for (Map.Entry<String, Map<String, String>> entry : data.entrySet()) {
@@ -569,19 +635,23 @@ public class TreeLocation {
             from_chunkX = from_chunkX >> 4;
             from_chunkZ = from_chunkZ >> 4;
 
-            // Test Exist Chunk
-            {
-                int scan_fromX = from_chunkX - 4;
-                int scan_fromZ = from_chunkZ - 4;
-                int scan_toX = to_chunkX + 4;
-                int scan_toZ = to_chunkZ + 4;
-                for (int scanX = scan_fromX; scanX <= scan_toX; scanX++) {
-                    for (int scanZ = scan_fromZ; scanZ <= scan_toZ; scanZ++) {
-                        if (GameUtils.Space.testChunkStatus(level_accessor, new ChunkPos(scanX, scanZ), "features") == true) {
-                            return;
+            // [LMax Fix V42] 守卫改为可配置开关（默认关=废除）[长期记忆: 014]：
+            // 原逻辑无条件扫描 ±4 chunk 的 features 状态，任一命中即丢弃整棵树——
+            // 实锤副作用：出生点/快速跑图轨迹后方的地形已过 features 阶段，树在写入前被整棵拦截，
+            // 0,0.bin 735 桶中 spawn 圈 ±10 chunk 零桶零条。前放与后放功能等价（唯一差异是客户端
+            // 同步，已由 V42 EventCenter.resyncChunk 补齐），故默认废除，保留开关供调试对比。
+            if (Handcode.Config.chunk_status_guard == true) {
+                    int scan_fromX = from_chunkX - 4;
+                    int scan_fromZ = from_chunkZ - 4;
+                    int scan_toX = to_chunkX + 4;
+                    int scan_toZ = to_chunkZ + 4;
+                    for (int scanX = scan_fromX; scanX <= scan_toX; scanX++) {
+                        for (int scanZ = scan_fromZ; scanZ <= scan_toZ; scanZ++) {
+                            if (GameUtils.Space.testChunkStatus(level_accessor, new ChunkPos(scanX, scanZ), "features") == true) {
+                                return;
+                            }
                         }
-                    }
-                }
+            }
             }
 
         

@@ -100,22 +100,22 @@ public class EventCenter {
                     for (net.minecraft.core.Holder<net.minecraft.world.level.levelgen.placement.PlacedFeature> pf : step_features) {
                         if (pf.unwrapKey().map(k -> k.location().toString()).orElse("").contains("tanshugetrees")) {
                             found = true;
-                            if (Core.debug_log) System.out.println("[THT-DEBUG] Found tanshugetrees feature in biome: " + pf.unwrapKey().get().location());
+                            if (Core.log_event_center) System.out.println("[THT-DEBUG] Found tanshugetrees feature in biome: " + pf.unwrapKey().get().location());
                         }
                     }
                 }
                 if (!found) {
-                    if (Core.debug_log) System.out.println("[THT-DEBUG] WARNING: No tanshugetrees features found in biome at spawn! Biome modifier NOT applied!");
-                    if (Core.debug_log) System.out.println("[THT-DEBUG] Biome: " + biome_holder.unwrapKey().map(k -> k.location().toString()).orElse("unknown"));
-                    if (Core.debug_log) System.out.println("[THT-DEBUG] Total feature steps: " + gen_settings.features().size());
+                    if (Core.log_event_center) System.out.println("[THT-DEBUG] WARNING: No tanshugetrees features found in biome at spawn! Biome modifier NOT applied!");
+                    if (Core.log_event_center) System.out.println("[THT-DEBUG] Biome: " + biome_holder.unwrapKey().map(k -> k.location().toString()).orElse("unknown"));
+                    if (Core.log_event_center) System.out.println("[THT-DEBUG] Total feature steps: " + gen_settings.features().size());
                     int total = 0;
                     for (net.minecraft.core.HolderSet<net.minecraft.world.level.levelgen.placement.PlacedFeature> step_features : gen_settings.features()) {
                         total += step_features.size();
                     }
-                    if (Core.debug_log) System.out.println("[THT-DEBUG] Total features in biome: " + total);
+                    if (Core.log_event_center) System.out.println("[THT-DEBUG] Total features in biome: " + total);
                 }
             } catch (Exception e) {
-                if (Core.debug_log) System.out.println("[THT-DEBUG] Error checking biome features: " + e);
+                if (Core.log_event_center) System.out.println("[THT-DEBUG] Error checking biome features: " + e);
             }
 
             Core.restart(level_server, true, false);
@@ -181,28 +181,37 @@ public class EventCenter {
                             tannyjung.tanshugetrees_handcode.systems.world_gen.TreeLocation.start(level_server, dimension, chunk_pos);
                             tannyjung.tanshugetrees_handcode.systems.world_gen.TreePlacer.start(level_server, level_server, generator, dimension, chunk_pos);
 
-                            // 种完树后，在主线程手动发包！
-                            level_server.getServer().execute(() -> {
-                                try {
-                                    net.minecraft.world.level.chunk.LevelChunk lc = level_server.getChunk(chunk_pos.x, chunk_pos.z);
-                                    if (lc != null && !lc.isEmpty()) {
-                                        net.minecraft.network.protocol.game.ClientboundLevelChunkWithLightPacket packet =
-                                            new net.minecraft.network.protocol.game.ClientboundLevelChunkWithLightPacket(
-                                                lc, level_server.getLightEngine(), null, null);
-                                        for (net.minecraft.server.level.ServerPlayer player : level_server.players()) {
-                                            if (player.distanceToSqr(chunk_pos.getWorldPosition().getX(), player.getY(), chunk_pos.getWorldPosition().getZ()) < 1024) {
-                                                player.connection.send(packet);
-                                            }
-                                        }
-                                    }
-                                } catch (Exception e) { e.printStackTrace(); }
-                            });
+                            // 种完树后，在主线程手动发包（V42 提取为 resyncChunk，供 DeferredQueue 补写路径复用）
+                            resyncChunk(level_server, chunk_pos);
                         }
                     } catch (Exception e) { e.printStackTrace(); }
                 });
             });
         }
             
+        // [LMax Fix V42] resyncChunk：把指定 chunk 的完整区块包（含光照）重发给 32 格内的玩家。
+        // 幽灵方块修复的同步落点：world-gen 期间 Tile.set 走 lc.setBlockState/flags=4，均不发客户端包；
+        // 后置放置（DeferredQueue 补种/补写）落块后必须调用本方法，否则这些方块客户端永远看不到。
+        // 内部自动切回主线程执行（getChunk 仅主线程安全），异步线程可直接调用；
+        // 32 格半径沿用原 eventChunkLoaded 内联实现的判定（32^2=1024），行为不变，仅提取复用。
+        public static void resyncChunk (net.minecraft.server.level.ServerLevel level_server, net.minecraft.world.level.ChunkPos chunk_pos) {
+            level_server.getServer().execute(() -> {
+                try {
+                    net.minecraft.world.level.chunk.LevelChunk lc = level_server.getChunk(chunk_pos.x, chunk_pos.z);
+                    if (lc != null && !lc.isEmpty()) {
+                        net.minecraft.network.protocol.game.ClientboundLevelChunkWithLightPacket packet =
+                            new net.minecraft.network.protocol.game.ClientboundLevelChunkWithLightPacket(
+                                lc, level_server.getLightEngine(), null, null);
+                        for (net.minecraft.server.level.ServerPlayer player : level_server.players()) {
+                            if (player.distanceToSqr(chunk_pos.getWorldPosition().getX(), player.getY(), chunk_pos.getWorldPosition().getZ()) < 1024) {
+                                player.connection.send(packet);
+                            }
+                        }
+                    }
+                } catch (Exception e) { e.printStackTrace(); }
+            });
+        }
+
         @SubscribeEvent
         public static void eventPlayerJoined (PlayerEvent.PlayerLoggedInEvent event) {
 

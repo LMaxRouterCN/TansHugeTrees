@@ -633,3 +633,21 @@ exec指令仍有item变量bug（UnboundLocalError），无法远程编译。max�
 【测试须知】必须全新世界。出生点附近停留 2-3 分钟再移动（region 扫描约 95s/region + DeferredQueue 重试节奏，树在扫描完成后陆续出现）。
 【观察点】①树长出；②placeCalculate / PendingBlocks.add() total / placed 三计数 > 0（上轮全零）；③队列 size 在 region 扫描完成后收敛排空而非永久平台；④canary/overflow 仍为 0。仍零树 → 下一步 invalidate 内加条件 canary（仅真正逐出 future 时打印）定位事件链断点。
 【遗留】方案B churn 上限（PASSED→add 造新任务 retries 归零绕过 400 上限）未做，视本轮结果定；region 扫描 81-95s/1024chunk 结构性慢（另立案）；原作 latent bug：writeBIN “l” 分支实际 writeBoolean（从未被调用故未爆，暂不动）。
+
+---
+### [2026-09-03 凌晨] V42 实施完成：churn 斩杀 + 幽灵方块同步 + 日志键控分桶，已部署待测试
+【背景】V41 负缓存修复后，本轮闭环三个根因：①EARLY RETURN 空数据路径单日 646156 次无限重入 DeferredQueue（churn：队列永久满载 4096/4096，挤压真实 forced 载荷——世界22 随机空白区域根因之一）②world-gen 期间方块写入（Tile.set flags=4 / placeForced）不发客户端包（幽灵方块：服务端有、客户端无，跑图回看空白）③22 处 debug_log 无键控，全开则日志爆炸、全关则诊断盲。
+【实施·6 文件，全部 .bak-v42 备份同目录】
+- Core.java 485 行：8 模块键控日志字段（log_tree_location / log_tree_placer / log_deferred_queue / log_placer_start / log_place_calculate / log_pending_blocks / log_event_center / log_world_gen_step + log_queue_overflow），master OR module 语义；loadDebugLogConfig 重写：Gson 真解析 + 文件缺失自建全 false 模板（9 键）+ 解析失败全 false 兜底
+- Handcode.java 612 行：chunk_status_guard 三处插入（字段默认 false / 配置模板 / parseBoolean(null)=false 旧配置天然安全）——出生点守卫废除为开关：原 ±4 chunk features 扫描在出生点/跑图轨迹后方无条件丢整棵树（0,0.bin 735 桶中 spawn 圈 ±10 chunk 零桶实锤），前放后放功能等价，客户端差异由 resyncChunk 补齐
+- TreeLocation.java 900 行：churn 等待集机制（pendingEmptyChunks ConcurrentHashMap: register speculative / unregister / allNeighborRegionsComplete 3×3 邻域 / wakeOnRegionComplete 事件唤醒→requeueChunk）；claims-flush 顺序交换——先 flushCachesAsync（V26 起已同步化写盘）再置 claims=TRUE，TRUE 从此严格蕴含「数据已落盘+双缓存已失效」，终态判定零误判窗口；wake 内 instanceof ServerLevel 收窄；守卫套开关；11 处日志分桶
+- TreePlacer.java 2010 行：evictOldest 溢出驱逐（优先丢最老非 forced，保护跨 chunk 树载荷；全 forced 才丢队头；告警走 log_queue_overflow）；start() 返回 int（EARLY RETURN 返回 placed_pending>0?1:0 / 正常路径 1 / 解析异常 0）；EARLY RETURN 重写 = speculative register → place → 不再重入队（churn 斩杀核心）→ 3×3 邻全完无数据 = TERMINAL 终态注销；读到数据即注销等待集；requeueChunk 唤醒入口包装；place/placeForced 返回 int 落块数；processTick 双 PASSED 分支落块>0 才 EventCenter.Server.resyncChunk（防包风暴）；22 处日志分桶
+- EventCenter.java 297 行：resyncChunk 提取至 Server 内部类（主线程 execute + 32 格半径整包重发，eventChunkLoaded 原内联实现提取复用，行为不变）；6 处日志分桶
+- WorldGenStepBeforePlants.java 41 行：2 处日志分桶
+【事件链】region 扫描完成 → flushCachesAsync 同步落盘 + BIN_CACHE/Data.invalidate 双失效 → claims=TRUE → wakeOnRegionComplete 唤醒 3×3 邻域等待 chunk → requeueChunk 入队（NORMAL）→ processTick FULL 就绪检查 → start 重读（future 已失效 → 磁盘 fresh read）→ 终态（TERMINAL）或种树 → 落块>0 → resyncChunk 主线程发包。零轮询、零硬编码延时、唤醒有界（每 chunk 至多 9 次）。
+【构建部署】BUILD SUCCESSFUL（00:18:08）；tanshugetrees-1.0-20260903001727.jar（64,476,284 B）已入 mods 为唯一 ACTIVE，旧 20260902182757（V41）已 .disabled；SHA256 源/部署一致。
+【字节校验】TreePlacer.class 含 requeueChunk/evictOldest/placed_pending；TreeLocation.class 含 wakeOnRegionComplete/pendingEmptyChunks/registerPendingEmpty/allNeighborRegionsComplete；EventCenter$Server.class 含 resyncChunk；Core.class 含 log_tree_location/log_queue_overflow；Handcode.class 含 chunk_status_guard。
+【测试须知】全新世界；出生点停留 2-3 分钟再移动（region 扫描 95s/region，树在扫描完成后陆续出现）。
+【观察点】①树长出（V41 验证不回退）；②TERMINAL 行出现（3×3 邻完+无数据=确定无树，属正常地形）；③wake 行出现（region 完成唤醒等待 chunk）；④EARLY RETURN 洪泛断崖（旧 646156/日 → 数量级=region 完成事件数）；⑤队列 size 收敛排空而非永久平台；⑥幽灵方块消失（快速跑图回看，树可见）；⑦canary/overflow 行 = 0；⑧键控分桶：全关无输出，单开某桶只出该桶。
+【回滚】六文件 .bak-v42 覆盖回 → gradlew build → 20260902182757.jar.disabled 改回 jar 名。
+【遗留/记档】守卫区与 put 行缩进歪（编译无碍，运行验证后统一整理入 V43）；极端竞争吞唤醒 → 树延迟到 reload（严格优于旧 400 retry 后静默丢）；claims 键含维度前缀（此前误记无前缀，已纠正）。

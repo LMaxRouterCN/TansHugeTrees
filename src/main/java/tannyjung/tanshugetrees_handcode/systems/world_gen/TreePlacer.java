@@ -66,11 +66,10 @@ public class TreePlacer {
 
         public static void add(String dimension, net.minecraft.resources.ResourceKey<net.minecraft.world.level.Level> dim_key, ChunkPos chunk_pos) { // [LMax Fix V40] 新增dim_key [长期记忆: 010]
             // [LMax Fix V7] 容量上限检查，防止无界队列导致 OOM
+            // [LMax Fix V42] 溢出驱逐升级见 evictOldest：旧实现无条件 poll 队头，把跨 chunk 树的 forced
+            // 方块载荷与空数据 churn 任务一起混杀（世界22 随机空白区域根因之一，实测 184393 次溢出驱逐）
             while (queue.size() >= Handcode.Config.deferred_queue_max_size) {
-                DeferredTask dropped = queue.poll();
-                if (dropped == null) break;
-                // 丢弃最旧的任务并记录警告
-                System.err.println("[TansHugeTrees] DeferredQueue overflow, dropping oldest task: " + dropped.dimension + " " + dropped.chunk_pos);
+                evictOldest();
             }
             queue.add(new DeferredTask(dimension, dim_key, chunk_pos)); // [LMax Fix V40]
         }
@@ -78,11 +77,32 @@ public class TreePlacer {
         // [方向A重构] 新增：PendingBlocks 补写任务
         public static void addForced(String dimension, net.minecraft.resources.ResourceKey<net.minecraft.world.level.Level> dim_key, ChunkPos chunk_pos, ChunkPos target_chunk) { // [LMax Fix V40] 新增dim_key [长期记忆: 010]
             while (queue.size() >= Handcode.Config.deferred_queue_max_size) {
-                DeferredTask dropped = queue.poll();
-                if (dropped == null) break;
-                System.err.println("[TansHugeTrees] DeferredQueue overflow, dropping oldest task: " + dropped.dimension + " " + dropped.chunk_pos);
+                evictOldest();
             }
             queue.add(new DeferredTask(dimension, dim_key, chunk_pos, target_chunk, true)); // [LMax Fix V40]
+        }
+
+        // [LMax Fix V42] 溢出驱逐：优先丢最老的非 forced 任务，队列全是 forced 时才丢绝对队头。
+        // forced 任务是跨 chunk 树的方块载荷，丢一个 = 一块区域永远缺树；非 forced 只是重跑 start 的重试，
+        // 丢了会被 TreeLocation 的 region 完成事件唤醒机制补回。
+        // ConcurrentLinkedQueue 迭代弱一致：只读定位 + remove(对象) 原子删除，与并发 poll/add 安全共存
+        // （remove 失败 = 该任务恰好被别的线程消费，外层 while 重查 size 即可）。
+        private static void evictOldest () {
+            DeferredTask oldest = null;
+            for (DeferredTask t : queue) {
+                if (t.is_forced == true) continue;
+                oldest = t;
+                break;
+            }
+            if (oldest != null) {
+                queue.remove(oldest);
+            } else {
+                oldest = queue.poll(); // 兜底：队列全 forced，只能丢绝对队头
+            }
+            if (oldest != null) {
+                // [LMax Fix V42] 溢出告警改走 log_queue_overflow 键控（旧 stderr 不受任何开关控制）
+                if (Core.log_queue_overflow) System.err.println("[TansHugeTrees] DeferredQueue overflow, dropped task: " + oldest.dimension + " " + oldest.chunk_pos + " forced=" + oldest.is_forced);
+            }
         }
 
         public static void processTick(net.minecraft.server.MinecraftServer server) {
@@ -109,7 +129,7 @@ public class TreePlacer {
                     if (task.is_forced) {
                         // PendingBlocks 补写任务
                         // [LMax Debug V40] forced 任务诊断日志 [长期记忆: 009]
-                        if (Core.debug_log) System.out.println("[THT-DEBUG] processTick FORCED task: source=" + task.chunk_pos + " target=" + task.target_chunk + " retries=" + task.retries);
+                        if (Core.log_deferred_queue) System.out.println("[THT-DEBUG] processTick FORCED task: source=" + task.chunk_pos + " target=" + task.target_chunk + " retries=" + task.retries);
                         // 检查目标 chunk 是否就绪
                         boolean allReady = true;
                         String failReason = "";
@@ -134,24 +154,28 @@ public class TreePlacer {
 
                         if (!allReady) {
                             // [LMax Debug V40] forced 检查失败原因
-                            if (Core.debug_log) System.out.println("[THT-DEBUG] processTick FORCED FAILED: " + failReason + " | source=" + task.chunk_pos + " target=" + task.target_chunk + " retries=" + task.retries);
+                            if (Core.log_deferred_queue) System.out.println("[THT-DEBUG] processTick FORCED FAILED: " + failReason + " | source=" + task.chunk_pos + " target=" + task.target_chunk + " retries=" + task.retries);
                             task.retries++;
                             if (task.retries < Handcode.Config.deferred_queue_retry_limit) {
                                 retryList.add(task);
                             } else {
                                 // [LMax Debug V40] forced 重试耗尽，任务被丢弃
-                                if (Core.debug_log) System.err.println("[THT-DEBUG] processTick FORCED DROPPED: source=" + task.chunk_pos + " target=" + task.target_chunk);
+                                if (Core.log_deferred_queue) System.err.println("[THT-DEBUG] processTick FORCED DROPPED: source=" + task.chunk_pos + " target=" + task.target_chunk);
                             }
                         } else {
                             // 区块已就绪，强制补写 PendingBlocks
                             // [LMax Debug V40] forced 检查通过
-                            if (Core.debug_log) System.out.println("[THT-DEBUG] processTick FORCED PASSED: source=" + task.chunk_pos + " target=" + task.target_chunk);
-                            PendingBlocks.placeForced(targetLevel, task.target_chunk);
+                            if (Core.log_deferred_queue) System.out.println("[THT-DEBUG] processTick FORCED PASSED: source=" + task.chunk_pos + " target=" + task.target_chunk);
+                            int forced_placed = PendingBlocks.placeForced(targetLevel, task.target_chunk);
+                            // [LMax Fix V42] 幽灵方块同步：强制补写落块后重发包（服务端有、客户端无的补全）
+                            if (forced_placed > 0) {
+                                tannyjung.tanshugetrees_core.game.EventCenter.Server.resyncChunk(targetLevel, task.target_chunk);
+                            }
                         }
                     } else {
                         // 旧版逻辑：重新调 start
                         // [LMax Debug V40] 非 forced 任务诊断日志 [长期记忆: 009]
-                        if (Core.debug_log) System.out.println("[THT-DEBUG] processTick NORMAL task: chunk=" + task.chunk_pos + " retries=" + task.retries);
+                        if (Core.log_deferred_queue) System.out.println("[THT-DEBUG] processTick NORMAL task: chunk=" + task.chunk_pos + " retries=" + task.retries);
                         // 核心：检查当前 Chunk 及 +-4 偏移的 Chunk 是否全部达到 FULL 状态
                         boolean allReady = true;
                         String failReason = "";
@@ -177,20 +201,26 @@ public class TreePlacer {
 
                         if (!allReady) {
                             // [LMax Debug V40] 非 forced 检查失败原因
-                            if (Core.debug_log) System.out.println("[THT-DEBUG] processTick NORMAL FAILED: " + failReason + " | chunk=" + task.chunk_pos + " retries=" + task.retries);
+                            if (Core.log_deferred_queue) System.out.println("[THT-DEBUG] processTick NORMAL FAILED: " + failReason + " | chunk=" + task.chunk_pos + " retries=" + task.retries);
                             task.retries++;
                             if (task.retries < Handcode.Config.deferred_queue_retry_limit) { // 最多重试 N Tick (配置项 deferred_queue_retry_limit)
                                 retryList.add(task);
                             } else {
                                 // [LMax Debug V40] 非 forced 重试耗尽，任务被丢弃
-                                if (Core.debug_log) System.err.println("[THT-DEBUG] processTick NORMAL DROPPED: chunk=" + task.chunk_pos);
+                                if (Core.log_deferred_queue) System.err.println("[THT-DEBUG] processTick NORMAL DROPPED: chunk=" + task.chunk_pos);
                             }
                         } else {
                             // 区块已就绪，安全执行补种
                             // [LMax Debug V40] 非 forced 检查通过
-                            if (Core.debug_log) System.out.println("[THT-DEBUG] processTick NORMAL PASSED: chunk=" + task.chunk_pos);
+                            if (Core.log_deferred_queue) System.out.println("[THT-DEBUG] processTick NORMAL PASSED: chunk=" + task.chunk_pos);
                             ChunkGenerator gen = targetLevel.getChunkSource().getGenerator();
-                            start(targetLevel, targetLevel, gen, task.dimension, task.chunk_pos);
+                            int placed = start(targetLevel, targetLevel, gen, task.dimension, task.chunk_pos);
+                            // [LMax Fix V42] 幽灵方块同步：补种实际写入方块后重发整 chunk 包给 32 格内玩家
+                            // （world-gen 写入不发客户端包是幽灵根因；>0 才发包防包风暴，
+                            // resyncChunk 内部自动切回主线程，此处异步线程直接调用安全）
+                            if (placed > 0) {
+                                tannyjung.tanshugetrees_core.game.EventCenter.Server.resyncChunk(targetLevel, task.chunk_pos);
+                            }
                         }
                     }
                 } catch (Exception e) {
@@ -201,27 +231,43 @@ public class TreePlacer {
         }
     }
 
-    public static void start (LevelAccessor level_accessor, ServerLevel level_server, ChunkGenerator chunk_generator, String dimension, ChunkPos chunk_pos) {
+    // [LMax Fix V42] 返回值语义：0=本次未写入任何方块（空数据且无 pending / 解析异常）；1=可能写入了方块（调用方应 resync）
+    public static int start (LevelAccessor level_accessor, ServerLevel level_server, ChunkGenerator chunk_generator, String dimension, ChunkPos chunk_pos) {
 
         Core.GlobalLocking.test();
 
+        // [LMax Fix V42] speculative register：读数据前先登记 churn 等待集 [长期记忆: 014]
+        // 竞态防御：若先读后登记，可能错过"读取之后才完成的 region"的唤醒（T0读空→T1完成+wake未登记→
+        // T2登记时邻region已全TRUE→误判终态漏树）。先登记保证任何后完成的 region 都能唤醒本 chunk；
+        // 读到数据后立即注销（下方），等待集不会积累。
+        TreeLocation.registerPendingEmpty(dimension, chunk_pos);
         ByteBuffer data = Data.get(dimension, chunk_pos);
 
         if (data.remaining() == 0) {
             // [LMax Debug V39] 诊断：空数据chunk是否也有缓存的方块（跨chunk树方块）
-            if (Core.debug_log) System.out.println("[THT-DEBUG] TreePlacer.start() chunk " + chunk_pos + " EARLY RETURN (no tree data)");
+            if (Core.log_placer_start) System.out.println("[THT-DEBUG] TreePlacer.start() chunk " + chunk_pos + " EARLY RETURN (no tree data)");
             // [LMax Fix V39] 即使没有树数据，当前chunk可能被相邻chunk的树写入了方块，必须尝试place
-            PendingBlocks.place(level_accessor, chunk_pos);
-            DeferredQueue.add(dimension, level_server.dimension(), chunk_pos); // [LMax Fix V40] 传递维度key [长期记忆: 010]
-            // [LMax Debug V40] 诊断：EARLY RETURN 后队列大小，检测无限重入洪泛 [长期记忆: 009]
-            if (Core.debug_log) System.out.println("[THT-DEBUG] EARLY RETURN chunk " + chunk_pos + " | DeferredQueue size: " + DeferredQueue.queue.size());
-            return;
+            // [LMax Fix V42] place 现返回实际落块数：>0 说明本 chunk 有跨 chunk 方块落地，调用方需要 resync
+            int placed_pending = PendingBlocks.place(level_accessor, chunk_pos);
+            // [LMax Fix V42] churn 斩杀：空数据不再 DeferredQueue.add 无限重入队（旧实现单日 64.6 万次
+            // 空转重入，队列永久满载挤压真实 forced 载荷）。改为等待 TreeLocation 的 region 完成事件唤醒；
+            // 3×3 邻 region 全部完成仍无数据 = 确定终态，注销退出（本 chunk 的树记录确定不存在）
+            if (TreeLocation.allNeighborRegionsComplete(dimension, chunk_pos) == true) {
+                TreeLocation.unregisterPendingEmpty(dimension, chunk_pos);
+                if (Core.log_placer_start) System.out.println("[THT-DEBUG] EARLY RETURN chunk " + chunk_pos + " TERMINAL: 3x3 neighbor regions complete, no tree data (unregistered)");
+            } else {
+                if (Core.log_placer_start) System.out.println("[THT-DEBUG] EARLY RETURN chunk " + chunk_pos + " waiting for region wake | pending placed: " + placed_pending);
+            }
+            return (placed_pending > 0) ? 1 : 0;
         }
+
+        // [LMax Fix V42] 读到数据 → 立即注销等待集，本 chunk 不再需要唤醒（speculative register 的对偶操作）
+        TreeLocation.unregisterPendingEmpty(dimension, chunk_pos);
 
         // [LMax Debug] 追踪 TreePlacer 执行情况
         int data_size = data.remaining();
         long placer_start = System.currentTimeMillis();
-        if (Core.debug_log) System.out.println("[THT-DEBUG] TreePlacer.start() chunk " + chunk_pos + " data: " + data_size + " bytes");
+        if (Core.log_placer_start) System.out.println("[THT-DEBUG] TreePlacer.start() chunk " + chunk_pos + " data: " + data_size + " bytes");
 
         String id = "";
         String chosen = "";
@@ -251,7 +297,7 @@ public class TreePlacer {
                 } catch (Exception exception) {
 
                     OutsideUtils.exception(new Exception(), exception, "");
-                    return;
+                        return 0; // [LMax Fix V42] 返回值语义：0=未写入任何方块（解析异常）
 
                 }
 
@@ -269,8 +315,17 @@ public class TreePlacer {
         // [LMax Debug] 追踪 TreePlacer 完成时间
         long placer_time = System.currentTimeMillis() - placer_start;
         if (placer_time > 100) {
-            if (Core.debug_log) Core.logger.info("[THT-DEBUG] TreePlacer.start() chunk " + chunk_pos + " completed in " + placer_time + "ms (data was " + data_size + " bytes)");
+            if (Core.log_placer_start) Core.logger.info("[THT-DEBUG] TreePlacer.start() chunk " + chunk_pos + " completed in " + placer_time + "ms (data was " + data_size + " bytes)");
         }
+        // [LMax Fix V42] 返回值语义：1=进入了正常种树路径（保守视为可能写入了方块，调用方应 resync）
+        return 1;
+    }
+
+    // [LMax Fix V42] requeueChunk：TreeLocation.wakeOnRegionComplete 的事件唤醒入口。
+    // 被 region 完成事件唤醒的空数据 chunk 从这里重新入队（NORMAL 路径），
+    // processTick 自带 FULL 就绪检查与重试上限，未就绪不会重跑 start。
+    public static void requeueChunk (String dimension, net.minecraft.resources.ResourceKey<net.minecraft.world.level.Level> dim_key, ChunkPos chunk_pos) {
+        DeferredQueue.add(dimension, dim_key, chunk_pos);
     }
 
     private static int[] getPartReduce (LevelAccessor level_accessor, String location, int centerX, int centerZ, int dead_tree_level) {
@@ -559,7 +614,7 @@ public class TreePlacer {
 
         // [LMax Debug] 追踪形状数据大小
         short[] shape_data = Caches.TreeShape.getTreeShapeData(location);
-        if (Core.debug_log) System.out.println("[THT-DEBUG] placeCalculate '" + id + "' shape blocks: " + shape_data.length);
+        if (Core.log_place_calculate) System.out.println("[THT-DEBUG] placeCalculate '" + id + "' shape blocks: " + shape_data.length);
 
         for (short scan : shape_data) {
 
@@ -1133,7 +1188,7 @@ public class TreePlacer {
 
             // [LMax Debug] 追踪每棵树的放置
             long tree_start = System.currentTimeMillis();
-            if (Core.debug_log) System.out.println("[THT-DEBUG] DetailedDetection: placing tree '" + id + "' at " + centerX + "," + centerZ + " in chunk " + chunk_pos);
+            if (Core.log_place_calculate) System.out.println("[THT-DEBUG] DetailedDetection: placing tree '" + id + "' at " + centerX + "," + centerZ + " in chunk " + chunk_pos);
             String location = "";
             String path_settings = "";
             String ground_block = "";
@@ -1195,9 +1250,9 @@ public class TreePlacer {
                 test:
                 {
                     // [LMax Debug] 检查点：高度查询前
-                    if (Core.debug_log) System.out.println("[THT-DEBUG] CP1: before getHeightWorldGen for '" + id + "' at " + centerX + "," + centerZ);
+                    if (Core.log_place_calculate) System.out.println("[THT-DEBUG] CP1: before getHeightWorldGen for '" + id + "' at " + centerX + "," + centerZ);
                     BlockPos pos_original = new BlockPos(centerX, GameUtils.Space.getHeightWorldGen(level_accessor, level_server, chunk_generator, centerX, centerZ, "OCEAN_FLOOR_WG", "OCEAN_FLOOR_WG"), centerZ);
-                    if (Core.debug_log) System.out.println("[THT-DEBUG] CP2: after getHeightWorldGen, Y=" + pos_original.getY());
+                    if (Core.log_place_calculate) System.out.println("[THT-DEBUG] CP2: after getHeightWorldGen, Y=" + pos_original.getY());
 
                     // Ground Level
                     {
@@ -1452,7 +1507,7 @@ public class TreePlacer {
                 placeCalculate(level_accessor, level_server, chunk_pos, id, location, path_settings, pos_center, rotation_mirrored, dead_tree_level, fallen_direction);
                 long pc_time = System.currentTimeMillis() - pc_start;
                 if (pc_time > 50) {
-                    if (Core.debug_log) System.out.println("[THT-DEBUG] placeCalculate '" + id + "' at " + centerX + "," + centerZ + " took " + pc_time + "ms");
+                    if (Core.log_place_calculate) System.out.println("[THT-DEBUG] placeCalculate '" + id + "' at " + centerX + "," + centerZ + " took " + pc_time + "ms");
                 }
 
                 // [LMax Fix V16] 修复死锁：level_server.getChunk() 会阻塞等待目标区块 FULL，
@@ -1842,25 +1897,25 @@ public class TreePlacer {
             ChunkPos chunk_pos = new ChunkPos(pos);
             cache_blocks.computeIfAbsent(chunk_pos, create -> new java.util.concurrent.ConcurrentHashMap<>()).put(pos, block);
             // [LMax Debug V39] 诊断：追踪方块入缓存总数
-            if (Core.debug_log) {
+            if (Core.log_pending_blocks) {
                 long total = add_count.incrementAndGet();
                 if (total % 100 == 0) System.out.println("[THT-DEBUG] PendingBlocks.add() total: " + total + " blocks, last target chunk: " + chunk_pos);
             }
         }
 
         // 从缓存中拉取并写入指定 chunk 的所有方块（由各 chunk 的 start() 调用）
-        private static void place (LevelAccessor level_accessor, ChunkPos chunk_pos) {
+        private static int place (LevelAccessor level_accessor, ChunkPos chunk_pos) { // [LMax Fix V42] 返回实际落块数
 
             Map<BlockPos, BlockState> data = cache_blocks.get(chunk_pos);
 
             // [LMax Debug V39] 诊断：place()调用时缓存状态
-            if (Core.debug_log) {
+            if (Core.log_pending_blocks) {
                 int dataSize = (data == null) ? 0 : data.size();
                 System.out.println("[THT-DEBUG] PendingBlocks.place() chunk " + chunk_pos + " cache: " + (data == null ? "NULL" : dataSize + " blocks") + " | total cache chunks: " + cache_blocks.size());
             }
 
             if (data == null) {
-                return;
+            return 0; // [LMax Fix V42] 无缓存数据，未落任何块
             }
 
             int placed = 0;
@@ -1872,23 +1927,24 @@ public class TreePlacer {
             }
 
             // [LMax Debug V39] 诊断：实际写入方块数
-            if (Core.debug_log) System.out.println("[THT-DEBUG] PendingBlocks.place() chunk " + chunk_pos + " placed: " + placed + " blocks");
+            if (Core.log_pending_blocks) System.out.println("[THT-DEBUG] PendingBlocks.place() chunk " + chunk_pos + " placed: " + placed + " blocks");
 
             // 写入完成后清除该 chunk 的缓存
             cache_blocks.remove(chunk_pos);
 
+            return placed; // [LMax Fix V42] 返回实际落块数供 resync 判定
         }
 
         // [方向A重构] 强制补写方法：用于 DeferredQueue 补写已 FULL 的 chunk
-        private static void placeForced (ServerLevel level_server, ChunkPos chunk_pos) {
+        private static int placeForced (ServerLevel level_server, ChunkPos chunk_pos) { // [LMax Fix V42] 返回实际落块数
 
             Map<BlockPos, BlockState> data = cache_blocks.get(chunk_pos);
 
             // [LMax Debug V40] placeForced 诊断日志
-            if (Core.debug_log) System.out.println("[THT-DEBUG] placeForced() chunk " + chunk_pos + " cache: " + (data == null ? "NULL" : data.size() + " blocks"));
+            if (Core.log_pending_blocks) System.out.println("[THT-DEBUG] placeForced() chunk " + chunk_pos + " cache: " + (data == null ? "NULL" : data.size() + " blocks"));
 
             if (data == null) {
-                return;
+            return 0; // [LMax Fix V42] 无缓存数据，未落任何块
             }
 
             int placed_count = 0;
@@ -1903,8 +1959,9 @@ public class TreePlacer {
 
             cache_blocks.remove(chunk_pos);
             // [LMax Debug V40] placeForced 完成日志
-            if (Core.debug_log) System.out.println("[THT-DEBUG] placeForced() chunk " + chunk_pos + " placed: " + placed_count + " blocks, cache cleared");
+            if (Core.log_pending_blocks) System.out.println("[THT-DEBUG] placeForced() chunk " + chunk_pos + " placed: " + placed_count + " blocks, cache cleared");
 
+            return placed_count; // [LMax Fix V42] 返回实际落块数供 resync 判定
         }
 
     }

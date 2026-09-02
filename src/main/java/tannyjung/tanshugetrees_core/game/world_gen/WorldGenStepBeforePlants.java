@@ -17,7 +17,7 @@ public class WorldGenStepBeforePlants extends Feature <NoneFeatureConfiguration>
 
         super(NoneFeatureConfiguration.CODEC);
         // [诊断] 确认 Feature 是否被注册实例化
-        if (Core.debug_log) System.out.println("[THT-DEBUG] WorldGenStepBeforePlants constructor called - Feature registered!");
+        if (Core.log_world_gen_step) System.out.println("[THT-DEBUG] WorldGenStepBeforePlants constructor called - Feature registered!");
 
     }
 
@@ -25,7 +25,7 @@ public class WorldGenStepBeforePlants extends Feature <NoneFeatureConfiguration>
     public boolean place(FeaturePlaceContext<NoneFeatureConfiguration> context) {
 
         // [诊断] 确认 MC 是否调用了 place()
-        if (Core.debug_log) System.out.println("[THT-DEBUG] WorldGenStepBeforePlants.place() called! Origin: " + context.origin());
+        if (Core.log_world_gen_step) System.out.println("[THT-DEBUG] WorldGenStepBeforePlants.place() called! Origin: " + context.origin());
 
         LevelAccessor level_accessor = context.level();
         ServerLevel level_server = context.level().getLevel();
