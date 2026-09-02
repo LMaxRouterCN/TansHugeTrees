@@ -258,6 +258,11 @@ public class FileManager {
                     OutsideUtils.exception(new Exception(), exception, "");
 
                 }
+                // [LMax Fix V41] 写后失效同路径 BIN_CACHE [长期记忆: 012]
+                // 根因：place/*.bin 为 append 式增量落盘，readBIN 可能在两次写入之间读入旧版本
+                // 并被 LRU 缓存持有（容量 512，本会话仅 ~20 文件，永不淘汰），后续追加数据对读方永久不可见。
+                // 写完成后移除缓存条目（含异常路径——半写文件同样必须失效），强制下次 readBIN 直读磁盘。
+                BIN_CACHE.remove(path);
             }
         }
 

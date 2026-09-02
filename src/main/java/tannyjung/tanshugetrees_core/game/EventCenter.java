@@ -169,19 +169,24 @@ public class EventCenter {
             // [LMax Fix V37] 延迟 100 Tick (5 秒) 后在后台线程执行种树！
             // 5 秒后区块加载风暴结束，异步读取绝对不会死锁，且绝不阻塞世界生成！
             Core.DelayedWork.create(true, 100, () -> {
-                new Thread(() -> {
+                // [LMax Fix V38] 裸new Thread→TREE_GEN_EXECUTOR.submit
+                // 原实现每区块一个线程，2400区块=2400并发线程把12核饿死（主线程stall 10.5s根因）
+                // submit进固定池(4-16线程)由无界队列调度，线程数恒定，任务被排队消化
+                // [长期记忆: 004] 先A后B的A2：消灭线程风暴
+                TREE_GEN_EXECUTOR.submit(() -> {
                     try {
-                        if (!processed_chunks.contains(chunk_pos)) {
-                            processed_chunks.add(chunk_pos);
+                        // [LMax Fix V38] contains+add两步非原子(check-then-act竞态)→add()原子check-and-add
+                        // Set.add()返回true=新增成功(本次处理)，false=已存在(跳过)，彻底消除窗口
+                        if (processed_chunks.add(chunk_pos)) {
                             tannyjung.tanshugetrees_handcode.systems.world_gen.TreeLocation.start(level_server, dimension, chunk_pos);
                             tannyjung.tanshugetrees_handcode.systems.world_gen.TreePlacer.start(level_server, level_server, generator, dimension, chunk_pos);
-                            
+
                             // 种完树后，在主线程手动发包！
                             level_server.getServer().execute(() -> {
                                 try {
                                     net.minecraft.world.level.chunk.LevelChunk lc = level_server.getChunk(chunk_pos.x, chunk_pos.z);
                                     if (lc != null && !lc.isEmpty()) {
-                                        net.minecraft.network.protocol.game.ClientboundLevelChunkWithLightPacket packet = 
+                                        net.minecraft.network.protocol.game.ClientboundLevelChunkWithLightPacket packet =
                                             new net.minecraft.network.protocol.game.ClientboundLevelChunkWithLightPacket(
                                                 lc, level_server.getLightEngine(), null, null);
                                         for (net.minecraft.server.level.ServerPlayer player : level_server.players()) {
@@ -194,7 +199,7 @@ public class EventCenter {
                             });
                         }
                     } catch (Exception e) { e.printStackTrace(); }
-                }).start();
+                });
             });
         }
             

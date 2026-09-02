@@ -32,6 +32,9 @@ public class TreePlacer {
     public static class DeferredQueue {
         private static class DeferredTask {
             String dimension;
+            // [LMax Fix V40] 维度运行时本体：入队方直接提供 ResourceKey<Level>，消费侧零字符串解析 [长期记忆: 010]
+            // 横杠化 dimension 字段保留，仅供 Data 文件路径序列化使用
+            net.minecraft.resources.ResourceKey<net.minecraft.world.level.Level> dim_key;
             ChunkPos chunk_pos;
             int retries;
             // [方向A重构] 新增：目标 chunk 和是否强制补写标记
@@ -39,8 +42,9 @@ public class TreePlacer {
             boolean is_forced;     // true 表示只补写 PendingBlocks，不重新调 start
             
             // 旧版构造函数（重新调 start）
-            DeferredTask(String d, ChunkPos c) {
+            DeferredTask(String d, net.minecraft.resources.ResourceKey<net.minecraft.world.level.Level> dk, ChunkPos c) { // [LMax Fix V40] 新增dk [长期记忆: 010]
                 this.dimension = d;
+                this.dim_key = dk;
                 this.chunk_pos = c;
                 this.retries = 0;
                 this.target_chunk = null;
@@ -48,8 +52,9 @@ public class TreePlacer {
             }
             
             // [方向A重构] 新增构造函数（PendingBlocks 补写）
-            DeferredTask(String d, ChunkPos c, ChunkPos target, boolean forced) {
+            DeferredTask(String d, net.minecraft.resources.ResourceKey<net.minecraft.world.level.Level> dk, ChunkPos c, ChunkPos target, boolean forced) { // [LMax Fix V40] 新增dk [长期记忆: 010]
                 this.dimension = d;
+                this.dim_key = dk;
                 this.chunk_pos = c;
                 this.retries = 0;
                 this.target_chunk = target;
@@ -59,7 +64,7 @@ public class TreePlacer {
 
         private static final java.util.concurrent.ConcurrentLinkedQueue<DeferredTask> queue = new java.util.concurrent.ConcurrentLinkedQueue<>();
 
-        public static void add(String dimension, ChunkPos chunk_pos) {
+        public static void add(String dimension, net.minecraft.resources.ResourceKey<net.minecraft.world.level.Level> dim_key, ChunkPos chunk_pos) { // [LMax Fix V40] 新增dim_key [长期记忆: 010]
             // [LMax Fix V7] 容量上限检查，防止无界队列导致 OOM
             while (queue.size() >= Handcode.Config.deferred_queue_max_size) {
                 DeferredTask dropped = queue.poll();
@@ -67,17 +72,17 @@ public class TreePlacer {
                 // 丢弃最旧的任务并记录警告
                 System.err.println("[TansHugeTrees] DeferredQueue overflow, dropping oldest task: " + dropped.dimension + " " + dropped.chunk_pos);
             }
-            queue.add(new DeferredTask(dimension, chunk_pos));
+            queue.add(new DeferredTask(dimension, dim_key, chunk_pos)); // [LMax Fix V40]
         }
 
         // [方向A重构] 新增：PendingBlocks 补写任务
-        public static void addForced(String dimension, ChunkPos chunk_pos, ChunkPos target_chunk) {
+        public static void addForced(String dimension, net.minecraft.resources.ResourceKey<net.minecraft.world.level.Level> dim_key, ChunkPos chunk_pos, ChunkPos target_chunk) { // [LMax Fix V40] 新增dim_key [长期记忆: 010]
             while (queue.size() >= Handcode.Config.deferred_queue_max_size) {
                 DeferredTask dropped = queue.poll();
                 if (dropped == null) break;
                 System.err.println("[TansHugeTrees] DeferredQueue overflow, dropping oldest task: " + dropped.dimension + " " + dropped.chunk_pos);
             }
-            queue.add(new DeferredTask(dimension, chunk_pos, target_chunk, true));
+            queue.add(new DeferredTask(dimension, dim_key, chunk_pos, target_chunk, true)); // [LMax Fix V40]
         }
 
         public static void processTick(net.minecraft.server.MinecraftServer server) {
@@ -89,31 +94,38 @@ public class TreePlacer {
             while (processed < Handcode.Config.deferred_queue_process_per_tick && (task = queue.poll()) != null) {
                 processed++;
                 try {
-                    net.minecraft.resources.ResourceKey<net.minecraft.world.level.Level> dimKey =
-        
+                    // [LMax Fix V40] 修复维度串黑洞：任务现携带 ResourceKey<Level>（入队方取 level.dimension()），
+                    // 不再从横杠化文件路径串（如 "minecraft-overworld"）反解析——parse 对无冒号串补默认命名空间，
+                    // 得到不存在的 "minecraft:minecraft-overworld" → getLevel()=null → 旧代码静默 continue 吞掉全部任务 [长期记忆: 010]
+                    ServerLevel targetLevel = server.getLevel(task.dim_key);
 
-          
-                        net.minecraft.resources.ResourceKey.create(net.minecraft.core.registries.Registries.DIMENSION, net.minecraft.resources.ResourceLocation.parse(task.dimension));
-                    ServerLevel targetLevel = server.getLevel(dimKey);
-
-                    if (targetLevel == null) continue;
+                    if (targetLevel == null) {
+                        // [LMax Fix V40] 黑洞封口：维度查找失败必须可见，不再静默丢弃
+                        System.err.println("[TansHugeTrees] DeferredQueue dropped task: level not found for dim_key=" + task.dim_key + " chunk=" + task.chunk_pos + " forced=" + task.is_forced);
+                        continue;
+                    }
 
                     // [方向A重构] 区分两种任务：重新调 start vs 只补写 PendingBlocks
                     if (task.is_forced) {
                         // PendingBlocks 补写任务
+                        // [LMax Debug V40] forced 任务诊断日志 [长期记忆: 009]
+                        if (Core.debug_log) System.out.println("[THT-DEBUG] processTick FORCED task: source=" + task.chunk_pos + " target=" + task.target_chunk + " retries=" + task.retries);
                         // 检查目标 chunk 是否就绪
                         boolean allReady = true;
+                        String failReason = "";
                         for (int dx = -4; dx <= 4; dx += 8) {
                             for (int dz = -4; dz <= 4; dz += 8) {
                                 int cx = task.chunk_pos.x + dx;
                                 int cz = task.chunk_pos.z + dz;
                                 if (!targetLevel.getChunkSource().hasChunk(cx, cz)) {
                                     allReady = false;
+                                    failReason = "hasChunk=false at (" + cx + "," + cz + ")";
                                     break;
                                 }
                                 net.minecraft.world.level.chunk.ChunkAccess chunk = targetLevel.getChunk(cx, cz);
                                 if (!chunk.getHighestGeneratedStatus().isOrAfter(net.minecraft.world.level.chunk.ChunkStatus.FULL)) {
                                     allReady = false;
+                                    failReason = "not FULL at (" + cx + "," + cz + ")";
                                     break;
                                 }
                             }
@@ -121,30 +133,42 @@ public class TreePlacer {
                         }
 
                         if (!allReady) {
+                            // [LMax Debug V40] forced 检查失败原因
+                            if (Core.debug_log) System.out.println("[THT-DEBUG] processTick FORCED FAILED: " + failReason + " | source=" + task.chunk_pos + " target=" + task.target_chunk + " retries=" + task.retries);
                             task.retries++;
                             if (task.retries < Handcode.Config.deferred_queue_retry_limit) {
                                 retryList.add(task);
+                            } else {
+                                // [LMax Debug V40] forced 重试耗尽，任务被丢弃
+                                if (Core.debug_log) System.err.println("[THT-DEBUG] processTick FORCED DROPPED: source=" + task.chunk_pos + " target=" + task.target_chunk);
                             }
                         } else {
                             // 区块已就绪，强制补写 PendingBlocks
+                            // [LMax Debug V40] forced 检查通过
+                            if (Core.debug_log) System.out.println("[THT-DEBUG] processTick FORCED PASSED: source=" + task.chunk_pos + " target=" + task.target_chunk);
                             PendingBlocks.placeForced(targetLevel, task.target_chunk);
                         }
                     } else {
                         // 旧版逻辑：重新调 start
+                        // [LMax Debug V40] 非 forced 任务诊断日志 [长期记忆: 009]
+                        if (Core.debug_log) System.out.println("[THT-DEBUG] processTick NORMAL task: chunk=" + task.chunk_pos + " retries=" + task.retries);
                         // 核心：检查当前 Chunk 及 +-4 偏移的 Chunk 是否全部达到 FULL 状态
                         boolean allReady = true;
+                        String failReason = "";
                         for (int dx = -4; dx <= 4; dx += 8) { // -4, +4
                             for (int dz = -4; dz <= 4; dz += 8) {
                                 int cx = task.chunk_pos.x + dx;
                                 int cz = task.chunk_pos.z + dz;
                                 if (!targetLevel.getChunkSource().hasChunk(cx, cz)) {
                                     allReady = false;
+                                    failReason = "hasChunk=false at (" + cx + "," + cz + ")";
                                     break;
                                 }
                                 // [执行代号33] 检查区块生成状态是否达到 FULL，避免跨区块树木劈树问题
                                 net.minecraft.world.level.chunk.ChunkAccess chunk = targetLevel.getChunk(cx, cz);
                                 if (!chunk.getHighestGeneratedStatus().isOrAfter(net.minecraft.world.level.chunk.ChunkStatus.FULL)) {
                                     allReady = false;
+                                    failReason = "not FULL at (" + cx + "," + cz + ")";
                                     break;
                                 }
                             }
@@ -152,12 +176,19 @@ public class TreePlacer {
                         }
 
                         if (!allReady) {
+                            // [LMax Debug V40] 非 forced 检查失败原因
+                            if (Core.debug_log) System.out.println("[THT-DEBUG] processTick NORMAL FAILED: " + failReason + " | chunk=" + task.chunk_pos + " retries=" + task.retries);
                             task.retries++;
                             if (task.retries < Handcode.Config.deferred_queue_retry_limit) { // 最多重试 N Tick (配置项 deferred_queue_retry_limit)
                                 retryList.add(task);
+                            } else {
+                                // [LMax Debug V40] 非 forced 重试耗尽，任务被丢弃
+                                if (Core.debug_log) System.err.println("[THT-DEBUG] processTick NORMAL DROPPED: chunk=" + task.chunk_pos);
                             }
                         } else {
                             // 区块已就绪，安全执行补种
+                            // [LMax Debug V40] 非 forced 检查通过
+                            if (Core.debug_log) System.out.println("[THT-DEBUG] processTick NORMAL PASSED: chunk=" + task.chunk_pos);
                             ChunkGenerator gen = targetLevel.getChunkSource().getGenerator();
                             start(targetLevel, targetLevel, gen, task.dimension, task.chunk_pos);
                         }
@@ -177,7 +208,13 @@ public class TreePlacer {
         ByteBuffer data = Data.get(dimension, chunk_pos);
 
         if (data.remaining() == 0) {
-            DeferredQueue.add(dimension, chunk_pos);
+            // [LMax Debug V39] 诊断：空数据chunk是否也有缓存的方块（跨chunk树方块）
+            if (Core.debug_log) System.out.println("[THT-DEBUG] TreePlacer.start() chunk " + chunk_pos + " EARLY RETURN (no tree data)");
+            // [LMax Fix V39] 即使没有树数据，当前chunk可能被相邻chunk的树写入了方块，必须尝试place
+            PendingBlocks.place(level_accessor, chunk_pos);
+            DeferredQueue.add(dimension, level_server.dimension(), chunk_pos); // [LMax Fix V40] 传递维度key [长期记忆: 010]
+            // [LMax Debug V40] 诊断：EARLY RETURN 后队列大小，检测无限重入洪泛 [长期记忆: 009]
+            if (Core.debug_log) System.out.println("[THT-DEBUG] EARLY RETURN chunk " + chunk_pos + " | DeferredQueue size: " + DeferredQueue.queue.size());
             return;
         }
 
@@ -978,6 +1015,14 @@ public class TreePlacer {
         public static void clear () {
             bin_convert_futures.clear();
         }
+        // [LMax Fix V41] 负缓存失效入口 [长期记忆: 012]
+        // 根因：get() 的 computeIfAbsent 将“region 文件尚不存在”这一瞬时状态解析为空 map 并永久缓存
+        // （本会话 region key 数远小于 256 淘汰阈值，且无任何失效路径），数据落盘后读方仍命中空结果
+        // → 25442/25442 全空读 → 零树。修复：生产者 TreeLocation.flushCachesAsync 落盘后调用本方法
+        // 失效对应 region 的 future；消费方（DeferredQueue 400tick 重试节奏）下次 get 重新读盘。事件驱动零轮询。
+        public static void invalidate (String dimension, int regionX, int regionZ) {
+            bin_convert_futures.remove(dimension + "/" + regionX + "," + regionZ);
+        }
 
         private static void clearChunk (String dimension, ChunkPos chunk_pos) {
             // 异步模式下，clearChunk 操作变得复杂且无必要，直接清空整个 Future 缓存即可。
@@ -1422,7 +1467,7 @@ public class TreePlacer {
                             continue;
                         }
 
-                        DeferredQueue.addForced(dimension, chunk_pos, target_cp);
+                        DeferredQueue.addForced(dimension, level_server.dimension(), chunk_pos, target_cp); // [LMax Fix V40] 传递维度key修复串黑洞 [长期记忆: 010]
 
                     }
                 }
@@ -1789,10 +1834,18 @@ public class TreePlacer {
         // 线程安全容器：ChunkPos -> (BlockPos -> BlockState)
         private static final Map<ChunkPos, Map<BlockPos, BlockState>> cache_blocks = new java.util.concurrent.ConcurrentHashMap<>();
 
+        // [LMax Debug V39] 诊断计数器：追踪入缓存方块总数
+        private static final java.util.concurrent.atomic.AtomicInteger add_count = new java.util.concurrent.atomic.AtomicInteger(0);
+
         // 添加方块到缓存（按方块所在 chunk 分组）
         private static void add (BlockPos pos, BlockState block) {
             ChunkPos chunk_pos = new ChunkPos(pos);
             cache_blocks.computeIfAbsent(chunk_pos, create -> new java.util.concurrent.ConcurrentHashMap<>()).put(pos, block);
+            // [LMax Debug V39] 诊断：追踪方块入缓存总数
+            if (Core.debug_log) {
+                long total = add_count.incrementAndGet();
+                if (total % 100 == 0) System.out.println("[THT-DEBUG] PendingBlocks.add() total: " + total + " blocks, last target chunk: " + chunk_pos);
+            }
         }
 
         // 从缓存中拉取并写入指定 chunk 的所有方块（由各 chunk 的 start() 调用）
@@ -1800,15 +1853,26 @@ public class TreePlacer {
 
             Map<BlockPos, BlockState> data = cache_blocks.get(chunk_pos);
 
+            // [LMax Debug V39] 诊断：place()调用时缓存状态
+            if (Core.debug_log) {
+                int dataSize = (data == null) ? 0 : data.size();
+                System.out.println("[THT-DEBUG] PendingBlocks.place() chunk " + chunk_pos + " cache: " + (data == null ? "NULL" : dataSize + " blocks") + " | total cache chunks: " + cache_blocks.size());
+            }
+
             if (data == null) {
                 return;
             }
 
+            int placed = 0;
             for (Map.Entry<BlockPos, BlockState> entry : data.entrySet()) {
 
                 GameUtils.Tile.set(level_accessor, entry.getKey(), entry.getValue(), true);
+                placed++;
 
             }
+
+            // [LMax Debug V39] 诊断：实际写入方块数
+            if (Core.debug_log) System.out.println("[THT-DEBUG] PendingBlocks.place() chunk " + chunk_pos + " placed: " + placed + " blocks");
 
             // 写入完成后清除该 chunk 的缓存
             cache_blocks.remove(chunk_pos);
@@ -1820,19 +1884,26 @@ public class TreePlacer {
 
             Map<BlockPos, BlockState> data = cache_blocks.get(chunk_pos);
 
+            // [LMax Debug V40] placeForced 诊断日志
+            if (Core.debug_log) System.out.println("[THT-DEBUG] placeForced() chunk " + chunk_pos + " cache: " + (data == null ? "NULL" : data.size() + " blocks"));
+
             if (data == null) {
                 return;
             }
 
+            int placed_count = 0;
             for (Map.Entry<BlockPos, BlockState> entry : data.entrySet()) {
 
                 // [LMax Fix] flags=4 (UPDATE_INVISIBLE): 跳过所有更新。
                 // 客户端通知由 EventCenter 在服务器线程上统一发送。
                 level_server.setBlock(entry.getKey(), entry.getValue(), 4);
+                placed_count++;
 
             }
 
             cache_blocks.remove(chunk_pos);
+            // [LMax Debug V40] placeForced 完成日志
+            if (Core.debug_log) System.out.println("[THT-DEBUG] placeForced() chunk " + chunk_pos + " placed: " + placed_count + " blocks, cache cleared");
 
         }
 

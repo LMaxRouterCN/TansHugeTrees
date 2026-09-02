@@ -453,3 +453,183 @@ cache_other_region.put(key, regionMap);
 - 启动游戏，创建新世界
 - 观察是否生成大树和枯树
 - 检查日志文件确认无报错
+---
+
+## [2026-08-22 21:00] LMax 日志审计：latest.log 全量分析（63424行/10.9MB）——线程风暴与600×工作量冗余，0棵树的根因
+
+### 测试基本信息
+- 测试时间：2026-08-22 16:50~16:54（有效生成期约145秒）
+- 环境：TEST 1.20.1-Forge_47.4.10 纯净包59模组，Java 21.0.7
+- 结局：玩家等待145秒无法进入世界，主动退出；**服务器从未打出 "Done (...s)! For help"**（=0条），**0棵树生成**
+
+### 历史Bug复核（好消息：全死了）
+| 历史问题 | 本次计数 | 结论 |
+|---|---|---|
+| Tree shape data missing（V16字典污染） | 0 | 根治保持 |
+| testDistance NPE（执行代号22） | 0 | 根治保持 |
+| Can't keep up（TPS归零老症状） | 0 | 消失 |
+| CallerRunsPolicy死锁（V16前） | 0 | 消失 |
+
+### 新核心问题：不是死锁，是CPU饥饿雪崩
+**实测时间线**：16:52:08 Preparing start region → 2399个chunk加载事件 → 16:54:22起主线程连续冻结10.5秒（Watchdog以500ms节奏上报1468→1973→...→10512ms，一次连续冻结）→ 16:54:33玩家退出 → 16:54:39服务器已停6秒，THT线程仍在跑（僵尸线程）。
+
+**死亡螺旋链条（每环有日志实证）**：
+1. **TREE_GEN_EXECUTOR是死代码**：EventCenter.java:144定义了线程池（V20注释声称"修复线程池饥饿"），但eventChunkLoaded(172行)是裸new Thread，**从未submit**。日志Thread编号冲到Thread-2073+，实测>2400线程。V20修复名存实亡——印证max手写警告"不要绝对信任这个文件"。
+2. **region去重形同虚设**：scanned_regions只在region扫描**完成后**add（TreeLocation.java:190），而单次region扫描=32×32=1024次getData。4个出生region被重复扫描1691次（0,0→556次 / 0,-1→511 / -1,0→321 / -1,-1→303），**约600×冗余**。
+3. **数学上必死**：region_scan_percent=100，2399次扫描理论工作量≈246万次getData；12逻辑核145秒只完成13440次（**0.5%**）。每线程平均推进5.6次getData就集体停滞，0个region扫描完成（"Scan loop completed"=0）→ scanned_regions永远为空 → 死循环放大。
+4. **主线程被饿死**：stall堆栈=TIMED_WAITING在MinecraftServer.m_5667_(waitUntilNextTick)的LockSupport.parkNanos，"Lock not held by any thread"——**无死锁**，是2400个CPU密集线程与Server thread同级抢12核（Windows JVM不开线程优先级）。速率逐分钟恶化：1435→780→184次/分钟（争锁雪崩曲线）。
+5. **0棵树**：TreeLocation.run全部未完成 → 顺序代码到不了TreePlacer.start。debug_log=false（TreePlacer侧守卫日志全灭，无法直接证明TreePlacer状态，但TreeLocation未完成则Placer必未执行）。
+
+### 顺带发现的其他问题
+1. **THT-DEBUG无守卫刷屏**：TreeLocation(19处)/WorldGenStepBeforePlants(2处)/ConfigDynamic/CustomPackOrganizing的println无`if(Core.debug_log)`守卫（TreePlacer有守卫），54724条占日志86%。println内部有同步锁，2000线程抢stdout雪上加霜。
+2. **superflat下Feature路径从未触发**：WorldGenStepBeforePlants.place()调用=0（constructor=1）。**V28的biome modifier step修复在超平坦环境根本不可验证**——树一直全靠ChunkEvent.Load路径生成。需在正常世界验证V28。
+3. **region_locks死代码**：只有remove(TreeLocation.java:193)无任何put。
+4. **processed_chunks竞态**：contains+add的check-then-act（EventCenter.java:174-175），应改用add()返回值判断。
+5. **关服线程泄漏**：ServerStoppingEvent只shutdown了TREE_GEN_EXECUTOR（本来就没人用），裸线程无人取消，Stopping后仍存活6秒+。
+6. **日志本身**：7条ERROR全与THT无关（emi_loot mixin、离线验证401、KleeSlabs方块、Embeddium警告、REI类缺失）。
+
+### 修复方案（待max拍板，暂不动代码）
+**方案A（最小闭环，预计CPU工作量12000秒→20秒量级，难度低，改动集中2文件）**
+- A1. region调度期认领：region_scans改用computeIfAbsent立即占坑，首个chunk认领扫描任务，其余599个O(1)返回，扫描完成后回调处理pending chunks
+- A2. 裸new Thread全部替换为TREE_GEN_EXECUTOR.submit（线程2400→≤16，顺带修复关服线程泄漏）
+- A3. println全部补if(Core.debug_log)守卫
+
+**方案B（完整架构，A基础上）**
+- B1. 干掉100-tick硬编码延迟（DelayedWork），改为事件链：chunk加载→region认领→扫描完成回调→TreePlacer→发包
+- B2. region粒度调度替代per-chunk触发，彻底解耦
+
+**最坏情况与兜底（强制）**：
+- 风险1：region扫描期间新到chunk若只return会漏树 → A/B都必须实现pending队列，扫描完成回调补处理
+- 风险2：TreePlacer从主线程发包路径从未在此环境跑通 → 方案A先小步验证，保留原发包逻辑
+- 风险3：编译验证受限（exec/run后端bug，无法代跑gradlew）→ 改完max手动编译测试
+- 备选：若A1的认领方案引入新竞态，退回"scanned_regions改ConcurrentHashMap.newKeySet()+add返回值判断"（虽仍有600×扫描排队，但线程数受控后不会饿死主线程）
+---
+
+## [2026-08-22 22:35] LMax 方案A（V38）全部落地：region原子认领 + 线程池化 + debug守卫
+
+### 改动总览（已验证行号）
+| 文件 | 位置 | 改动内容 |
+|---|---|---|
+| TreeLocation.java | L47-49 | 新增 `region_scan_claims` ConcurrentHashMap字段（三态：null/FALSE/TRUE） |
+| TreeLocation.java | L147-152 | Region三态原子认领：`putIfAbsent(regionKey, FALSE)`，非null即return（600×冗余→1×） |
+| TreeLocation.java | L195-197 | 扫描完成标记：`put(regionKey, TRUE)`，后续TreePlacer可读落盘数据 |
+| EventCenter.java | L171-198 | 裸`new Thread`→`TREE_GEN_EXECUTOR.submit`；`processed_chunks.contains+add`→`add()`原子check-and-add |
+| TreeLocation.java | L119/132/137/140/160/161/174/187/227/231/239 | 11处println加`if (Core.debug_log)`守卫 |
+| WorldGenStepBeforePlants.java | L19/27 | 2处println加`if (Core.debug_log)`守卫 |
+
+### 闭环机制
+- 被跳过的chunk由DeferredQueue的400-tick重试机制兜底（A阶段保留，B阶段再干掉）
+- 三态认领：`null`=未认领→抢到扫描权；`FALSE`=别人在扫→跳过；`TRUE`=已完成→跳过
+- `putIfAbsent`原子操作保证同region只有一个线程进入扫描
+
+### 遗留问题（需max拍板）
+1. **scanned_regions死代码**：L46声明+L194写入，但L146的读取点已被V38认领逻辑替换删除。Set成了纯写入无读取的死代码，无副作用但占内存。可删可留。
+2. **异常路径无兜底**：如果region扫描中途抛异常（如I/O失败、群系获取NPE），`region_scan_claims`永远卡在FALSE，该region所有后续chunk永久跳过，DeferredQueue重试也会因claim存在而直接return。需补try-finally：异常时`region_scan_claims.remove(regionKey)`回滚认领，让下次chunk重新触发扫描。
+
+### 测试观察点
+- region扫描耗时>20秒（400tick）则DeferredQueue重试耗尽丢树，需观察默认测试环境日志
+- debug_log默认false，生产环境13处println全部静默，无日志污染
+---
+
+## [2026-08-23 19:45] V38收尾：try-finally兜底 + 死代码清理完成
+
+### 本轮改动
+| 位置 | 内容 |
+|---|---|
+| TreeLocation.java L159-203 | run()扫描块包入try-finally，异常时`remove(regionKey, FALSE)`原子回滚认领，下个chunk可重新触发扫描 |
+| TreeLocation.java L45-49 | 删除scanned_regions字段（读取点已被三态认领取代）|
+| TreeLocation.java L51 | 删除region_locks字段（全项目仅"声明+remove"两处引用，从未put加锁，remove恒空转——意外发现的第二处死代码）|
+| TreeLocation.java | 修正L194起12空格错误缩进为标准8空格 |
+
+### 原子回滚设计说明
+`remove(key, FALSE)`是ConcurrentHashMap的原子条件删除：值仍为FALSE时删除返回true，值为TRUE时不删返回false。正常完成时值已是TRUE（L192已put），finally的remove空转无副作用；异常时值还是FALSE，remove成功，region回到"未认领"状态。无需额外的success标志位，无竞态窗口。
+
+### 编译状态
+exec指令仍有item变量bug（UnboundLocalError），无法远程编译。max手动执行`gradlew build`，产物在`build/libs/`。
+
+### 待测试观察项
+1. region扫描耗时是否在20秒内（400tick DeferredQueue重试窗口）
+2. 异常场景：人为触发I/O错误，验证认领能被回滚
+3. 树生成密度与劈树频率是否改善
+---
+## 2026-08-23 V38编译通过
+- 根因:WorldGenStepBeforePlants.java(tanshugetrees_core.game.world_gen包)引用Core.debug_log但与Core类(tanshugetrees_core包)不同包,缺显式import。已补`import tannyjung.tanshugetrees_core.Core;`。此前怀疑的"item变量bug"是误判。
+- 全局排查:4个文件用Core.debug_log(EventCenter/WorldGenStepBeforePlants/TreeLocation/TreePlacer),仅WorldGenStepBeforePlants漏import。
+- BUILD SUCCESSFUL in 27s,--no-daemon单次daemon模式。
+- 附带发现:PokerAgent exec指令在PS 7.7下已恢复可用(旧记忆标记为不可用,已修正)。教训:exec传参错误(timeout=600000被当Gradle任务名)与工具不可用是两回事,别混淆。
+- 下一步:部署build/libs下的reobf jar到测试环境mods目录,跑图观察region扫描耗时/树密度/异常回滚。
+---
+## V39 诊断日志 - 2026-08-24
+
+### 改动文件
+- TreePlacer.java
+
+### 改动内容
+1. PendingBlocks类新增AtomicInteger add_count计数器
+2. PendingBlocks.add() — 每100个方块输出一次入缓存总数+目标chunk
+3. PendingBlocks.place() — 输出chunk_pos/缓存NULL或方块数/总缓存chunk数/实际写入方块数
+4. start() early return分支 — 空数据chunk也调用place()（潜在修复：跨chunk树方块不再丢失）
+
+### 诊断目标
+确认以下两个嫌疑：
+- 嫌疑A：PendingBlocks跨chunk竞态 — 树方块被add进相邻chunk缓存，但place()只拉当前chunk，导致方块残留在缓存中永不被写入
+- 嫌疑B：非主线程调用ServerLevel.getChunk()+lc.setBlockState()，MC区块系统非线程安全，可能静默写入失败
+
+### 关键诊断行
+- [THT-DEBUG] PendingBlocks.add() total: N blocks, last target chunk: [x, z]
+- [THT-DEBUG] PendingBlocks.place() chunk [x, z] cache: NULL | N blocks | total cache chunks: M
+- [THT-DEBUG] PendingBlocks.place() chunk [x, z] placed: N blocks
+- [THT-DEBUG] TreePlacer.start() chunk [x, z] EARLY RETURN (no tree data)
+
+### 预期结果分析
+- 如果add()有大量方块但place()大量返回NULL → 确认嫌疑A（跨chunk竞态）
+- 如果place()有方块但placed之后树仍不出现 → 确认嫌疑B（线程安全）
+- 如果add()根本没被调用 → 问题在placeCalculate阶段，树数据解析就没产出方块
+---
+### [2026-08-25] V40 根因定案 + exec 新用法（本节由修复后的 exec 代码块格式补记）
+
+【根因】DeferredQueue 维度串黑洞（事件注册无问题）：
+- EventCenter L165 getDimensionID 返回 "minecraft:overworld"，replace(':','-') 得 "minecraft-overworld"（供 Data 文件路径使用）
+- 该横杠串被存入 DeferredTask.dimension 字段
+- processTick L96 的 ResourceLocation.parse("minecraft-overworld") 对无冒号串自动补默认命名空间 → "minecraft:minecraft-overworld"（不存在的维度）
+- server.getLevel() = null → continue 静默丢弃（无重试无日志；processTick 全部 debug 日志位于 null 检查之后，任务全灭时零输出）
+- 铁证链：队列 size 采样 2→119→269→419→6→7→4→3→10→12→1→4→2→1→14→4→2→149（add 只增、溢出丢弃 0 次、全项目唯一 poller 是 processTick → size 回落即其在消费）；stderr 0 条（parse 语法合法不抛异常）；placed_nonzero = 0；2569 任务全灭
+- 影响面：99.7%（2569/2577）chunk 走 EARLY RETURN → region 扫描异步未就绪时全靠 DeferredQueue 兜底 → 黑洞切断的是主路径：零树 + 跨 chunk 劈树是同一根因的两种症状
+- 红鲱鱼清理：javap 反编译 jar 内 EventCenter$Server.class 证实 eventTickServer 的 @SubscribeEvent 注解完好；mods 唯一启用 jar（20260824213353）编译时间与开服时间吻合；63 条 EventBus 异常帧实为 observable+architectury 按键注册时序问题（与本模组无关）
+- 修复方案（待 max 批准，约 6 处，难度低）：DeferredTask 增加 ResourceKey<Level> dim_key 字段（入队时取 level_server.dimension()）；add/addForced 签名加 key 参数；processTick 删字符串 parse 直查 server.getLevel(task.dim_key)；null 分支补丢弃日志；横杠串保留仅供 Data.get 文件路径
+- 遗留观察（不阻塞）：数据未就绪路径 retries=0 无限重入（poll→start→空→re-add），region 扫描永久失败会空转——建议后续加任务总尝试次数上限
+
+【工具】PokerAgent exec 新用法（2026-08-25 修复生效）：
+- 旧单行内联 exec 的传输/解析层会间歇性破坏内容：空格丢失（-Path 与变量粘连）、变量名乱码、ParserError——与中文无关，纯 ASCII 同样中招，同批次一成一败是间歇性缺陷指纹
+- 正解：代码块格式——exec 独占一行，命令内容用代码块标签包裹，多行原样执行，不做 TICK3 还原
+- 本节即为代码块格式 exec 首次成功写入 GOAL-PLAN 的记录
+- 陷阱备忘：项目根目录存在「…- 副本.md」文件，通配符 GOAL-PLAN-2026* 按字母序会先命中副本——追加必须使用精确完整文件名
+
+---
+### [2026-09-02] V40 修复实施完成，已部署待测试
+【实施】TreePlacer.java 9 处改动（1938→1945 行，注释均带 [长期记忆: 010] 标记）：
+- DeferredTask 新增 dim_key 字段（ResourceKey<Level>），双构造函数加 dk 参数
+- add()/addForced() 签名加 dim_key；L215（EARLY RETURN 路径）与 L1462（placeCalculate 补写路径）两调用点传 level_server.dimension()
+- processTick 删除 ResourceLocation.parse 三行字符串反解析，直查 server.getLevel(task.dim_key)；null 分支补 stderr 丢弃日志（黑洞封口）
+- 横杠串 dimension 字段保留，仅供 Data 文件路径
+【验证】全项目 DeferredQueue 引用扫描：外部仅 EventCenter L262 processTick（签名未变），无第四个受影响调用点；BUILD SUCCESSFUL（exit 0）
+【部署】tanshugetrees-1.0-20260902155207.jar 已入测试环境 mods，旧 20260824213353 已 .disabled；jar 内字节校验：DeferredTask 类含 dim_key 字段名、DeferredQueue 类含 canary 丢弃日志字符串
+【回滚】TreePlacer.java.bak-v40（同目录），覆盖回去即可
+【测试须知】必须全新世界——旧世界 chunk 已生成，worldgen 不会重跑，复用旧世界必然"看起来还是零树"
+【测试观察点】①树实际长出来；②canary 行 "DeferredQueue dropped task: level not found for dim_key" 不应出现（出现=新维度问题）；③队列 size 持续高位震荡不回落 = retries=0 无限重入空转暴露——黑洞此前吞掉全部任务、掩盖了这条路径，修复后它才真正开始运转，若 region 扫描数据永不到位会持续 churn
+【遗留】retries=0 无限重入（总尝试次数上限建议仍未实施）
+---
+### [2026-09-02 晚] V41 根因定案与修复（方案A：生产者写后失效）已部署待测试
+【根因】TreePlacer.Data.bin_convert_futures 负缓存毒化：get() 的 computeIfAbsent 把“region 文件尚不存在”的瞬时态解析为空 map 并永久缓存——会话内 region key 数（约20）远小于 256 淘汰阈值且无任何失效路径，数据落盘后读方仍命中空 future，25442/25442 全空读导致零树。同窝缺陷：FileManager.BIN_CACHE（V19，LRU-512）对 append 式增量落盘文件持有旧版本同样永不失效。
+【证据链】V40 修复已验证生效（canary=0/overflow=0/22719 PASSED）；磁盘 place/*.bin 20 文件（0,0.bin=265KB/9468条，28字节步长 20/20 精整，写读三端全 BE）；时间线：region 2,0 于 16:07:54 落盘 222KB，16:07:59 start 仍空读；日志盲区（STDERR/堆栈/Core.logger）扫空=零异常。
+【修复·3处，注释带 [长期记忆: 012]】
+- TreePlacer.java：Data.invalidate(dimension, regionX, regionZ)（L1018-1025 新增8行）——bin_convert_futures.remove
+- FileManager.java：writeBIN() 写后 BIN_CACHE.remove(path)（L261-265 新增5行）——缓存一致性归缓存所有者，含异常路径
+- TreeLocation.java：flushCachesAsync() 落盘后调 TreePlacer.Data.invalidate（L109-112 新增4行）
+事件链：writeBIN → BIN_CACHE 自失效 → 解析 future 失效 → DeferredQueue 既有重试节奏成为失效后重读触发器。零轮询/零新增调度/零新增锁。
+【记账】V41 长期记忆实际编号 012（系统分配），三处注释已由 011 同步修正为 012 并重建（注释不影响字节码，仅为源码-jar 同步洁净度；18:16 中间产物 181627 未部署，逻辑与最终 jar 完全一致）。
+【构建部署】BUILD SUCCESSFUL；jar tanshugetrees-1.0-20260902182757.jar 为 mods 内唯一 ACTIVE，旧 20260902155207 已 .disabled；字节校验 invalidate 符号入产物。
+【备份】TreePlacer.java.bak-v41 / FileManager.java.bak-v41 / TreeLocation.java.bak-v41（同目录，覆盖回滚后 gradlew build）
+【测试须知】必须全新世界。出生点附近停留 2-3 分钟再移动（region 扫描约 95s/region + DeferredQueue 重试节奏，树在扫描完成后陆续出现）。
+【观察点】①树长出；②placeCalculate / PendingBlocks.add() total / placed 三计数 > 0（上轮全零）；③队列 size 在 region 扫描完成后收敛排空而非永久平台；④canary/overflow 仍为 0。仍零树 → 下一步 invalidate 内加条件 canary（仅真正逐出 future 时打印）定位事件链断点。
+【遗留】方案B churn 上限（PASSED→add 造新任务 retries 归零绕过 400 上限）未做，视本轮结果定；region 扫描 81-95s/1024chunk 结构性慢（另立案）；原作 latent bug：writeBIN “l” 分支实际 writeBoolean（从未被调用故未爆，暂不动）。

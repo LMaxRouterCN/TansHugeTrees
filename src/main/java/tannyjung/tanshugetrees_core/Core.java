@@ -80,6 +80,17 @@ public class Core {
     // [LMax] 调试日志开关，读取 config/tanshugetrees/lmax-debuglog.json
     public static boolean debug_log = false;
 
+        // [LMax V42] 模块级日志有效开关（已预计算 = debug_log || 对应模块键），调用点单布尔判断零开销
+        // [长期记忆: 015] 键控日志体系：lmax-debuglog.json 中 8 个模块键独立控制各自子系统
+        public static boolean log_deferred_queue = false;  // DeferredQueue 任务生命周期
+        public static boolean log_placer_start = false;    // TreePlacer.start 入口/空数据/耗时
+        public static boolean log_place_calculate = false; // placeCalculate/检测/检查点
+        public static boolean log_pending_blocks = false;  // PendingBlocks add/place/placeForced
+        public static boolean log_tree_location = false;   // TreeLocation 扫描/写入/读取
+        public static boolean log_event_center = false;    // 生物群系 feature 检查
+        public static boolean log_world_gen_step = false;  // WorldGenStepBeforePlants
+        public static boolean log_queue_overflow = false;  // DeferredQueue 溢出驱逐
+
     public static void start (IEventBus bus) {
 
         // [LMax Fix] 确保 logger 在使用前已初始化
@@ -105,18 +116,37 @@ public class Core {
     }
 
     // [LMax] 从 config/tanshugetrees/lmax-debuglog.json 读取调试日志开关
+    // [LMax V42] 重写：lmax-debuglog.json 键控日志加载器 [长期记忆: 015]
+    // 语义：模块有效开关 = debug_log_print(主开关) || 模块键（OR 关系：主开关 true 时行为与旧版全开一致，单模块键可独控子系统）
+    // 文件不存在 → 自动创建全 false 模板（含全部键）；存在但缺键 → 该键按 false，不回写用户文件；解析失败 → 全 false + stderr 告警
     private static void loadDebugLogConfig() {
+        java.io.File file = new java.io.File(path_config + "/lmax-debuglog.json");
         try {
-            java.io.File file = new java.io.File(path_config + "/lmax-debuglog.json");
-            if (file.exists()) {
-                String content = new String(java.nio.file.Files.readAllBytes(file.toPath()));
-                if (content.contains("\"debug_log_print\"") && content.contains("true")) {
-                    debug_log = true;
-                    System.out.println("[LMax] Debug log enabled");
-                }
+            if (file.exists() == false) {
+                // 首次运行：创建 config 目录与默认模板（全 false，生产环境静默）
+                file.getParentFile().mkdirs();
+                java.nio.file.Files.writeString(file.toPath(), "{\n  \"debug_log_print\": false,\n  \"log_deferred_queue\": false,\n  \"log_placer_start\": false,\n  \"log_place_calculate\": false,\n  \"log_pending_blocks\": false,\n  \"log_tree_location\": false,\n  \"log_event_center\": false,\n  \"log_world_gen_step\": false,\n  \"log_queue_overflow\": false\n}\n");
+                System.out.println("[LMax] lmax-debuglog.json not found, created default template (all false)");
+                return;
             }
+            com.google.gson.JsonObject obj = com.google.gson.JsonParser.parseString(java.nio.file.Files.readString(file.toPath())).getAsJsonObject();
+            // Gson 无 optBoolean，手写安全取值：缺键/类型不符一律 false
+            java.util.function.Function<String, Boolean> get = (String key) -> obj.has(key) && obj.get(key).isJsonPrimitive() && obj.get(key).getAsBoolean();
+            debug_log = get.apply("debug_log_print");
+            // 有效值预计算：主开关 OR 模块键
+            log_deferred_queue  = debug_log || get.apply("log_deferred_queue");
+            log_placer_start    = debug_log || get.apply("log_placer_start");
+            log_place_calculate = debug_log || get.apply("log_place_calculate");
+            log_pending_blocks  = debug_log || get.apply("log_pending_blocks");
+            log_tree_location   = debug_log || get.apply("log_tree_location");
+            log_event_center    = debug_log || get.apply("log_event_center");
+            log_world_gen_step  = debug_log || get.apply("log_world_gen_step");
+            log_queue_overflow  = debug_log || get.apply("log_queue_overflow");
+            System.out.println("[LMax] Debug log config loaded: master=" + debug_log + ", modules(on)=" + (log_deferred_queue?"deferred_queue,":"") + (log_placer_start?"placer_start,":"") + (log_place_calculate?"place_calculate,":"") + (log_pending_blocks?"pending_blocks,":"") + (log_tree_location?"tree_location,":"") + (log_event_center?"event_center,":"") + (log_world_gen_step?"world_gen_step,":"") + (log_queue_overflow?"queue_overflow":""));
         } catch (Exception e) {
-            System.err.println("[LMax] Failed to load debug log config: " + e.getMessage());
+            // 解析失败：全 false 兜底（含 debug_log 本身），不让坏配置炸启动
+            debug_log = false;
+            System.err.println("[LMax] Failed to load debug log config (all switches off): " + e.getMessage());
         }
     }
     public static void restart (ServerLevel level_server, boolean message, boolean config) {
