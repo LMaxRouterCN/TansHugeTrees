@@ -1204,7 +1204,12 @@ public class GameUtils {
 
 				} else {
 
-					return getHeight(level_accessor, posX, posZ, type_normal);
+                    // [LMax Fix V43] P2 枯树判定基准统一 [长期记忆: 016]
+                    // 原: return getHeight(...) — FULL chunk 的 WORLD_SURFACE_WG 真实高度图已含装饰(植被/他树),
+                    // 补种路径(区块已装饰后重跑)拿到的高度比 worldgen 时偏高 → 树被误判 unviable ecology → 全枯
+                    // (出生点实测实锤)。统一为噪声基准 getBaseHeight, 与下方"区块未加载"分支语义一致,
+                    // 即原版 feature 放置的同款防自举基准; 高度容差 unviable_ecology_height_tolerance 兜底边缘差。
+                    return chunk_generator.getBaseHeight(posX, posZ, Heightmap.Types.valueOf(type_normal), level_accessor, level_server.getChunkSource().randomState());
 
 				}
 
