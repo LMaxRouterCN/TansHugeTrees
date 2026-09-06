@@ -198,6 +198,11 @@ public class Handcode {
         public static int deferred_queue_process_per_tick = 32; // DeferredQueue 每 tick 处理任务数 (原4)
         public static int bin_convert_futures_max_entries = 256; // bin_convert_futures 最大条目数 (原64)
 
+        // (原 L221 定义/模板/解析三处齐全但 PendingBlocks 类零消费 = V42 泄漏 5GB 遗留; 本行合并统一定义, 值跟随原 1024)
+        public static int pending_blocks_max_chunks = 1024; // [LMax Fix V43] 激活原有死配置 [长期记忆: 016]
+        // [LMax Fix V43] 挂起任务表上限（防御性兜底：正常玩家视距内挂起量级仅数百）
+        public static int deferred_queue_suspended_max = 65536;
+
         // [LMax Fix V42] Test Exist Chunk 守卫开关（默认关=废除）[长期记忆: 014]
         // 守卫原逻辑：writeData 写入前扫描 ±4 chunk 的 features 状态，任一命中即整棵丢树。
         // 实锤副作用：出生点/快速跑图轨迹后方的地形已过 features 阶段，树在写入前被整棵拦截
@@ -211,9 +216,6 @@ public class Handcode {
 
           
         public static int cache_other_region_max = 256; // TreeLocation cache_other_region 最大区域数 (原64)
-
-        // [方向A重构] PendingBlocks 配置
-        public static int pending_blocks_max_chunks = 1024; // PendingBlocks 缓存的最大 chunk 数，超出时淘汰最旧条目
         // [LMax Fix] 看门狗配置
         public static boolean watchdog_enabled = true; // 是否启用看门狗主线程卡顿监控
         public static long watchdog_threshold_ms = 50; // 看门狗触发阈值（毫秒），正常 tick 为 50ms
@@ -417,6 +419,9 @@ public class Handcode {
                     pending_blocks_max_chunks = 1024
                     | Maximum number of chunks in PendingBlocks cache for cross-chunk tree placement. Older entries will be evicted when limit is reached.
 
+                    deferred_queue_suspended_max = 65536
+                    | Maximum number of suspended deferred tasks (waiting for their chunks to load) before new suspends are dropped with a warning. Defensive cap only, normal play stays far below it.
+
           
                     cache_other_region_max = 256
                     | Maximum number of other region caches to keep in memory for tree location distance tests.
@@ -527,6 +532,7 @@ public class Handcode {
             deferred_queue_max_size = Integer.parseInt(data.get("deferred_queue_max_size"));
             deferred_queue_retry_limit = Integer.parseInt(data.get("deferred_queue_retry_limit"));
             deferred_queue_process_per_tick = Integer.parseInt(data.get("deferred_queue_process_per_tick"));
+        deferred_queue_suspended_max = Integer.parseInt(data.get("deferred_queue_suspended_max")); // [LMax Fix V43]
             // [LMax Fix V42] 守卫开关：parseBoolean 对缺失键安全返回 false（旧配置文件无需手动迁移）
             chunk_status_guard = Boolean.parseBoolean(data.get("chunk_status_guard"));
             bin_convert_futures_max_entries = Integer.parseInt(data.get("bin_convert_futures_max_entries"));
