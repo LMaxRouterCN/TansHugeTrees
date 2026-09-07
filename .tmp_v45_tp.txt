@@ -105,133 +105,229 @@ public class TreePlacer {
             }
         }
 
+        // [LMax Fix V43] P1 挂起机制 [长期记忆: 016]
+        // 旧实现: 未就绪任务 retryList 回队重试 → 队列满载 evictOldest 互杀(V42 日志实锤 602,805 次,
+        // FORCED/NORMAL DROPPED 均为 0 → 任务死于驱逐而非重试耗尽)。
+        // 新架构: 未就绪任务挂起(不占队列/不轮询/不计数), 由 ChunkEvent.Load 反向唤醒(onChunkLoaded)。
+        // 键 = task.chunk_pos(ready 检查中心); 加载区块 的 ±4 对角键即全部候选唤醒目标。
+        private static final java.util.Map<ChunkPos, java.util.concurrent.ConcurrentLinkedQueue<DeferredTask>> suspended_tasks
+                = new java.util.concurrent.ConcurrentHashMap<>();
+
         public static void processTick(net.minecraft.server.MinecraftServer server) {
             int processed = 0;
             DeferredTask task;
-            java.util.List<DeferredTask> retryList = new java.util.ArrayList<>();
 
-            // 每次 Tick 最多处理 N 个任务（配置项 deferred_queue_process_per_tick），防止主线程 TPS 暴跌
+            // [LMax Fix V42] 每 tick 处理上限(配置项 deferred_queue_process_per_tick)防主线程 TPS 暴跌
+            // [LMax Fix V43] 主线程瘦身 [长期记忆: 016]: 本方法运行于 eventTickServer(主线程), 只做
+            // poll + 维度解析 + isReady(hasChunk×4 纯查询, 微秒级); 执行体(start→placeCalculate / placeForced)
+            // 一律 submitExecute 进 TREE_GEN_EXECUTOR。旧实现执行体直接跑主线程 → 跑图期主线程替生成器
+            // 等 IO + 数千方块树计算(V42 日志实锤 [Server thread] 打出 PendingBlocks.add 行 = 高频长卡顿+CPU空转根因)。
+            // [LMax Fix V44.5] V43 注释的"一律 submitExecute"细化为双入口: processTick 主线程判定 PASS →
+            // dispatchExecute 直通(判定已在主线程, 不再绕主线程队列一圈); 非主线程调用方(唤醒链)走
+            // submitExecute 门. 执行体最终都进 TREE_GEN_EXECUTOR, 主线程职责不变. [长期记忆: 027]
             while (processed < Handcode.Config.deferred_queue_process_per_tick && (task = queue.poll()) != null) {
                 processed++;
-                try {
-                    // [LMax Fix V40] 修复维度串黑洞：任务现携带 ResourceKey<Level>（入队方取 level.dimension()），
-                    // 不再从横杠化文件路径串（如 "minecraft-overworld"）反解析——parse 对无冒号串补默认命名空间，
-                    // 得到不存在的 "minecraft:minecraft-overworld" → getLevel()=null → 旧代码静默 continue 吞掉全部任务 [长期记忆: 010]
-                    ServerLevel targetLevel = server.getLevel(task.dim_key);
 
-                    if (targetLevel == null) {
-                        // [LMax Fix V40] 黑洞封口：维度查找失败必须可见，不再静默丢弃
-                        System.err.println("[TansHugeTrees] DeferredQueue dropped task: level not found for dim_key=" + task.dim_key + " chunk=" + task.chunk_pos + " forced=" + task.is_forced);
-                        continue;
-                    }
+                // [LMax Fix V40] 维度串黑洞修复语义保留: 任务携带 ResourceKey<Level> 直查, 不反解析字符串 [长期记忆: 010]
+                ServerLevel targetLevel = server.getLevel(task.dim_key);
 
-                    // [方向A重构] 区分两种任务：重新调 start vs 只补写 PendingBlocks
-                    if (task.is_forced) {
-                        // PendingBlocks 补写任务
-                        // [LMax Debug V40] forced 任务诊断日志 [长期记忆: 009]
-                        if (Core.log_deferred_queue) System.out.println("[THT-DEBUG] processTick FORCED task: source=" + task.chunk_pos + " target=" + task.target_chunk + " retries=" + task.retries);
-                        // 检查目标 chunk 是否就绪
-                        boolean allReady = true;
-                        String failReason = "";
-                        for (int dx = -4; dx <= 4; dx += 8) {
-                            for (int dz = -4; dz <= 4; dz += 8) {
-                                int cx = task.chunk_pos.x + dx;
-                                int cz = task.chunk_pos.z + dz;
-                                if (!targetLevel.getChunkSource().hasChunk(cx, cz)) {
-                                    allReady = false;
-                                    failReason = "hasChunk=false at (" + cx + "," + cz + ")";
-                                    break;
-                                }
-                                net.minecraft.world.level.chunk.ChunkAccess chunk = targetLevel.getChunk(cx, cz);
-                                if (!chunk.getHighestGeneratedStatus().isOrAfter(net.minecraft.world.level.chunk.ChunkStatus.FULL)) {
-                                    allReady = false;
-                                    failReason = "not FULL at (" + cx + "," + cz + ")";
-                                    break;
-                                }
-                            }
-                            if (!allReady) break;
-                        }
+                if (targetLevel == null) {
+                    // [LMax Fix V40] 黑洞封口保留: 维度查找失败必须可见, 不静默丢弃
+                    System.err.println("[TansHugeTrees] DeferredQueue dropped task: level not found for dim_key=" + task.dim_key + " chunk=" + task.chunk_pos + " forced=" + task.is_forced);
+                    continue;
+                }
 
-                        if (!allReady) {
-                            // [LMax Debug V40] forced 检查失败原因
-                            if (Core.log_deferred_queue) System.out.println("[THT-DEBUG] processTick FORCED FAILED: " + failReason + " | source=" + task.chunk_pos + " target=" + task.target_chunk + " retries=" + task.retries);
-                            task.retries++;
-                            if (task.retries < Handcode.Config.deferred_queue_retry_limit) {
-                                retryList.add(task);
-                            } else {
-                                // [LMax Debug V40] forced 重试耗尽，任务被丢弃
-                                if (Core.log_deferred_queue) System.err.println("[THT-DEBUG] processTick FORCED DROPPED: source=" + task.chunk_pos + " target=" + task.target_chunk);
-                            }
-                        } else {
-                            // 区块已就绪，强制补写 PendingBlocks
-                            // [LMax Debug V40] forced 检查通过
-                            if (Core.log_deferred_queue) System.out.println("[THT-DEBUG] processTick FORCED PASSED: source=" + task.chunk_pos + " target=" + task.target_chunk);
-                            int forced_placed = PendingBlocks.placeForced(targetLevel, task.target_chunk);
-                            // [LMax Fix V42] 幽灵方块同步：强制补写落块后重发包（服务端有、客户端无的补全）
-                            if (forced_placed > 0) {
-                                tannyjung.tanshugetrees_core.game.EventCenter.Server.resyncChunk(targetLevel, task.target_chunk);
-                            }
-                        }
-                    } else {
-                        // 旧版逻辑：重新调 start
-                        // [LMax Debug V40] 非 forced 任务诊断日志 [长期记忆: 009]
-                        if (Core.log_deferred_queue) System.out.println("[THT-DEBUG] processTick NORMAL task: chunk=" + task.chunk_pos + " retries=" + task.retries);
-                        // 核心：检查当前 Chunk 及 +-4 偏移的 Chunk 是否全部达到 FULL 状态
-                        boolean allReady = true;
-                        String failReason = "";
-                        for (int dx = -4; dx <= 4; dx += 8) { // -4, +4
-                            for (int dz = -4; dz <= 4; dz += 8) {
-                                int cx = task.chunk_pos.x + dx;
-                                int cz = task.chunk_pos.z + dz;
-                                if (!targetLevel.getChunkSource().hasChunk(cx, cz)) {
-                                    allReady = false;
-                                    failReason = "hasChunk=false at (" + cx + "," + cz + ")";
-                                    break;
-                                }
-                                // [执行代号33] 检查区块生成状态是否达到 FULL，避免跨区块树木劈树问题
-                                net.minecraft.world.level.chunk.ChunkAccess chunk = targetLevel.getChunk(cx, cz);
-                                if (!chunk.getHighestGeneratedStatus().isOrAfter(net.minecraft.world.level.chunk.ChunkStatus.FULL)) {
-                                    allReady = false;
-                                    failReason = "not FULL at (" + cx + "," + cz + ")";
-                                    break;
-                                }
-                            }
-                            if (!allReady) break;
-                        }
-
-                        if (!allReady) {
-                            // [LMax Debug V40] 非 forced 检查失败原因
-                            if (Core.log_deferred_queue) System.out.println("[THT-DEBUG] processTick NORMAL FAILED: " + failReason + " | chunk=" + task.chunk_pos + " retries=" + task.retries);
-                            task.retries++;
-                            if (task.retries < Handcode.Config.deferred_queue_retry_limit) { // 最多重试 N Tick (配置项 deferred_queue_retry_limit)
-                                retryList.add(task);
-                            } else {
-                                // [LMax Debug V40] 非 forced 重试耗尽，任务被丢弃
-                                if (Core.log_deferred_queue) System.err.println("[THT-DEBUG] processTick NORMAL DROPPED: chunk=" + task.chunk_pos);
-                            }
-                        } else {
-                            // 区块已就绪，安全执行补种
-                            // [LMax Debug V40] 非 forced 检查通过
-                            if (Core.log_deferred_queue) System.out.println("[THT-DEBUG] processTick NORMAL PASSED: chunk=" + task.chunk_pos);
-                            ChunkGenerator gen = targetLevel.getChunkSource().getGenerator();
-                            int placed = start(targetLevel, targetLevel, gen, task.dimension, task.chunk_pos);
-                            // [LMax Fix V42] 幽灵方块同步：补种实际写入方块后重发整 chunk 包给 32 格内玩家
-                            // （world-gen 写入不发客户端包是幽灵根因；>0 才发包防包风暴，
-                            // resyncChunk 内部自动切回主线程，此处异步线程直接调用安全）
-                            if (placed > 0) {
-                                tannyjung.tanshugetrees_core.game.EventCenter.Server.resyncChunk(targetLevel, task.chunk_pos);
-                            }
-                        }
-                    }
-                } catch (Exception e) {
-                    e.printStackTrace();
+                if (isReady(targetLevel, task)) {
+                    // [LMax Fix V43] 就绪 → 提交 executor(tryExecute 内复查, 关闭"检查与执行间区块卸载"竞态)
+                    // [LMax Fix V44.5] 上行 V43 所述复查已随 tryExecute 退役: 该复查跑在 executor 上, 被
+                    // getChunkNow 线程卫兵恒判 false, 从未提供真实保护(V44.4 插桩裁决: 30 次主线程 PASS
+                    // 任务全灭于此, [长期记忆: 027]). 本分支本就在主线程, PASS → dispatchExecute 直通执行.
+                    dispatchExecute(server, task);
+                } else {
+                    // [LMax Fix V43] 不就绪 → 挂起(替代旧 retryList 回队: 602,805 次互杀的结构性根源)
+                    suspendTask(targetLevel, task);
                 }
             }
-            queue.addAll(retryList);
+
+            // [LMax Fix V44] PlacementQueue 滴灌消费: 主线程按 getBudgetMs() 时间片落方块.
+            // 挂点 = processTick(被 eventTickServer 每 tick 调用) = 主线程; 队列空时一次 isEmpty 零开销. [长期记忆: 018]
+            PlacementQueue.drainTick();
+            // [LMax Fix V44.3] 修2b 低水位回灌: 事件路径(Load 冲刷)因容量门被拒的滞留缓存方块在队列
+            // 空闲时自愈重投. refillTick 自带 低水位/饱和/空缓存 三快退, 每 tick O(1). [长期记忆: 023]
+            PendingBlocks.refillTick(server);
         }
-    }
+
+        // [LMax Fix V43] ready 判定提取: ±4 对角 4 chunk 的 hasChunk + FULL
+        // (原 processTick 内联逻辑原样提取, 语义不变; [执行代号33] 检查区块生成状态避免跨区块劈树)
+        // [LMax Fix V44.3] 修3a: 判点集 4→9(dx+=8→dx+=4, 中心+四角+四边中点) + 提取 public isReadyChunk
+        // 单一事实源. 旧四角版漏中心 proto 窗口: 角点已 FULL 而中心仍 proto 时挂起任务被唤醒放行,
+        // 详细检测踩中心 proto 边 = getChunk(FULL) 强载残燃. 9 点 = 3a 总闸门判式的完整超集, 语义只收紧. [长期记忆: 023]
+        // [LMax Fix V44.5] 主线程契约: 本方法依赖的 getChunkNow 在 1.20.1 ServerChunkCache 入口有
+        // Thread.holdsLock(mainThread) 卫兵, 非主线程一律返回 null(V44.4 插桩裁决: 823 次证据B
+        // hasChunk=true chunkNow=null 全为 executor 调用; 同任务同毫秒主线程 PASS / executor FAIL
+        // 对质, [长期记忆: 027]). 因此本方法只允许在主线程调用(processTick / server.execute 门内),
+        // 严禁 executor 直调; hasChunk 无罪——非主线程对已加载区块诚实返回 true.
+        // V44.4 诊断插桩(证据A/B打印 + PASS 采样 + 计数器字段)随裁决完成拆除, 判定逻辑与插桩前等价.
+        public static boolean isReadyChunk (ServerLevel level, ChunkPos chunk_pos) {
+            for (int dx = -4; dx <= 4; dx += 4) {
+                for (int dz = -4; dz <= 4; dz += 4) {
+                    int cx = chunk_pos.x + dx;
+                    int cz = chunk_pos.z + dz;
+                    if (!level.getChunkSource().hasChunk(cx, cz)) {
+                        return false;
+                    }
+                    // [LMax Fix V44] getChunk→getChunkNow: getChunk(x,z) 默认同步语义, 若该 chunk 处于
+                    // proto→FULL 升格中会主动发起并 join 其 future(future 收尾依赖主线程 mainThreadProcessor
+                    // 排队)——V43c 六线程卡 CompletableFuture.join 的直接机理. getChunkNow 为纯缓存查询,
+                    // 未加载返回 null 零等待; hasChunk 已过滤未加载, 此处 null = proto 升格中, 同判 not ready. [长期记忆: 018]
+                    // [LMax Fix V44.5] V44 时期把"非主线程返回 null"归因为"未加载"不完整——1.20.1 实测
+                    // 还有主线程卫兵(见方法头契约): 非主线程即便已 FULL 也返回 null. 契约注释就是堵这个坑. [长期记忆: 027]
+                    net.minecraft.world.level.chunk.ChunkAccess chunk = level.getChunkSource().getChunkNow(cx, cz);
+                    if (chunk == null || !chunk.getHighestGeneratedStatus().isOrAfter(net.minecraft.world.level.chunk.ChunkStatus.FULL)) {
+                        return false;
+                    }
+                }
+            }
+            return true;
+        }
+
+        private static boolean isReady(ServerLevel level, DeferredTask task) {
+            return isReadyChunk(level, task.chunk_pos); // [LMax Fix V44.3] 判式上收 isReadyChunk, 单一事实源
+        }
+
+        // [LMax Fix V43] 统一提交入口: 所有执行路径(主线程 processTick / Load 唤醒 / 挂起复查)经此提交,
+        // 保证执行体永远在 TREE_GEN_EXECUTOR, 主线程零重活。
+        // [LMax Fix V44.5] 判定权收编主线程: 旧形态"投 executor → tryExecute 复查"把 isReady 的
+        // getChunkNow 调到了 executor——线程卫兵下恒 false, 30 次主线程 PASS 任务全灭于此,
+        // executeTask 零执行(V44.4 插桩裁决, 死因1 定罪点, [长期记忆: 027]). 新形态: server.execute
+        // 把判定送回主线程, PASS → dispatchExecute 投 executor 跑重活, FAIL → 挂起链; tryExecute
+        // 方法退役(职责并入本门). 已知残余竞态(接受): 主线程判定与 executor 执行间区块可能卸载——
+        // 浪费一次计算, 无崩溃无状态损坏(PendingBlocks 三门自守); 旧 executor 复查在卫兵下从未
+        // 提供真实保护, 拆除无损失.
+        private static void submitExecute(net.minecraft.server.MinecraftServer server, DeferredTask task) {
+            server.execute(() -> {
+                try {
+                    // [LMax Fix V44.5] 主线程判定门: server.execute 队列即主线程事件环, 此处 isReady 合法.
+                    // server 关停后 execute 静默丢弃(仅关停窗口, 游戏内不可达).
+                    ServerLevel level = server.getLevel(task.dim_key);
+                    if (level == null) {
+                        // [LMax Fix V40] 黑洞封口保留: 维度查找失败必须可见, 不静默丢弃
+                        System.err.println("[TansHugeTrees] DeferredQueue dropped task: level not found for dim_key=" + task.dim_key + " chunk=" + task.chunk_pos + " forced=" + task.is_forced);
+                        return;
+                    }
+                    if (isReady(level, task)) {
+                        dispatchExecute(server, task);
+                    } else {
+                        suspendTask(level, task);
+                    }
+                } catch (Throwable t) {
+                    System.err.println("[TansHugeTrees] submitExecute main-thread gate crashed (chunk=" + task.chunk_pos + " forced=" + task.is_forced + "):");
+                    t.printStackTrace();
+                }
+            });
+        }
+
+        // [LMax Fix V44.5] 已判定直通执行: 唯一的"主线程判定 PASS → executor 执行"通道(processTick
+        // 主线程分支 / submitExecute 门内 PASS / suspendTask recheck PASS 三处汇入). 调用方必须刚在
+        // 本线程(主线程)完成 isReady PASS, 本方法不复核——在别的线程复核正是死因1 的教训. [长期记忆: 027]
+        private static void dispatchExecute(net.minecraft.server.MinecraftServer server, DeferredTask task) {
+            // [LMax Fix V44] 异常围栏: FutureTask 会捕获 lambda 内抛出的一切异常进 Future, 无人 read 的
+            // Future = 异常黑洞(V43c ThreadingDetector permit 泄漏的无声载体). 围栏打印 stderr,
+            // 此后执行路径异常不再无声蒸发. [长期记忆: 018]
+            tannyjung.tanshugetrees_core.game.EventCenter.Server.TREE_GEN_EXECUTOR.submit(() -> {
+                try {
+                    executeTask(server, task);
+                } catch (Throwable t) {
+                    System.err.println("[TansHugeTrees] TREE_GEN_EXECUTOR task crashed (chunk=" + task.chunk_pos + " forced=" + task.is_forced + "):");
+                    t.printStackTrace();
+                }
+            });
+        }
+
+        // [LMax Fix V43] 挂起: check-suspend-recheck 双检, 关闭"Load 事件在挂起前一刻触发"的竞态
+        // (错过唤醒 → 任务永挂)。复查已就绪 → 经 submitExecute 提交(仍在 executor, 不占主线程); 否则入挂起表。
+        // [LMax Fix V44.5] 语境更新: 本方法现仅被主线程同步调用(processTick FAIL 分支 / submitExecute
+        // 门内 FAIL 分支), 调用方判定与 recheck 同线程零间隔——旧竞态窗口(executor 两检之间被 Load 插入)
+        // 在主线程事件环顺序性下不复存在, recheck 保留为防御冗余(同步幂等零成本), 复查 PASS 改走
+        // dispatchExecute 直通(旧 submitExecute 会把已判定任务再绕主线程队列一圈, [长期记忆: 027]).
+        private static void suspendTask(ServerLevel level, DeferredTask task) {
+            if (isReady(level, task)) {
+                dispatchExecute(level.getServer(), task);
+                return;
+            }
+            // [LMax Fix V43] 防御性兜底(配置项 deferred_queue_suspended_max): 正常玩家视距内挂起量级仅数百,
+            // 触达上限 = 异常状态, 丢新并告警。
+            if (suspended_tasks.size() >= Handcode.Config.deferred_queue_suspended_max) {
+                if (Core.log_queue_overflow) System.err.println("[TansHugeTrees] suspended_tasks overflow, dropped: " + task.dimension + " " + task.chunk_pos + " forced=" + task.is_forced);
+                return;
+            }
+            suspended_tasks.computeIfAbsent(task.chunk_pos, create -> new java.util.concurrent.ConcurrentLinkedQueue<>()).add(task);
+            // [LMax Debug V43] 挂起诊断(键控 log_deferred_queue)
+            if (Core.log_deferred_queue) System.out.println("[THT-DEBUG] suspendTask: " + task.chunk_pos + " forced=" + task.is_forced + " | suspended keys=" + suspended_tasks.size());
+        }
+
+        // [LMax Fix V43] Load 事件反向唤醒入口(EventCenter.eventChunkLoaded 调用) [长期记忆: 016]
+        // 加载区块 的 ±4 对角 = 挂起任务的 ready 角点 → 4 个候选键, map.remove 原子摘除整个等待队列。
+        // 幂等/并发安全: 两个角同时 Load 只有一方摘到(remove 原子性); 重复 Load 时任务已不在表内 → remove 返回 null。
+        // [LMax Fix V44.3] 唤醒键 4→9(与 isReadyChunk 九点判式对称): 旧四角键漏中心/边中点——任务因中心
+        // 未 FULL 挂起而四角已 FULL(不再 Load)时永挂; 中心升格的 Load 唤醒的是以本 chunk 为角的任务,
+        // 不含以本 chunk 为中心的任务自身 → (0,0) 自唤醒键补此洞(修3a 挂起路径的生命线). [长期记忆: 023]
+        public static void onChunkLoaded(ServerLevel level, ChunkPos loaded) {
+            net.minecraft.server.MinecraftServer server = level.getServer();
+            for (int dx = -4; dx <= 4; dx += 4) {
+                for (int dz = -4; dz <= 4; dz += 4) {
+                    java.util.concurrent.ConcurrentLinkedQueue<DeferredTask> waiting = suspended_tasks.remove(new ChunkPos(loaded.x + dx, loaded.z + dz));
+                    if (waiting == null) continue;
+                    for (DeferredTask task : waiting) {
+                        // [LMax Fix V44.5] submitExecute = 主线程判定门(本方法运行于 executor, 门自动把判定送回主线程
+                        // 后放行/挂起; 旧 tryExecute 的 executor 复查点已随其退役, [长期记忆: 027])
+                        submitExecute(server, task);
+                    }
+                }
+            }
+        }
+
+        // [LMax Fix V43] 任务执行体: 原 processTick 的就绪后分支原样迁移, 行为不变 [长期记忆: 016]
+        private static void executeTask(net.minecraft.server.MinecraftServer server, DeferredTask task) {
+            ServerLevel targetLevel = server.getLevel(task.dim_key);
+            if (targetLevel == null) {
+                System.err.println("[TansHugeTrees] DeferredQueue dropped task: level not found for dim_key=" + task.dim_key + " chunk=" + task.chunk_pos);
+                return;
+            }
+            try {
+                // [方向A重构] 区分两种任务: 重新调 start vs 只补写 PendingBlocks
+                if (task.is_forced) {
+                    // [LMax Debug V40] forced 任务诊断日志 [长期记忆: 009]
+                    if (Core.log_deferred_queue) System.out.println("[THT-DEBUG] executeTask FORCED task: source=" + task.chunk_pos + " target=" + task.target_chunk);
+                    // 区块已就绪, 强制补写 PendingBlocks
+                    // [LMax Fix V44] placeForced 改投 PlacementQueue 滴灌: 返回值弃用, resync 由队列
+                    // onComplete 触发(旧"forced_placed>0 立即 resync"时序已被取代) [长期记忆: 018]
+                    // [LMax Fix V44.3] placeForced 并入 place(单一入口三门), 重载补写语义不变 [长期记忆: 023]
+                    PendingBlocks.place(targetLevel, task.target_chunk);
+                } else {
+                    // [LMax Debug V40] 非 forced 任务诊断日志 [长期记忆: 009]
+                    if (Core.log_deferred_queue) System.out.println("[THT-DEBUG] executeTask NORMAL task: chunk=" + task.chunk_pos);
+                    // 旧版逻辑: 重新调 start
+                    ChunkGenerator gen = targetLevel.getChunkSource().getGenerator();
+                    // [LMax Fix V44.3] 修3a': NORMAL 任务补 TreeLocation.start(region 三态认领幂等, 双调安全).
+                    // 旧路径只有 TreePlacer.start——3a 挂起的任务其 region 扫描从未跑过, 唤醒后只种树
+                    // 不扫描 = 挂起 chunk 的 region 永远无 TRUE 标记, 邻 chunk 树判定被连锁挂起.
+                    // 两条入口(就绪直跑/挂起唤醒)语义对齐: 先扫描后种树. [长期记忆: 023]
+                    tannyjung.tanshugetrees_handcode.systems.world_gen.TreeLocation.start(targetLevel, task.dimension, task.chunk_pos);
+                    // [LMax Fix V44] start 返回值弃用: 方块落地经 PlacementQueue 滴灌, resync 由队列
+                    // onComplete 触发(因果时序: 方块落地后才发包; 旧 V42"placed>0 立即 resync"废止) [长期记忆: 018]
+                    start(targetLevel, targetLevel, gen, task.dimension, task.chunk_pos);
+                }
+            } catch (Exception e) {
+                e.printStackTrace();
+            }
+        }
+    } // [LMax Fix V43] DeferredQueue 类闭合: PatchA 替换 processTick 时旧边界 L232 实为类闭合括号(最后一个方法后的 4 空格 }),
+        // 结构校验只验证了两行都是 } 未验证语义层级, 误吞未补 → 后续 1800 行掉入类内 + EOF 解析错误, 此行补回
 
     // [LMax Fix V42] 返回值语义：0=本次未写入任何方块（空数据且无 pending / 解析异常）；1=可能写入了方块（调用方应 resync）
+    // [LMax Fix V44] 返回值退役: 滴灌化后调用方(EventCenter/executeTask)均不再依据返回值 resync
+    // (resync 由 PlacementQueue onComplete 触发), 语义保留仅为兼容既有调用形式. [长期记忆: 018]
     public static int start (LevelAccessor level_accessor, ServerLevel level_server, ChunkGenerator chunk_generator, String dimension, ChunkPos chunk_pos) {
 
         Core.GlobalLocking.test();
@@ -248,7 +344,13 @@ public class TreePlacer {
             if (Core.log_placer_start) System.out.println("[THT-DEBUG] TreePlacer.start() chunk " + chunk_pos + " EARLY RETURN (no tree data)");
             // [LMax Fix V39] 即使没有树数据，当前chunk可能被相邻chunk的树写入了方块，必须尝试place
             // [LMax Fix V42] place 现返回实际落块数：>0 说明本 chunk 有跨 chunk 方块落地，调用方需要 resync
-            int placed_pending = PendingBlocks.place(level_accessor, chunk_pos);
+            // [LMax Fix V44] place 改投 PlacementQueue 滴灌(void): 跨 chunk 方块的落块与 resync 均由
+            // 队列负责, placed_pending 计数链废止 [长期记忆: 018]
+            PendingBlocks.place(level_accessor, chunk_pos);
+            // [LMax Fix V44.3] 空数据分支同步冲刷 litter(修4 的 start 侧入口): 旧路径只冲方块缓存, 本
+            // chunk 无树数据但可能持有邻 chunk 树落的落叶缓存. 三门在 LeafLitterGeneration.place 内部,
+            // proto 路径(Feature 钩子)留缓存由重载/回灌兜底. [长期记忆: 023]
+            LeafLitterGeneration.place(level_accessor, level_server, chunk_generator, chunk_pos);
             // [LMax Fix V42] churn 斩杀：空数据不再 DeferredQueue.add 无限重入队（旧实现单日 64.6 万次
             // 空转重入，队列永久满载挤压真实 forced 载荷）。改为等待 TreeLocation 的 region 完成事件唤醒；
             // 3×3 邻 region 全部完成仍无数据 = 确定终态，注销退出（本 chunk 的树记录确定不存在）
@@ -256,9 +358,10 @@ public class TreePlacer {
                 TreeLocation.unregisterPendingEmpty(dimension, chunk_pos);
                 if (Core.log_placer_start) System.out.println("[THT-DEBUG] EARLY RETURN chunk " + chunk_pos + " TERMINAL: 3x3 neighbor regions complete, no tree data (unregistered)");
             } else {
-                if (Core.log_placer_start) System.out.println("[THT-DEBUG] EARLY RETURN chunk " + chunk_pos + " waiting for region wake | pending placed: " + placed_pending);
+                if (Core.log_placer_start) System.out.println("[THT-DEBUG] EARLY RETURN chunk " + chunk_pos + " waiting for region wake");
             }
-            return (placed_pending > 0) ? 1 : 0;
+            // [LMax Fix V44] 返回 0: 方块落地异步化后本分支无同步落块证据(旧语义 placed_pending>0→1 废止)
+            return 0;
         }
 
         // [LMax Fix V42] 读到数据 → 立即注销等待集，本 chunk 不再需要唤醒（speculative register 的对偶操作）
@@ -308,6 +411,8 @@ public class TreePlacer {
 
         // [LMax Fix V20] 解除主线程封印：让 PendingBlocks 回归异步线程直接写入
         // 彻底解决主线程被海量方块写入卡死，导致区块发包延迟和 TPS 归零的问题
+        // [LMax Fix V20→V44 演进] V20 的"异步线程直写"在 V43c 实锤为死锁根因族(executor 碰 Level);
+        // V44 改投 PlacementQueue: 主线程按 budget_ms 时间片滴灌, 开销恒定, 完工后 resync. [长期记忆: 018]
         PendingBlocks.place(level_accessor, chunk_pos);
 
         LeafLitterGeneration.place(level_accessor, level_server, chunk_generator, chunk_pos);
@@ -326,6 +431,22 @@ public class TreePlacer {
     // processTick 自带 FULL 就绪检查与重试上限，未就绪不会重跑 start。
     public static void requeueChunk (String dimension, net.minecraft.resources.ResourceKey<net.minecraft.world.level.Level> dim_key, ChunkPos chunk_pos) {
         DeferredQueue.add(dimension, dim_key, chunk_pos);
+    }
+    // [LMax Fix V43] 对外冲缓存入口(EventCenter.eventChunkLoaded 重载路径调用) [长期记忆: 016]
+    // processed_chunks 拦重复扫描(防重种), 但绝不拦方块冲刷: 旧实现重载后整体跳过 →
+    // 跨 chunk 树半边方块(PendingBlocks)永久滞留 = 回型甜甜圈 + 边界劈树 + 5GB 泄漏三合一根因。
+    // [LMax Fix V44] int→void + 改投 PlacementQueue 滴灌(主线程): resync 由队列 onComplete 触发 [长期记忆: 018]
+    public static void flushPendingBlocks (ServerLevel level_server, ChunkPos chunk_pos) {
+        // [LMax Fix V44.3] placeForced 并入 place(单一入口, 三门内置于 place): 重载冲刷语义不变 [长期记忆: 023]
+        PendingBlocks.place(level_server, chunk_pos);
+    }
+
+    // [LMax Fix V44.3] 修4: 重载冲刷 litter 缓存入口(EventCenter else 分支调用). 旧路径重载时只冲方块
+    // 缓存——跨 chunk 树落在本 chunk 的落叶缓存永远无人消费(回型甜甜圈的落叶版). LeafLitterGeneration
+    // 是私有内部类, 此 public 转发暴露重载语义; 三门在 place 内部(调用时机 = 本 chunk 刚 Load, 重载时
+    // 已是 FULL, 门天然放行). [长期记忆: 023]
+    public static void flushPendingLitter (ServerLevel level_server, ChunkGenerator chunk_generator, ChunkPos chunk_pos) {
+        LeafLitterGeneration.place(level_server, level_server, chunk_generator, chunk_pos);
     }
 
     private static int[] getPartReduce (LevelAccessor level_accessor, String location, int centerX, int centerZ, int dead_tree_level) {
@@ -906,7 +1027,7 @@ public class TreePlacer {
                     }
 
                     // [方向A重构] 所有方块统一存入 PendingBlocks，由各 chunk 的 place() 统一写入
-                    PendingBlocks.add(pos, block);
+                            PendingBlocks.add(level_server, pos, block); // [LMax Fix V44.3] add 签名加 level_server: chunk_dims 维度路由登记(修2b 回灌防跨维撞车) [长期记忆: 023]
 
                     // Tree Decoration
                     {
@@ -1442,9 +1563,25 @@ public class TreePlacer {
                                     chunk_scan_count = chunk_scan_count + 1;
                                     chunk_pos_test = new ChunkPos(scanX, scanZ);
 
-                                    if (GameUtils.Space.testChunkStatus(level_accessor, chunk_pos_test, "structure_references") == true) {
+                                      if (GameUtils.Space.testChunkStatus(level_accessor, chunk_pos_test, "structure_references") == true) {
 
-                                        references = level_accessor.getChunk(chunk_pos_test.x, chunk_pos_test.z).getAllReferences();
+                                          // [LMax Fix V44.3] 修3b 语义域分流: getChunk(x,z) 双重人格 API——
+                                          // WorldGenRegion 接收者返回区域内 proto chunk(worldgen 管线语义合法);
+                                          // ServerLevel 接收者 = getChunk(FULL, create=true) 同步强制加载 + join
+                                          // 升格 future(收尾依赖主线程 mainThreadProcessor = V43c 跨线程死锁机理),
+                                          // 且被强载 chunk 触发 Load→+5s→start→更远扫描 = 雪球每跳 64 格的公共根.
+                                          // ServerLevel 侧改 getChunkNow 纯缓存查询(未加载/proto 升格中 null 零等待):
+                                          // null → 空引用集放行(未加载 = 无结构记录, 与原 references 判空跳过语义等价). [长期记忆: 023]
+                                          Map<Structure, LongSet> chunk_references;
+                                          if (level_accessor instanceof net.minecraft.server.level.ServerLevel) {
+                                              net.minecraft.world.level.chunk.ChunkAccess chunk_now =
+                                                      ((net.minecraft.server.level.ServerLevel) level_accessor).getChunkSource().getChunkNow(chunk_pos_test.x, chunk_pos_test.z);
+                                              chunk_references = chunk_now == null ? java.util.Collections.emptyMap() : chunk_now.getAllReferences();
+                                          } else {
+                                              // WorldGenRegion(worldgen 管线/proto): 原语义原样保留
+                                              chunk_references = level_accessor.getChunk(chunk_pos_test.x, chunk_pos_test.z).getAllReferences();
+                                          }
+                                          references = chunk_references;
 
                                         if (references.size() > 0) {
 
@@ -1849,59 +1986,54 @@ public class TreePlacer {
             cache_locations.computeIfAbsent(chunk_pos, create -> new java.util.concurrent.ConcurrentHashMap<>()).put(pos, block);
         }
 
+        // [LMax Fix V44] place 整体改投 PlacementQueue: 原实现在调用线程(=TREE_GEN_EXECUTOR)上直接做
+        // getHeightWorldGen + LeafLitter.create 写世界, 属于"executor 碰 Level"违例(V43c 死锁根因族).
+        // 现在原子摘取缓存后入队, 高度查询+落叶创建作为 placer 策略在主线程滴灌执行,
+        // 完工后 onComplete 触发 resync(方块落地后才发包). [长期记忆: 018]
         private static void  place (LevelAccessor level_accessor, ServerLevel level_server, ChunkGenerator chunk_generator, ChunkPos chunk_pos) {
 
-            {
+            // [LMax Fix V44.3] 修1 同款三门: ①proto 分流(level_accessor instanceof, worldgen 管线留缓存)
+            // ②FULL 门(getChunkNow+isOrAfter, level_server 直查零等待) ③容量门(isSaturated).
+            // 拒绝 = 留缓存零丢失, 由 Load 路径 start(L358)/重载 flushPendingLitter(修4)后续冲刷. [长期记忆: 023]
+            if ((level_accessor instanceof net.minecraft.server.level.ServerLevel) == false) {
+                return;
+            }
+            net.minecraft.world.level.chunk.ChunkAccess chunk_now =
+                    level_server.getChunkSource().getChunkNow(chunk_pos.x, chunk_pos.z);
+            if (chunk_now == null || !chunk_now.getHighestGeneratedStatus().isOrAfter(net.minecraft.world.level.chunk.ChunkStatus.FULL)) {
+                return;
+            }
+            if (PlacementQueue.isSaturated()) {
+                return;
+            }
+            // [LMax Fix V44] get→remove 原子摘取(所有权转移给队列): 并发调用天然幂等, 后到者拿 null 零开销
+            Map<BlockPos, BlockState> data = cache_locations.remove(chunk_pos);
 
-                Map<BlockPos, BlockState> data = cache_locations.get(chunk_pos);
-
-                if (data == null) {
-
-                    return;
-
-                }
-
-                int height_motion = 0;
-
-                for (Map.Entry<BlockPos, BlockState> entry : data.entrySet()) {
-
-                    height_motion = GameUtils.Space.getHeightWorldGen(level_accessor, level_server, chunk_generator, entry.getKey().getX(), entry.getKey().getZ(), "MOTION_BLOCKING_NO_LEAVES", "WORLD_SURFACE_WG");
-
-                    if (height_motion < entry.getKey().getY()) {
-
-                        LeafLitter.create(level_accessor, level_server, entry.getKey().atY(height_motion), entry.getValue(), false);
-
-                    }
-
-                }
-
-                cache_locations.remove(chunk_pos);
-
+            if (data == null) {
+                return;
             }
 
+            // [LMax Fix V44] 落叶策略: 每块查地表高度(MOTION_BLOCKING_NO_LEAVES)后 LeafLitter.create,
+            // 逻辑与原实现逐行等价, 仅执行线程从 executor 换到主线程滴灌
+            java.util.function.BiConsumer<BlockPos, BlockState> placer = (pos, block) -> {
+
+                int height_motion = GameUtils.Space.getHeightWorldGen(level_accessor, level_server, chunk_generator, pos.getX(), pos.getZ(), "MOTION_BLOCKING_NO_LEAVES", "WORLD_SURFACE_WG");
+
+                if (height_motion < pos.getY()) {
+
+                    LeafLitter.create(level_accessor, level_server, pos.atY(height_motion), block, false);
+
+                }
+
+            };
+
+            PlacementQueue.enqueue(level_server, chunk_pos, data, placer,
+                    () -> tannyjung.tanshugetrees_core.game.EventCenter.Server.resyncChunk(level_server, chunk_pos));
         }
 
     }
 
     // [方向A重构] 新增 PendingBlocks 类：按 chunk 分组缓存方块，解决跨 chunk 写入时序问题
-    // [LMax Fix A3] 重载 chunk 冲缓存入口（EventCenter.eventChunkLoaded else 分支调用）[长期记忆: 071]
-    // 语义：重载 chunk 冲刷其滞留的 PendingBlocks（跨 chunk 树半边方块），修复 V42"重载后整体跳过"
-    // 导致的回型甜甜圈/边界劈树/缓存泄漏三合一。线程形状与 start() 完全一致（TREE_GEN_EXECUTOR 上被调）：
-    // place() 走 Tile.set worldgen 分支直写（lc.setBlockState + setUnsaved，不发包），
-    // 落块 > 0 由调用方 resyncChunk 补发（V42 现成方法，内部自动切主线程）。
-    // 卫兵：hasChunk 非主线程诚实（027 裁决）；未加载 → 跳过冲刷数据留缓存，
-    // 该 chunk 下次 Load 事件再进本入口（事件闭环，零丢失零轮询）。
-    public static int flushPendingBlocks (net.minecraft.server.level.ServerLevel level_server, net.minecraft.world.level.ChunkPos chunk_pos) {
-
-        // [LMax Fix A3] hasChunk 卫兵：chunk 未加载（跑远卸载）→ fast-return，数据滞留缓存等下次 Load
-        if (level_server.getChunkSource().hasChunk(chunk_pos.x, chunk_pos.z) == false) {
-            return 0;
-        }
-
-        // [LMax Fix A3] 复用 PendingBlocks.place：get → Tile.set 直写循环 → remove（V42 原生语义，幂等）
-        return PendingBlocks.place(level_server, chunk_pos);
-    }
-
     private static class PendingBlocks {
 
         // 线程安全容器：ChunkPos -> (BlockPos -> BlockState)
@@ -1911,8 +2043,41 @@ public class TreePlacer {
         private static final java.util.concurrent.atomic.AtomicInteger add_count = new java.util.concurrent.atomic.AtomicInteger(0);
 
         // 添加方块到缓存（按方块所在 chunk 分组）
-        private static void add (BlockPos pos, BlockState block) {
+        // [LMax Fix V43] 缓存上限: FIFO 驱逐最老 chunk 条目 [长期记忆: 016]
+        // V42 实测: 跨 chunk 树半边方块落在永不重载的区块(甜甜圈) → 2930 万方块孤儿撑到 5GB。
+        // tracked_keys(ConcurrentHashMap.newKeySet, size() 低开销) 去重登记, insertion_order 记 FIFO 序。
+        // 不变量: tracked_keys 与 insertion_order 1:1(add 双写, place/placeForced 双清, evict 双删)。
+        private static final java.util.concurrent.ConcurrentLinkedQueue<ChunkPos> insertion_order = new java.util.concurrent.ConcurrentLinkedQueue<>();
+        private static final java.util.Set<ChunkPos> tracked_keys = java.util.concurrent.ConcurrentHashMap.newKeySet();
+        // [LMax Fix V44.3] 维度路由表(修2b): chunk -> 所属维度. 与 tracked_keys/insertion_order 同生命周期
+        // (add 登记 / place+evict 双清), 供低水位回灌按维找 ServerLevel. [长期记忆: 023]
+        private static final java.util.Map<ChunkPos, net.minecraft.resources.ResourceKey<net.minecraft.world.level.Level>> chunk_dims
+                = new java.util.concurrent.ConcurrentHashMap<>();
+
+        // [LMax Fix V43] FIFO 驱逐: 摘队头键 → 清记账 → 删缓存条目。被驱 chunk 已有方块时走 log_queue_overflow 键控告警。
+        private static void evictOldestChunk () {
+            ChunkPos oldest = insertion_order.poll();
+            if (oldest == null) return;
+            tracked_keys.remove(oldest);
+            chunk_dims.remove(oldest); // [LMax Fix V44.3] 维度路由记账同步驱逐(修2b)
+            Map<BlockPos, BlockState> evicted = cache_blocks.remove(oldest);
+            if (evicted != null && evicted.isEmpty() == false) {
+                if (Core.log_queue_overflow) System.err.println("[TansHugeTrees] PendingBlocks overflow, evicted chunk " + oldest + " (" + evicted.size() + " blocks)");
+            }
+        }
+        // [LMax Fix V44.3] 签名加 level_server: 新键登记维度路由 chunk_dims(修2b 回灌按 ResourceKey 找
+        // ServerLevel, 防跨维度 ChunkPos 撞车误写——纯 ChunkPos 键的多维歧义是既有债, 此处补消费侧路由)
+        private static void add (net.minecraft.server.level.ServerLevel level_server, BlockPos pos, BlockState block) {
             ChunkPos chunk_pos = new ChunkPos(pos);
+            // [LMax Fix V43] 新键登记 + 溢出驱逐(先驱逐后写入, 保证写入后 ≤ pending_blocks_max_chunks;
+            // isEmpty 卫语句防极端竞态下队列空转死循环)
+            if (tracked_keys.add(chunk_pos)) {
+                insertion_order.offer(chunk_pos);
+                chunk_dims.put(chunk_pos, level_server.dimension()); // [LMax Fix V44.3] 维度路由登记
+                while (insertion_order.isEmpty() == false && tracked_keys.size() > Handcode.Config.pending_blocks_max_chunks) {
+                    evictOldestChunk();
+                }
+            }
             cache_blocks.computeIfAbsent(chunk_pos, create -> new java.util.concurrent.ConcurrentHashMap<>()).put(pos, block);
             // [LMax Debug V39] 诊断：追踪方块入缓存总数
             if (Core.log_pending_blocks) {
@@ -1921,66 +2086,82 @@ public class TreePlacer {
             }
         }
 
-        // 从缓存中拉取并写入指定 chunk 的所有方块（由各 chunk 的 start() 调用）
-        private static int place (LevelAccessor level_accessor, ChunkPos chunk_pos) { // [LMax Fix V42] 返回实际落块数
+        // 从缓存中拉取并写入指定 chunk 的所有方块（由各 chunk 的 start() / 重载 flush / 低水位回灌调用）
+        // [LMax Fix V44] int→void + 改投 PlacementQueue: 原直落循环在调用线程(=TREE_GEN_EXECUTOR)上
+        // 直接写世界, 属于"executor 碰 Level"违例(V43c 死锁根因族); 现在原子摘取后入队, 主线程滴灌. [长期记忆: 018]
+        // [LMax Fix V44.3] 修1 三门 + 吸收 placeForced(单一入口): instanceof 门天然分流 proto/Load 两路径
+        // (proto 拒绝摘缓存, 留待升格 FULL 后 Load 冲刷); 返回 boolean 供低水位回灌计数(修2b). [长期记忆: 023]
+        private static boolean place (LevelAccessor level_accessor, ChunkPos chunk_pos) {
 
-            Map<BlockPos, BlockState> data = cache_blocks.get(chunk_pos);
+            // [LMax Fix V44.3] 修1 门1 proto 分流器: worldgen 管线(Feature 钩子)传入的 level_accessor 是
+            // WorldGenRegion——V44 旧注释"调用方均为 ServerLevel"不变量漏数了 WorldGenStepBeforePlants
+            // 调用方, proto 路径跑到旧 cast = ClassCastException 直炸 vanilla 生成管线. instanceof 门=留缓存零风险
+            if ((level_accessor instanceof net.minecraft.server.level.ServerLevel) == false) {
+                return false;
+            }
+            net.minecraft.server.level.ServerLevel level_server = (net.minecraft.server.level.ServerLevel) level_accessor;
+
+            // [LMax Fix V44.3] 修1 门2 FULL 状态门: getChunkNow 纯缓存查询(未加载/proto 升格中均 null 零等待);
+            // 非 FULL 时 Tile.set 内部 getChunk(FULL) 同步等升格(60 次 50-500ms stall 机理), 拒绝摘缓存,
+            // 留待 proto→FULL 升格触发的 ChunkEvent.Load 再冲刷(二次唤醒闭环, 与 V43 挂起机制同语义)
+            net.minecraft.world.level.chunk.ChunkAccess chunk_now =
+                    level_server.getChunkSource().getChunkNow(chunk_pos.x, chunk_pos.z);
+            if (chunk_now == null || !chunk_now.getHighestGeneratedStatus().isOrAfter(net.minecraft.world.level.chunk.ChunkStatus.FULL)) {
+                return false;
+            }
+
+            // [LMax Fix V44.3] 修1 门3 容量门: 队列饱和 = 消费端暂态落后, 摘走即无副本(drop 已废止);
+            // 拒绝摘缓存由修2b 低水位回灌自愈, 数据零丢失
+            if (PlacementQueue.isSaturated()) {
+                return false;
+            }
+
+            // [LMax Fix V44] get→remove 原子摘取(所有权转移给队列): 并发调用天然幂等, 后到者拿 null 零开销;
+            // FIFO 记账同步出队(tracked_keys 与 insertion_order 1:1 维护)
+            Map<BlockPos, BlockState> data = cache_blocks.remove(chunk_pos);
+            tracked_keys.remove(chunk_pos);
+            insertion_order.remove(chunk_pos);
+            chunk_dims.remove(chunk_pos); // [LMax Fix V44.3] 维度路由记账同步出队(修2b)
 
             // [LMax Debug V39] 诊断：place()调用时缓存状态
             if (Core.log_pending_blocks) {
-                int dataSize = (data == null) ? 0 : data.size();
-                System.out.println("[THT-DEBUG] PendingBlocks.place() chunk " + chunk_pos + " cache: " + (data == null ? "NULL" : dataSize + " blocks") + " | total cache chunks: " + cache_blocks.size());
+                System.out.println("[THT-DEBUG] PendingBlocks.place() chunk " + chunk_pos + " cache: " + (data == null ? "NULL" : data.size() + " blocks") + " | total cache chunks: " + cache_blocks.size());
             }
 
             if (data == null) {
-            return 0; // [LMax Fix V42] 无缓存数据，未落任何块
+                return true; // 空缓存=幂等无事可做, 计成功供回灌推进(记账已清)
             }
 
+            // [LMax Fix V44.3] 落块策略: Tile.set worldgen 分支(lc.setBlockState + setUnsaved) 零级联写原语,
+            // 仅执行位置从 executor 换到主线程滴灌(原 V44 注释语义保留; 类型不变量修正见门1)
+            java.util.function.BiConsumer<BlockPos, BlockState> placer = (pos, block) ->
+                    GameUtils.Tile.set(level_server, pos, block, true);
+
+            PlacementQueue.enqueue(level_server, chunk_pos, data, placer,
+                    () -> tannyjung.tanshugetrees_core.game.EventCenter.Server.resyncChunk(level_server, chunk_pos));
+            return true;
+        }
+
+        // [LMax Fix V44.3] 修2b 低水位回灌: 事件路径(Load 冲刷)因容量门拒绝的方块滞留缓存, 队列空闲时
+        // 由此自愈重投. 维度经 chunk_dims 路由(防跨维 ChunkPos 撞车误写). 弱一致迭代, 头部 chunk 永不
+        // FULL 时预算耗在头部 = 无害(FIFO 语义 + Load 事件路径会先行冲刷). [长期记忆: 023]
+        private static void refillTick (net.minecraft.server.MinecraftServer server) {
+            if (Handcode.Config.placement_queue_refill_per_tick <= 0) return; // 0 = 禁用回灌
+            if (PlacementQueue.isSaturated()) return; // 饱和: 不再投新
+            if (PlacementQueue.queueDepth() >= Handcode.Config.placement_queue_refill_low_water) return; // 队列仍忙
+            if (insertion_order.isEmpty()) return; // 无缓存: 零开销快退
             int placed = 0;
-            for (Map.Entry<BlockPos, BlockState> entry : data.entrySet()) {
-
-                GameUtils.Tile.set(level_accessor, entry.getKey(), entry.getValue(), true);
-                placed++;
-
+            java.util.Iterator<ChunkPos> it = insertion_order.iterator(); // 弱一致: 迭代中并发摘除安全
+            while (placed < Handcode.Config.placement_queue_refill_per_tick && it.hasNext()) {
+                ChunkPos c = it.next();
+                net.minecraft.resources.ResourceKey<net.minecraft.world.level.Level> dim_key = chunk_dims.get(c);
+                if (dim_key == null) continue; // 记账缺失(竞态窗口): 下 tick 重查
+                net.minecraft.server.level.ServerLevel level = server.getLevel(dim_key);
+                if (level == null) continue; // 维度未加载: 跳过
+                if (place(level, c)) placed++; // 三门拒绝=false 不计数(下 tick 从头部重试)
             }
-
-            // [LMax Debug V39] 诊断：实际写入方块数
-            if (Core.log_pending_blocks) System.out.println("[THT-DEBUG] PendingBlocks.place() chunk " + chunk_pos + " placed: " + placed + " blocks");
-
-            // 写入完成后清除该 chunk 的缓存
-            cache_blocks.remove(chunk_pos);
-
-            return placed; // [LMax Fix V42] 返回实际落块数供 resync 判定
         }
 
-        // [方向A重构] 强制补写方法：用于 DeferredQueue 补写已 FULL 的 chunk
-        private static int placeForced (ServerLevel level_server, ChunkPos chunk_pos) { // [LMax Fix V42] 返回实际落块数
-
-            Map<BlockPos, BlockState> data = cache_blocks.get(chunk_pos);
-
-            // [LMax Debug V40] placeForced 诊断日志
-            if (Core.log_pending_blocks) System.out.println("[THT-DEBUG] placeForced() chunk " + chunk_pos + " cache: " + (data == null ? "NULL" : data.size() + " blocks"));
-
-            if (data == null) {
-            return 0; // [LMax Fix V42] 无缓存数据，未落任何块
-            }
-
-            int placed_count = 0;
-            for (Map.Entry<BlockPos, BlockState> entry : data.entrySet()) {
-
-                // [LMax Fix] flags=4 (UPDATE_INVISIBLE): 跳过所有更新。
-                // 客户端通知由 EventCenter 在服务器线程上统一发送。
-                level_server.setBlock(entry.getKey(), entry.getValue(), 4);
-                placed_count++;
-
-            }
-
-            cache_blocks.remove(chunk_pos);
-            // [LMax Debug V40] placeForced 完成日志
-            if (Core.log_pending_blocks) System.out.println("[THT-DEBUG] placeForced() chunk " + chunk_pos + " placed: " + placed_count + " blocks, cache cleared");
-
-            return placed_count; // [LMax Fix V42] 返回实际落块数供 resync 判定
-        }
 
     }
 
@@ -2025,4 +2206,119 @@ public class TreePlacer {
 
     }
 
+    // [LMax Fix V44] PlacementQueue: 主线程滴灌式方块放置队列(V43c 死锁的结构性修复) [长期记忆: 018]
+    // 架构铁律: 一切 Level 写入回主线程, executor 只做纯计算. 本队列即"计算与调度解耦"的外壳:
+    //   生产端(任意线程): enqueue 原子摘取方块清单所有权, O(1) 无锁入队
+    //   消费端(主线程):   drainTick 按 getBudgetMs() 时间片消费, 主线程开销恒定, 与队列深度无关
+    //   策略函数化:       placer lambda 决定"怎么落"(Tile.set 直放/落叶衍生/未来任意), 队列零改动接入
+    //   因果时序:         onComplete(=resync) 只在方块全部落地后触发, 杜绝"包比方块先到"幽灵回归
+    private static class PlacementQueue {
+
+        // [LMax Fix V44] Job = 最小执行单元: 一个 chunk 的一批方块 + 游标 + 策略 + 完工回调
+        private static class Job {
+            final net.minecraft.server.level.ServerLevel level;
+            final net.minecraft.world.level.ChunkPos chunk_pos;
+            final Map.Entry<BlockPos, BlockState>[] blocks; // Map 一次性数组化: 游标推进 O(1), 免 iterator 跨 tick 状态
+            int cursor = 0; // [LMax Fix V44] 跨 tick 续放游标(滴灌的本质: 时间片用尽即暂停, 下 tick 从游标续)
+            final java.util.function.BiConsumer<BlockPos, BlockState> placer;
+            final Runnable onComplete;
+
+            @SuppressWarnings("unchecked")
+            Job (net.minecraft.server.level.ServerLevel level, net.minecraft.world.level.ChunkPos chunk_pos, Map<BlockPos, BlockState> blocks, java.util.function.BiConsumer<BlockPos, BlockState> placer, Runnable onComplete) {
+                this.level = level;
+                this.chunk_pos = chunk_pos;
+                this.blocks = blocks.entrySet().toArray(new Map.Entry[0]); // [LMax Fix V44] 数组化: 消费期只读
+                this.placer = placer;
+                this.onComplete = onComplete;
+            }
+        }
+
+        // [LMax Fix V44] 无界并发队列: 深度有界由三个 place() 入口的 isSaturated() 容量门 + canary 告警兜底
+        // (V44.3 修2a: 旧"enqueue 背压丢弃"废止——见下)
+        private static final java.util.concurrent.ConcurrentLinkedQueue<Job> queue = new java.util.concurrent.ConcurrentLinkedQueue<>();
+
+        // [LMax Fix V44] 生产端: 任意线程 O(1). 空 map 直接完工(不发空 job).
+        // [LMax Fix V44.3] 修2a: 旧"触达上限丢最老 job"废止——job 已从缓存原子摘出(所有权转移),
+        // 丢弃 = 方块无任何副本必丢(与 V43 PendingBlocks FIFO 驱逐不同: 那时缓存还有账可丢).
+        // 生产背压改由三个 place() 入口的 isSaturated() 容量门承担(拒绝摘缓存, 数据零丢失);
+        // 本处仅 canary 告警. 队列深度可短暂超上限(新增来源已被门封), drainTick 恒速消化自愈. [长期记忆: 023]
+        private static void enqueue (net.minecraft.server.level.ServerLevel level, net.minecraft.world.level.ChunkPos chunk_pos, Map<BlockPos, BlockState> blocks, java.util.function.BiConsumer<BlockPos, BlockState> placer, Runnable onComplete) {
+
+            if (blocks.isEmpty()) {
+                onComplete.run(); // [LMax Fix V44] 空批=立即完工(幂等语义, 无方块可落)
+                return;
+            }
+
+            // [LMax Fix V44.3] canary: 饱和告警不丢弃(投递照常), 触达=消费暂态落后
+            if (queue.size() >= Handcode.Config.placement_queue_max_jobs) {
+                System.err.println("[TansHugeTrees] PlacementQueue saturated (depth=" + queue.size() + "), accepting job chunk=" + chunk_pos + " (canary, no drop)");
+            }
+
+            queue.offer(new Job(level, chunk_pos, blocks, placer, onComplete));
+        }
+
+        // [LMax Fix V44.3] 修2a: 饱和判定——三个 place() 入口的容量门共用(拒绝摘缓存=数据滞留缓存零丢失)
+        public static boolean isSaturated () {
+            return queue.size() >= Handcode.Config.placement_queue_max_jobs;
+        }
+
+        // [LMax Fix V44.3] 修2b: 队列深度(低水位回灌判据)
+        public static int queueDepth () {
+            return queue.size();
+        }
+
+        // [LMax Fix V44] 消费端: 仅主线程调用(processTick 尾部挂点). 时间片 = getBudgetMs().
+        // 卫兵: 滴灌中 chunk 卸载 → job 回队尾等重载(恢复后由下轮 drainTick 续放;
+        // 缓存已被原子摘走, 重载路径 flushPendingBlocks 拿 null 零开销, 与本 job 游标续放互补不冲突);
+        // 整圈全部未加载 → break 防空转(下 tick 再试). budget<=0 = 暂停滴灌(任务滞留至上限).
+        // [LMax Fix V44.3] 卫兵升级 hasChunk→getChunkNow+FULL: hasChunk 对已入 loaded 表的 proto chunk
+        // 也返回 true, 放行后 Tile.set 内部 getChunk(FULL) 同步等 proto 升格 = 主线程 stall
+        // (V44 实测 60 次 50-500ms mod stall 机理); getChunkNow 纯缓存查询, proto 升格中返回 null
+        // 零等待, job 回队尾等 FULL 提升后再续放. [长期记忆: 023]
+        public static void drainTick () {
+
+            if (queue.isEmpty()) return; // [LMax Fix V44] 空队列零开销快退
+
+            long deadline = System.nanoTime() + getBudgetMs() * 1_000_000L;
+            int requeued = 0;
+
+            Job job;
+            while (System.nanoTime() < deadline && (job = queue.poll()) != null) {
+
+                net.minecraft.world.level.chunk.ChunkAccess job_chunk =
+                        job.level.getChunkSource().getChunkNow(job.chunk_pos.x, job.chunk_pos.z);
+                if (job_chunk == null || !job_chunk.getHighestGeneratedStatus().isOrAfter(net.minecraft.world.level.chunk.ChunkStatus.FULL)) {
+                    queue.offer(job); // 回队尾等待 FULL(卸载或 proto 升格中同判)
+                    requeued++;
+                    if (requeued >= queue.size()) break; // [LMax Fix V44] 整圈未加载: 防空转
+                    continue;
+                }
+
+                try {
+                    while (job.cursor < job.blocks.length && System.nanoTime() < deadline) {
+                        Map.Entry<BlockPos, BlockState> entry = job.blocks[job.cursor];
+                        job.cursor++;
+                        job.placer.accept(entry.getKey(), entry.getValue());
+                    }
+
+                    if (job.cursor >= job.blocks.length) {
+                        job.onComplete.run(); // [LMax Fix V44] 完工: 方块全部落地后才触发 resync
+                    } else {
+                        queue.offer(job); // [LMax Fix V44] 时间片用尽: 续放(游标语义)
+                    }
+                } catch (Throwable t) {
+                    // [LMax Fix V44] 消费侧异常围栏: job 级隔离, 单 job 故障不冻结滴灌循环
+                    // (游标前已落方块保留, 游标后丢弃; 与 Future 黑洞不同, 此处异常可见)
+                    System.err.println("[TansHugeTrees] PlacementQueue job crashed, dropped chunk=" + job.chunk_pos + " (cursor=" + job.cursor + "/" + job.blocks.length + "):");
+                    t.printStackTrace();
+                }
+            }
+        }
+
+        // [LMax Fix V44] 自适应预算钩子: 当前直读配置键 placement_queue_budget_ms;
+        // 未来接 AIMD 控制器(测量 MSPT 加性增/乘性减动态调节)时只改本方法体, 调度代码零改动
+        private static int getBudgetMs () {
+            return Handcode.Config.placement_queue_budget_ms;
+        }
+    }
 }

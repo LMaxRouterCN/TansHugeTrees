@@ -141,7 +141,7 @@ public class EventCenter {
         // 之前的有界队列 (8192) 在主线程卡顿时会满载，导致 RejectedExecutionException 并静默丢弃区块生成任务。
         // 现在使用 Executors.newFixedThreadPool，确保有足够的线程并发，且永远不会丢弃任务。
         private static final int TREE_GEN_THREADS = Math.max(4, Math.min(16, Runtime.getRuntime().availableProcessors()));
-        private static final java.util.concurrent.ExecutorService TREE_GEN_EXECUTOR = java.util.concurrent.Executors.newFixedThreadPool(
+        public static final java.util.concurrent.ExecutorService TREE_GEN_EXECUTOR = java.util.concurrent.Executors.newFixedThreadPool(
             TREE_GEN_THREADS,
             r -> {
                 Thread t = new Thread(r, "THT-TreeGen");
@@ -168,34 +168,68 @@ public class EventCenter {
 
             // [LMax Fix V37] 延迟 100 Tick (5 秒) 后在后台线程执行种树！
             // 5 秒后区块加载风暴结束，异步读取绝对不会死锁，且绝不阻塞世界生成！
-            Core.DelayedWork.create(true, 100, () -> {
-                // [LMax Fix V38] 裸new Thread→TREE_GEN_EXECUTOR.submit
-                // 原实现每区块一个线程，2400区块=2400并发线程把12核饿死（主线程stall 10.5s根因）
-                // submit进固定池(4-16线程)由无界队列调度，线程数恒定，任务被排队消化
-                // [长期记忆: 004] 先A后B的A2：消灭线程风暴
-                TREE_GEN_EXECUTOR.submit(() -> {
-                    try {
-                        // [LMax Fix V38] contains+add两步非原子(check-then-act竞态)→add()原子check-and-add
-                        // Set.add()返回true=新增成功(本次处理)，false=已存在(跳过)，彻底消除窗口
-                        if (processed_chunks.add(chunk_pos)) {
-                            tannyjung.tanshugetrees_handcode.systems.world_gen.TreeLocation.start(level_server, dimension, chunk_pos);
-                            tannyjung.tanshugetrees_handcode.systems.world_gen.TreePlacer.start(level_server, level_server, generator, dimension, chunk_pos);
-
-                            // 种完树后，在主线程手动发包（V42 提取为 resyncChunk，供 DeferredQueue 补写路径复用）
-                            resyncChunk(level_server, chunk_pos);
-                        }
-                        // [LMax Fix A3] 重载 chunk：不重扫描（processed_chunks 幂等拦重复种树），但必须冲方块缓存。[长期记忆: 071]
-                        // V42 旧实现重载后整体跳过 → 跨 chunk 树半边方块永久滞留 PendingBlocks =
-                        // 回型甜甜圈 + 边界劈树 + 缓存泄漏三合一根因。落块 > 0 才 resync（防包风暴，无落块零开销）。
-                        else {
-                            int placed_pending = tannyjung.tanshugetrees_handcode.systems.world_gen.TreePlacer.flushPendingBlocks(level_server, chunk_pos);
-                            if (placed_pending > 0) {
-                                resyncChunk(level_server, chunk_pos);
+              Core.DelayedWork.create(true, 100, () -> {
+                  // [LMax Fix V38] 裸new Thread→TREE_GEN_EXECUTOR.submit
+                  // 原实现每区块一个线程，2400区块=2400并发线程把12核饿死（主线程stall 10.5s根因）
+                  // submit进固定池(4-16线程)由无界队列调度，线程数恒定，任务被排队消化
+                  // [长期记忆: 004] 先A后B的A2：消灭线程风暴
+                  TREE_GEN_EXECUTOR.submit(() -> {
+                      try {
+                          // [LMax Fix V38] contains+add两步非原子(check-then-act竞态)→add()原子check-and-add
+                          // Set.add()返回true=新增成功(本次处理)，false=已存在(跳过)，彻底消除窗口
+                            if (processed_chunks.add(chunk_pos)) {
+                                // [LMax Fix V44.3] 修3a 总闸门: start 前置 isReadyChunk 九点判(±4 角+边中点+中心).
+                                // 未就绪 → DeferredQueue.add NORMAL 挂起任务(走既有挂起/唤醒链, onChunkLoaded
+                                // 九键对称唤醒), 唤醒后 executeTask NORMAL 分支补 TreeLocation.start(修3a')不缺扫描.
+                                // 旧路径"就绪直跑": 5 秒后中心恰 FULL 而角仍 proto 的窗口期直冲 start,
+                                // 详细检测踩 proto 边 = getChunk(FULL) 同步强载(雪球每跳 64 格公共根) [长期记忆: 023]
+                                // [LMax Fix V44.5] 判定权收编主线程: 下方判定原直跑于本 executor 块内——
+                                // isReadyChunk 的 getChunkNow 被 1.20.1 主线程卫兵恒拦为 null(991 次 executor
+                                // FAIL 的一路来源, 823 次证据B全此形态, [长期记忆: 027]). 改经 server.execute
+                                // 主线程门: PASS 才回 TREE_GEN_EXECUTOR 跑双 start(重活不占主线程), FAIL 投
+                                // DeferredQueue 走挂起/唤醒链(与旧 else 分支语义等价).
+                                level_server.getServer().execute(() -> {
+                                    try {
+                                        if (tannyjung.tanshugetrees_handcode.systems.world_gen.TreePlacer.DeferredQueue.isReadyChunk(level_server, chunk_pos)) {
+                                            // PASS: 双 start 回 executor, 异常围栏同 dispatchExecute(V44)
+                                            TREE_GEN_EXECUTOR.submit(() -> {
+                                                try {
+                                                    tannyjung.tanshugetrees_handcode.systems.world_gen.TreeLocation.start(level_server, dimension, chunk_pos);
+                                                    tannyjung.tanshugetrees_handcode.systems.world_gen.TreePlacer.start(level_server, level_server, generator, dimension, chunk_pos);
+                                                } catch (Throwable t) {
+                                                    System.err.println("[TansHugeTrees] TREE_GEN_EXECUTOR chunk-start crashed (chunk=" + chunk_pos + "):");
+                                                    t.printStackTrace();
+                                                }
+                                            });
+                                        } else {
+                                            tannyjung.tanshugetrees_handcode.systems.world_gen.TreePlacer.DeferredQueue.add(dimension, level_server.dimension(), chunk_pos);
+                                        }
+                                    } catch (Throwable t) {
+                                        System.err.println("[TansHugeTrees] chunk-loaded main-thread gate crashed (chunk=" + chunk_pos + "):");
+                                        t.printStackTrace();
+                                    }
+                                });
+                                  // [LMax Fix V44] start 方块落地改经 TreePlacer 内部 PlacementQueue 滴灌(主线程),
+                                  // resync 由队列 onComplete 在方块落地后触发; 旧"start 返回后立即发包"(V42)在
+                                  // 滴灌化后等于包比方块先到 = 幽灵方块回归, 拆除. [长期记忆: 018]
+                            } else {
+                                // [LMax Fix V43] 重载区块无条件冲缓存 [长期记忆: 016]
+                                // processed_chunks 只拦重复扫描(防重种), 不拦方块冲刷: 旧实现重载后整个跳过,
+                                // 跨chunk树的半边方块(PendingBlocks缓存)永远无人消费 = 回型甜甜圈+边界劈树+内存泄漏三合一根因.
+                                // 有缓存就落块, 落了才发包(>0 防包风暴), 无缓存时 get 返回 0 零开销.
+                                  // [LMax Fix V44] 冲缓存改投 PlacementQueue 滴灌: resync 由队列 onComplete 在
+                                  // 方块落地后触发(旧"placed>0 立即发包" = 包比方块先到 = 幽灵回归) [长期记忆: 018]
+                                  tannyjung.tanshugetrees_handcode.systems.world_gen.TreePlacer.flushPendingBlocks(level_server, chunk_pos);
+                                  // [LMax Fix V44.3] 修4: 重载同步冲 litter 缓存——旧路径只冲方块, 跨 chunk 树
+                                  // 落在本 chunk 的落叶缓存永久滞留(回型甜甜圈落叶版). [长期记忆: 023]
+                                  tannyjung.tanshugetrees_handcode.systems.world_gen.TreePlacer.flushPendingLitter(level_server, generator, chunk_pos);
                             }
-                        }
-                    } catch (Exception e) { e.printStackTrace(); }
-                });
-            });
+                            // [LMax Fix V43] P1 挂起唤醒: 本 chunk 已加载, 按 ±4 对角键查本 chunk 唤醒的挂起任务
+                            // (挂起任务等的就是区块加载这一刻; 内部 map.remove 原子消费, 重复调用幂等安全)
+                            tannyjung.tanshugetrees_handcode.systems.world_gen.TreePlacer.DeferredQueue.onChunkLoaded(level_server, chunk_pos);
+                      } catch (Exception e) { e.printStackTrace(); }
+                  });
+              });
         }
             
         // [LMax Fix V42] resyncChunk：把指定 chunk 的完整区块包（含光照）重发给 32 格内的玩家。
@@ -206,14 +240,23 @@ public class EventCenter {
         public static void resyncChunk (net.minecraft.server.level.ServerLevel level_server, net.minecraft.world.level.ChunkPos chunk_pos) {
             level_server.getServer().execute(() -> {
                 try {
-                    net.minecraft.world.level.chunk.LevelChunk lc = level_server.getChunk(chunk_pos.x, chunk_pos.z);
-                    if (lc != null && !lc.isEmpty()) {
-                        net.minecraft.network.protocol.game.ClientboundLevelChunkWithLightPacket packet =
-                            new net.minecraft.network.protocol.game.ClientboundLevelChunkWithLightPacket(
-                                lc, level_server.getLightEngine(), null, null);
-                        for (net.minecraft.server.level.ServerPlayer player : level_server.players()) {
-                            if (player.distanceToSqr(chunk_pos.getWorldPosition().getX(), player.getY(), chunk_pos.getWorldPosition().getZ()) < 1024) {
-                                player.connection.send(packet);
+                    // [LMax Fix V44.3] 修5: 旧 getChunk(x,z) 在 ServerLevel 接收者语义 = getChunk(FULL, create=true)
+                    // 同步强制加载+join 升格 future(双重人格 API, 机理同修3b). resync 的语义只是"重发已存在
+                    // chunk 的完整包": chunk 不在 = 无物可发, 强行制造毫无意义(还会顺带触发 Load→+5s→start
+                    // 雪球链). 改 getChunkNow 纯缓存查询: null/proto(升格中非 LevelChunk)直接跳过, 等 FULL 后
+                    // 下一轮 onComplete 再来. [长期记忆: 023]
+                    net.minecraft.world.level.chunk.ChunkAccess chunk_now =
+                            level_server.getChunkSource().getChunkNow(chunk_pos.x, chunk_pos.z);
+                    if (chunk_now instanceof net.minecraft.world.level.chunk.LevelChunk) {
+                        net.minecraft.world.level.chunk.LevelChunk lc = (net.minecraft.world.level.chunk.LevelChunk) chunk_now;
+                        if (!lc.isEmpty()) {
+                            net.minecraft.network.protocol.game.ClientboundLevelChunkWithLightPacket packet =
+                                new net.minecraft.network.protocol.game.ClientboundLevelChunkWithLightPacket(
+                                    lc, level_server.getLightEngine(), null, null);
+                            for (net.minecraft.server.level.ServerPlayer player : level_server.players()) {
+                                if (player.distanceToSqr(chunk_pos.getWorldPosition().getX(), player.getY(), chunk_pos.getWorldPosition().getZ()) < 1024) {
+                                    player.connection.send(packet);
+                                }
                             }
                         }
                     }
