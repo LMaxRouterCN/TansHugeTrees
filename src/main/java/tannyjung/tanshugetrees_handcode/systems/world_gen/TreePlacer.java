@@ -110,8 +110,14 @@ public class TreePlacer {
             DeferredTask task;
             java.util.List<DeferredTask> retryList = new java.util.ArrayList<>();
 
-            // 每次 Tick 最多处理 N 个任务（配置项 deferred_queue_process_per_tick），防止主线程 TPS 暴跌
-            while (processed < Handcode.Config.deferred_queue_process_per_tick && (task = queue.poll()) != null) {
+            // [LMax Fix V46] 时间片滴灌 [长期记忆: 018]: 主线程消费改 nanoTime 预算制(默认40, 配置 deferred_queue_budget_ms).
+            // V43c 铁律: 主线程防卡须用时间片(恒定开销)而非任务数预算(量不可控: 单任务=整树生成+整chunk落块,
+            // 重量无上界, 计数闸形同虚设). budget<=0=暂停消费(任务滞留队列). 计数上限保留为第二道保险.
+            // 已知敞口: 预算检查在任务粒度, 单任务超支=该树自身生成成本(任务原子不切分; 切分=V44游标架构已废).
+            long budgetDeadline = System.nanoTime() + getBudgetMs() * 1_000_000L;
+            while (System.nanoTime() < budgetDeadline
+                    && processed < Handcode.Config.deferred_queue_process_per_tick
+                    && (task = queue.poll()) != null) {
                 processed++;
                 try {
                     // [LMax Fix V40] 修复维度串黑洞：任务现携带 ResourceKey<Level>（入队方取 level.dimension()），
@@ -228,6 +234,11 @@ public class TreePlacer {
                 }
             }
             queue.addAll(retryList);
+        }
+
+        // [LMax Fix V46] 自适应预算钩子: 当前直读配置(默认40); 未来可接 MSPT 反馈(AIMD)而无需改消费循环
+        private static int getBudgetMs () {
+            return Handcode.Config.deferred_queue_budget_ms;
         }
     }
 

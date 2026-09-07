@@ -196,6 +196,10 @@ public class Handcode {
         public static int deferred_queue_max_size = 4096; // DeferredQueue 最大任务数 (原1000)
         public static int deferred_queue_retry_limit = 400; // DeferredQueue 最大重试次数 (原200)
         public static int deferred_queue_process_per_tick = 32; // DeferredQueue 每 tick 处理任务数 (原4)
+
+        // [LMax Fix V46] 主线程消费时间片(ms/tick) [长期记忆: 018]: DeferredQueue.processTick 按 nanoTime 预算消费,
+        // 恒定开销防 TPS 暴跌(时间片优于任务数预算: 单个任务=整树生成+整chunk落块, 重量无上界). 0 = 暂停消费.
+        public static int deferred_queue_budget_ms = 40;
         public static int bin_convert_futures_max_entries = 256; // bin_convert_futures 最大条目数 (原64)
 
         // (原 L221 定义/模板/解析三处齐全但 PendingBlocks 类零消费 = V42 泄漏 5GB 遗留; 本行合并统一定义, 值跟随原 1024)
@@ -404,6 +408,9 @@ public class Handcode {
 
                     deferred_queue_process_per_tick = 32
                     | Maximum number of deferred tasks to process per tick.
+                    deferred_queue_budget_ms = 40
+                    | Time budget in milliseconds for deferred tree placement per tick. Main thread consumes tasks until
+                    | budget runs out, keeping tick time constant regardless of queue depth. Set to 0 to pause processing.
 
                       chunk_status_guard = false
                       | [LMax V42] Skip writing tree data when any chunk in the +-4 range has already passed the "features" stage. Default false (guard removed): the guard discarded whole trees near spawn and behind fast travel. Enable only for debugging.
@@ -532,6 +539,8 @@ public class Handcode {
             deferred_queue_max_size = Integer.parseInt(data.get("deferred_queue_max_size"));
             deferred_queue_retry_limit = Integer.parseInt(data.get("deferred_queue_retry_limit"));
             deferred_queue_process_per_tick = Integer.parseInt(data.get("deferred_queue_process_per_tick"));
+            // [LMax Fix V46] 时间片预算解析: getOrDefault 兜底旧配置缺键(默认40); <=0 视为暂停消费
+            deferred_queue_budget_ms = Integer.parseInt(data.getOrDefault("deferred_queue_budget_ms", "40"));
         deferred_queue_suspended_max = Integer.parseInt(data.get("deferred_queue_suspended_max")); // [LMax Fix V43]
             // [LMax Fix V42] 守卫开关：parseBoolean 对缺失键安全返回 false（旧配置文件无需手动迁移）
             chunk_status_guard = Boolean.parseBoolean(data.get("chunk_status_guard"));
