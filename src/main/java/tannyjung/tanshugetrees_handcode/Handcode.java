@@ -223,6 +223,8 @@ public class Handcode {
         // [LMax Fix] 看门狗配置
         public static boolean watchdog_enabled = true; // 是否启用看门狗主线程卡顿监控
         public static long watchdog_threshold_ms = 50; // 看门狗触发阈值（毫秒），正常 tick 为 50ms
+        // [LMax Fix V47] 看门狗全线程 dump 开关：冻结持续过里程碑(1s/5s/20s/...)时 dump 全部线程堆栈抓"饥饿者"
+        public static boolean watchdog_dump_all_threads = true; // 诊断取证用, 不影响看门狗基本报警
 
         public static void repair (String start, String end) {
 
@@ -442,6 +444,9 @@ public class Handcode {
 
                     watchdog_threshold_ms = 50
                     | Watchdog trigger threshold in milliseconds. A normal tick is 50ms. Increase this if the watchdog is too sensitive.
+
+                    watchdog_dump_all_threads = true
+                    | Dump all threads' stack traces when a stall persists past milestones (1s/5s/20s/...). Diagnostic tool for finding what starves the server thread.
                     ----------------------------------------------------------------------------------------------------
                     Miscellaneous
                     ----------------------------------------------------------------------------------------------------
@@ -553,8 +558,11 @@ public class Handcode {
             // [LMax Fix] 看门狗配置解析与启动
             watchdog_enabled = Boolean.parseBoolean(data.get("watchdog_enabled"));
             watchdog_threshold_ms = Long.parseLong(data.get("watchdog_threshold_ms"));
+            // [LMax Fix V47] 全线程dump开关解析: getOrDefault 兜底旧配置缺键(默认 true)
+            watchdog_dump_all_threads = Boolean.parseBoolean(data.getOrDefault("watchdog_dump_all_threads", "true"));
             if (watchdog_enabled) {
                 tannyjung.tanshugetrees_handcode.debug.Watchdog.thresholdMs = watchdog_threshold_ms;
+                tannyjung.tanshugetrees_handcode.debug.Watchdog.dumpAllThreadsEnabled = watchdog_dump_all_threads; // [LMax Fix V47] 里程碑全线程dump开关
                 tannyjung.tanshugetrees_handcode.debug.Watchdog.start();
             }
         }
