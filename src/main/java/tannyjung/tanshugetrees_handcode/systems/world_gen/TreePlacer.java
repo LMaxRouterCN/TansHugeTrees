@@ -136,6 +136,10 @@ public class TreePlacer {
                         // PendingBlocks 补写任务
                         // [LMax Debug V40] forced 任务诊断日志 [长期记忆: 009]
                         if (Core.log_deferred_queue) System.out.println("[THT-DEBUG] processTick FORCED task: source=" + task.chunk_pos + " target=" + task.target_chunk + " retries=" + task.retries);
+                        // [LMax Fix V49 刀A] [长期记忆: 086] 主线程大冻结根治：旧路 hasChunk 过 → targetLevel.getChunk(cx,cz)
+                        // = getChunk(FULL,load=true)，主线程同步 join 区块管线（V47/V48 大冻结 125s 常数项的源）。
+                        // 新路 getChunkNow 纯读探测（只查已加载 map，不调度不等待）：null=未就绪（语义=旧 hasChunk=false），
+                        // 非 null 的 LevelChunk 必为 FULL（可见 map 只收 FULL），status 检查保留为防御。
                         // 检查目标 chunk 是否就绪
                         boolean allReady = true;
                         String failReason = "";
@@ -143,13 +147,13 @@ public class TreePlacer {
                             for (int dz = -4; dz <= 4; dz += 8) {
                                 int cx = task.chunk_pos.x + dx;
                                 int cz = task.chunk_pos.z + dz;
-                                if (!targetLevel.getChunkSource().hasChunk(cx, cz)) {
+                                net.minecraft.world.level.chunk.LevelChunk readyChunk = targetLevel.getChunkSource().getChunkNow(cx, cz);
+                                if (readyChunk == null) {
                                     allReady = false;
-                                    failReason = "hasChunk=false at (" + cx + "," + cz + ")";
+                                    failReason = "getChunkNow=null at (" + cx + "," + cz + ")";
                                     break;
                                 }
-                                net.minecraft.world.level.chunk.ChunkAccess chunk = targetLevel.getChunk(cx, cz);
-                                if (!chunk.getHighestGeneratedStatus().isOrAfter(net.minecraft.world.level.chunk.ChunkStatus.FULL)) {
+                                if (!readyChunk.getHighestGeneratedStatus().isOrAfter(net.minecraft.world.level.chunk.ChunkStatus.FULL)) {
                                     allReady = false;
                                     failReason = "not FULL at (" + cx + "," + cz + ")";
                                     break;
@@ -183,20 +187,23 @@ public class TreePlacer {
                         // [LMax Debug V40] 非 forced 任务诊断日志 [长期记忆: 009]
                         if (Core.log_deferred_queue) System.out.println("[THT-DEBUG] processTick NORMAL task: chunk=" + task.chunk_pos + " retries=" + task.retries);
                         // 核心：检查当前 Chunk 及 +-4 偏移的 Chunk 是否全部达到 FULL 状态
+                        // [LMax Fix V49 刀A] [长期记忆: 086] 同 forced 分支根治：hasChunk+裸 getChunk 双检改 getChunkNow
+                        // 原子单检——裸 getChunk(cx,cz)=getChunk(FULL,load=true) 主线程同步 join 区块管线（V47/V48
+                        // 大冻结 125s 常数项直源）；getChunkNow 纯读只查已加载 map，null=未就绪（语义=旧 hasChunk=false）
                         boolean allReady = true;
                         String failReason = "";
                         for (int dx = -4; dx <= 4; dx += 8) { // -4, +4
                             for (int dz = -4; dz <= 4; dz += 8) {
                                 int cx = task.chunk_pos.x + dx;
                                 int cz = task.chunk_pos.z + dz;
-                                if (!targetLevel.getChunkSource().hasChunk(cx, cz)) {
+                                // [执行代号33] 检查区块生成状态是否达到 FULL，避免跨区块树木劈树问题
+                                net.minecraft.world.level.chunk.LevelChunk readyChunk = targetLevel.getChunkSource().getChunkNow(cx, cz);
+                                if (readyChunk == null) {
                                     allReady = false;
-                                    failReason = "hasChunk=false at (" + cx + "," + cz + ")";
+                                    failReason = "getChunkNow=null at (" + cx + "," + cz + ")";
                                     break;
                                 }
-                                // [执行代号33] 检查区块生成状态是否达到 FULL，避免跨区块树木劈树问题
-                                net.minecraft.world.level.chunk.ChunkAccess chunk = targetLevel.getChunk(cx, cz);
-                                if (!chunk.getHighestGeneratedStatus().isOrAfter(net.minecraft.world.level.chunk.ChunkStatus.FULL)) {
+                                if (!readyChunk.getHighestGeneratedStatus().isOrAfter(net.minecraft.world.level.chunk.ChunkStatus.FULL)) {
                                     allReady = false;
                                     failReason = "not FULL at (" + cx + "," + cz + ")";
                                     break;
@@ -1915,32 +1922,29 @@ public class TreePlacer {
 
     private static class PendingBlocks {
 
-        // 线程安全容器：ChunkPos -> (BlockPos -> BlockState)
-        private static final Map<ChunkPos, Map<BlockPos, BlockState>> cache_blocks = new java.util.concurrent.ConcurrentHashMap<>();
-
-        // [LMax Debug V39] 诊断计数器：追踪入缓存方块总数
-        private static final java.util.concurrent.atomic.AtomicInteger add_count = new java.util.concurrent.atomic.AtomicInteger(0);
+        // [LMax Fix V49 刀B2] [长期记忆: 078/086] 字段退役：cache_blocks / add_count 已迁 core 层 DeferredBlocks
+        // （同款 ConcurrentHashMap 语义 + V39 诊断计数，GameUtils.Tile.set 与本类共用，行为零漂移）
 
         // 添加方块到缓存（按方块所在 chunk 分组）
+        // [LMax Fix V49 刀B2] [长期记忆: 078/086] 薄转发至 core 层 DeferredBlocks：容器原语上移
+        // （GameUtils.Tile.set 未加载分支与 handcode 冲刷共用同一缓存，避免 core→handcode 反向依赖；
+        // V39 诊断计数与日志措辞随容器迁移，保持日志判读连续）
         private static void add (BlockPos pos, BlockState block) {
-            ChunkPos chunk_pos = new ChunkPos(pos);
-            cache_blocks.computeIfAbsent(chunk_pos, create -> new java.util.concurrent.ConcurrentHashMap<>()).put(pos, block);
-            // [LMax Debug V39] 诊断：追踪方块入缓存总数
-            if (Core.log_pending_blocks) {
-                long total = add_count.incrementAndGet();
-                if (total % 100 == 0) System.out.println("[THT-DEBUG] PendingBlocks.add() total: " + total + " blocks, last target chunk: " + chunk_pos);
-            }
+            tannyjung.tanshugetrees_core.game.DeferredBlocks.add(pos, block);
         }
 
         // 从缓存中拉取并写入指定 chunk 的所有方块（由各 chunk 的 start() 调用）
         private static int place (LevelAccessor level_accessor, ChunkPos chunk_pos) { // [LMax Fix V42] 返回实际落块数
 
-            Map<BlockPos, BlockState> data = cache_blocks.get(chunk_pos);
+            // [LMax Fix V49 刀B2] get+remove 双步改 DeferredBlocks.take 原子取走 [长期记忆: 078/086]
+            // （顺修丢块窗口：旧写循环与 remove 之间并发 add 的块会被连带 remove 吞掉；take 原子取走后，
+            // 期间新到的 add 进新容器留存缓存，等下一次冲刷——严格零丢失）
+            Map<BlockPos, BlockState> data = tannyjung.tanshugetrees_core.game.DeferredBlocks.take(chunk_pos);
 
             // [LMax Debug V39] 诊断：place()调用时缓存状态
             if (Core.log_pending_blocks) {
                 int dataSize = (data == null) ? 0 : data.size();
-                System.out.println("[THT-DEBUG] PendingBlocks.place() chunk " + chunk_pos + " cache: " + (data == null ? "NULL" : dataSize + " blocks") + " | total cache chunks: " + cache_blocks.size());
+                System.out.println("[THT-DEBUG] PendingBlocks.place() chunk " + chunk_pos + " cache: " + (data == null ? "NULL" : dataSize + " blocks") + " | total cache chunks: " + tannyjung.tanshugetrees_core.game.DeferredBlocks.size());
             }
 
             if (data == null) {
@@ -1958,16 +1962,16 @@ public class TreePlacer {
             // [LMax Debug V39] 诊断：实际写入方块数
             if (Core.log_pending_blocks) System.out.println("[THT-DEBUG] PendingBlocks.place() chunk " + chunk_pos + " placed: " + placed + " blocks");
 
-            // 写入完成后清除该 chunk 的缓存
-            cache_blocks.remove(chunk_pos);
-
+            // [LMax Fix V49 刀B2] 缓存已在 take 时原子取走（原"写入完成后清除"的 remove 行退役）
             return placed; // [LMax Fix V42] 返回实际落块数供 resync 判定
         }
 
         // [方向A重构] 强制补写方法：用于 DeferredQueue 补写已 FULL 的 chunk
         private static int placeForced (ServerLevel level_server, ChunkPos chunk_pos) { // [LMax Fix V42] 返回实际落块数
 
-            Map<BlockPos, BlockState> data = cache_blocks.get(chunk_pos);
+            // [LMax Fix V49 刀B2] get+remove 双步改 DeferredBlocks.take 原子取走 [长期记忆: 078/086]
+            // （顺修丢块窗口：旧写循环与 remove 之间并发 add 的块会被连带吞掉；take 后新块留新容器下轮冲刷）
+            Map<BlockPos, BlockState> data = tannyjung.tanshugetrees_core.game.DeferredBlocks.take(chunk_pos);
 
             // [LMax Debug V40] placeForced 诊断日志
             if (Core.log_pending_blocks) System.out.println("[THT-DEBUG] placeForced() chunk " + chunk_pos + " cache: " + (data == null ? "NULL" : data.size() + " blocks"));
@@ -1986,7 +1990,7 @@ public class TreePlacer {
 
             }
 
-            cache_blocks.remove(chunk_pos);
+            // [LMax Fix V49 刀B2] 缓存已在 take 时原子取走（原 remove 行退役）
             // [LMax Debug V40] placeForced 完成日志
             if (Core.log_pending_blocks) System.out.println("[THT-DEBUG] placeForced() chunk " + chunk_pos + " placed: " + placed_count + " blocks, cache cleared");
 

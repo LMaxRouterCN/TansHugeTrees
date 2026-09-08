@@ -511,12 +511,20 @@ public class GameUtils {
             // 客户端通知由 EventCenter 在服务器线程上统一发送 chunk 刷新包
             if (is_world_gen == false && Thread.currentThread().getName().equals("Server thread")) {
                 level_accessor.setBlock(pos, block, 2);
-            } else if (level_accessor instanceof net.minecraft.server.level.ServerLevel sl) {
-                net.minecraft.world.level.chunk.LevelChunk lc = sl.getChunk(pos.getX() >> 4, pos.getZ() >> 4);
-                lc.setBlockState(pos, block, false);
-                // [LMax Fix V27] 恢复 setUnsaved(true)：打通 MC 存盘闭环
-                // 必须告诉 MC 这个区块被修改过，否则区块卸载时树不会被写入硬盘，导致下次加载时树彻底消失
-                lc.setUnsaved(true);
+	        } else if (level_accessor instanceof net.minecraft.server.level.ServerLevel sl) {
+	            // [LMax Fix V49 刀B2] [长期记忆: 078] sl.getChunk 裸调用=getChunk(FULL,load=true) 强制 join，
+	            // 树线程洪峰 272 join 块的次源。改 getChunkNow 纯读探测：null(未加载)→写入意图转
+	            // DeferredBlocks 缓存，等该 chunk Load 事件冲刷（A3 既有闭环，零丢失零轮询）；
+	            // 非 null→旧直写路径不动（可见 map 的 LevelChunk 必 FULL）。
+	            net.minecraft.world.level.chunk.LevelChunk lc = sl.getChunkSource().getChunkNow(pos.getX() >> 4, pos.getZ() >> 4);
+	            if (lc != null) {
+	                lc.setBlockState(pos, block, false);
+	                // [LMax Fix V27] 恢复 setUnsaved(true)：打通 MC 存盘闭环
+	                // 必须告诉 MC 这个区块被修改过，否则区块卸载时树不会被写入硬盘，导致下次加载时树彻底消失
+	                lc.setUnsaved(true);
+	            } else {
+	                DeferredBlocks.add(pos, block);
+	            }
             } else {
                 level_accessor.setBlock(pos, block, 4);
             }
@@ -1335,21 +1343,15 @@ public class GameUtils {
 
 		}
 
-		public static Holder<Biome> getAt (LevelAccessor level_accessor, BlockPos pos) {
+	public static Holder<Biome> getAt (LevelAccessor level_accessor, BlockPos pos) {
 
-			ChunkPos chunk_pos = new ChunkPos(pos);
+	    // [LMax Fix V49 刀B] [长期记忆: 086] 统一走 getUncachedNoiseBiome 纯函数路（B1 TreeLocation 同款已验证）。
+	    // 删除 testChunkStatus("biomes") 分支：旧 if 分支裸 getChunk(x,z)=getChunk(FULL,load=true)，
+	    // 树线程被强制 join 区块管线（V49 尸检 272 join 块首要源；TreePlacer/TXTFunction/LivingMechanics 三路调用者自动受益）。
+	    // 等价性：chunk 存储的 noise biome 由同一 BiomeSource 公式写入，两路输出一致。
+	    return level_accessor.getUncachedNoiseBiome(pos.getX() >> 2, pos.getY() >> 2, pos.getZ() >> 2);
 
-			if (Space.testChunkStatus(level_accessor, chunk_pos, "biomes") == true) {
-
-				return level_accessor.getChunk(chunk_pos.x, chunk_pos.z).getNoiseBiome(pos.getX() >> 2, pos.getY() >> 2, pos.getZ() >> 2);
-
-			} else {
-
-				return level_accessor.getUncachedNoiseBiome(pos.getX() >> 2, pos.getY() >> 2, pos.getZ() >> 2);
-
-			}
-
-		}
+	}
 
 	}
 

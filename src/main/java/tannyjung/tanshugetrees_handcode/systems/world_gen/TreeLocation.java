@@ -436,11 +436,18 @@ public class TreeLocation {
         return loadedData;
     }
     private static Holder<Biome> getBiome(LevelAccessor level_accessor, ChunkPos chunk_pos) {
-        if (cache_biome.containsKey(chunk_pos) == false) {
-            BlockPos pos = new BlockPos((chunk_pos.x * 16) + 7, GameUtils.Space.getBuildHeight(level_accessor, true), (chunk_pos.z * 16) + 7);
-            cache_biome.put(chunk_pos, GameUtils.Environment.getAt(level_accessor, pos));
-        }
-        return cache_biome.get(chunk_pos);
+        // [LMax Fix V48] 连锁强载根治：改走 getUncachedNoiseBiome 纯函数路。[长期记忆: 085] V47 判读定案后的修复。
+        // 旧路 GameUtils.Environment.getAt -> testChunkStatus(hasChunk 通过后裸 getChunk = 强制 FULL join)，
+        // 12 线程洪峰期向 chunk 管线塞上百阻塞请求，主线程同队挨饿（20-28s 冻结，597 episodes/276s 总停摆）。
+        // 等价性：chunk 存储的 noise biome 由同一 BiomeSource 公式写入，作者在 getAt 的 else 分支已视两路等价。
+        // 采样点与旧实现严格一致：chunk 中心 (x*16+7, z*16+7)，Y=建筑高度上限（getBuildHeight 纯函数，只读 levelData）。
+        // computeIfAbsent 顺修旧 containsKey+put 的 check-then-act 竞态（重复计算幂等无危害，但不再发生）。
+        return cache_biome.computeIfAbsent(chunk_pos, key -> {
+            int quartX = ((chunk_pos.x * 16) + 7) >> 2;
+            int quartZ = ((chunk_pos.z * 16) + 7) >> 2;
+            int quartY = (GameUtils.Space.getBuildHeight(level_accessor, true)) >> 2;
+            return level_accessor.getUncachedNoiseBiome(quartX, quartY, quartZ);
+        });
     }
 
     private static boolean testDistance(String dimension, String id, int centerX, int centerZ, int min_distance) {

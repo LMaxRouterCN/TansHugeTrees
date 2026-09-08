@@ -1527,4 +1527,220 @@ jar: tanshugetrees-1.0-20260904231432.jar (64483662B, V44 为 64481611B, +2051B)
 - 顺手两件: A3b(PendingBlocks FIFO 1024, ConcurrentLinkedDeque记插入序, 超限淘汰队头幂等) + Tile.set守卫(未加载chunk方块回PendingBlocks等加载, 具体改法施工时读placeCalculate定).
 - 待max确认边界: TREE_GEN_EXECUTOR无界队列(V20遗留), 鞘翅全速diff每秒~百chunk/轮, 设计挂每玩家在飞任务数闸门(超一轮未消化暂停发新批,消化完续,不丢任务). max可砍赌增量追不上消化.
 - 工作量: 150-250行变更(删100+增100+), 中等偏上一个完整rung. 施工顺序: A3b+Tile.set守卫先行(独立小hunk)→调度外壳→删旧region路径→编译过树门→部署验收.
-- 验收=P0目标现象: 原地站桩, 视距内树逐步生成至完毕.
+- 验收=P0目标现象: 原地站桩, 视距内树逐步生成至完毕.### 2026-09-07 22:15 P0-R终审全败 → 回档 b010c9f 完成
+- max裁定: 四条验收口径全未达, 一次机会用尽, 回档到提交 b010c9f(原文"大改动前的存档").
+- 回档执行: 失败态封存分支 p0r-failed-20260907(21文件/+9576行, 含三刀+全部.bak, 验尸材料) → 分支 1.20.1forge-LMaxFixAndImprove 硬reset → HEAD=b010c9f 工作区干净.
+- 构建+部署: BUILD 0错, 回档jar tanshugetrees-1.0-20260907221256.jar 已部署, mods恰1活动jar, 213525入graveyard标记-p0r-failed.
+- 关键语义: b010c9f不含PlayerPregenScheduler(快照中为create mode) = 整个玩家中心预生成体系连根移除, 完整pre-P0基线.
+- max验证建议: 新存档(失败版本往旧存档append过tree_locations/place数据, 盘面有污染).
+- 案件状态: P0案以失败收档, 三刀全无效原因未破(材料在库: failed分支+两轮latest.log). 收尾待办(Handcode:233/E153/X154)随新基线重估.
+- 工具注记: git输出乱码=编码显示问题(UTF-8被GBK读), 无实质影响; 上轮GOAL-PLAN追加失败=agent脚本手误(行前多余"- "), 本轮修正重补.
+### 2026-09-07 22:32 新案开工: 重搞 budget_ms (max指令, 默认40)
+- 背景: P0案闭卷(失败回档b010c9f), max裁定先重搞budget_ms.
+- 侦察渠道: 长期记忆/GOAL-PLAN/git全历史pickaxe/失败封存分支.
+- 约束: 可配置(Handcode.Config, 默认40), 无硬编码sleep, 时间预算用nanoTime检查.
+
+---
+## 2026-09-08 V46 实测判读与日志风暴案
+
+### V46 部署核实(三渠道取证全绿)
+源码三钉(TreePlacer L117/L118 nanoTime预算闸, L240 getBudgetMs) + Handcode键三件(L202/L411/L543) + jar内class反编译含标记 → 部署无错, 刀在膛. config.txt实值: deferred_queue_budget_ms=40 键值正常.
+
+### 实测结果
+完全没用, 该卡照样卡. latest.log: 13次 Can't keep up(最重67070ms/1341tick), 文件231.7MB, THT-DEBUG共866,861条.
+
+### 根因候选(证据排序)
+1. 日志风暴: config/tanshugetrees/lmax-debuglog.json 9键全true(9月5日V39诊断时代开忘关) → 86.6万条println + PrintStream跨线程锁. 处方: 删该json(Core.java L125启动自动重建全false模板)后同场景重测.
+2. autosave保存成本: watchdog抓到关服存档堆栈 ChunkSerializer→PalettedContainer→SimpleBitStorage, 1-4s/chunk(树塞满chunk致序列化贵). 原版管道, 预算闸管不着.
+3. FORCED重试风暴: retry_limit=400为燃料, forced任务±4邻居chunk须FULL.
+max立场: 怀疑1非主因(卡顿形态完全没变). 处置: 删json重测二分 → 不卡=1主责结案; 仍卡=2/3, 看watchdog游戏时段堆栈定真凶.
+
+### Watchdog 归属确认
+TST-Watchdog = 自家mod诊断组件(debug/Watchdog.java, watchdog_enabled默认true, 50ms阈值, Loops.java每tick喂). 是测速仪非凶手, 保留.
+
+---
+## 2026-09-08 复测判读 + 全线程取证提案
+
+### 复测结果
+max 删 lmax-debuglog.json 后同场景复测: 依然完全卡, 形态不变. 日志风暴洗清主责(新会话THT-DEBUG归零待grep确认). max 判断正确.
+
+### 关键判读(watchdog 游戏内堆栈, 213块)
+1. 大冻结(600ms→42s连续爬升): server thread 停在 ServerChunkCache chunk任务管道(managedBlock等CompletableFuture, TIMED_WAITING). 主线程=受害人. V46预算闸限循环迭代, 而冻结在单次阻塞调用内部 → 机制性解释"该卡照样卡", 闸完好但罩错位置.
+2. 小卡顿(~100ms)堆栈含 TreePlacer$DeferredQueue.processTick:198 → Level.getChunk → 阻塞等待: 主线程同步加载chunk, 违反主线程禁忌, 独立bug待修.
+3. 另有数百ms RUNNABLE 停在 ChunkSerializer.read + Registry codec: 树塞满的chunk读/解码也贵, 与关服保存慢同根.
+4. watchdog 自噪: 冻结期间每500ms一条报告(tellraw走server thread执行), 42s冻结≈80条, 添堵.
+
+### 下一步(等max批)
+Watchdog升级: stall episode门控(1s/5s/20s)dump全部线程顶帧 → 抓worldgen管线42s饥饿者堆栈. 纯诊断~50行. 备选: 冻结时手动jstack.
+
+---
+## 2026-09-08 (夜班, max已睡) Watchdog V47 手术记录 + V46 归档
+
+### 令状
+max: 干,只干看门狗,我先去睡觉,干完单独提交,然后停下来. 只动诊断仪器, 不碰核心逻辑, 完工单独提交.
+
+### 提交账目
+- 3ea8af2: V46 归档(b010c9f 后工作区的 TreePlacer+Handcode, budget 闸已部署已测)
+- be558c8: V47 看门狗(仅 Watchdog.java + Handcode.java)
+
+### Watchdog V47 改动明细
+1. 删: REPORT_COOLDOWN_MS(500ms冷却)与 lastReportTime——被 episode 机制取代. 旧冷却在 42s 冻结期轰炸约 80 条报告, 且 tellraw 在主线程执行添堵.
+2. 新: episode 门控——beginEpisode 初始报告每事件仅 1 次; 里程碑表{1s,5s,20s,此后每10s}dumpMilestone 全线程 dump; updateTickTime() 打"Stall episode ended: Xms total"总结行, 聊天摘要刷为真实总时长.
+3. 新: appendAllThreadsDump——dumpAllThreads(lockedMonitors=true, maxDepth=12) + findDeadlockedThreads 死锁环标记[DEADLOCKED] + 纯 park 空闲线程压一行(isIdleTopFrame 判定).
+4. 新配置键 watchdog_dump_all_threads(默认 true, getOrDefault 兜底旧配置缺键), Handcode 四点接入(字段/模板/解析/赋值).
+5. 里程碑表硬编码于诊断仪器内部(取样节奏, 非业务调度策略), 注释中已注明可后续外提到 Config.
+
+### 目的
+42s 级冻结中主线程堆栈只显示 managedBlock 等 chunk 管线(受害人视角), 看不见谁饿死 worldgen 管线 → 下次复现时里程碑 dump 直接拍"饥饿者"现行.
+
+### 待办(max 醒后)
+- 复现跑图冻结, 然后读 latest.log 的 MILESTONE dump 定真凶
+- processTick:198 主线程同步 getChunk 阻塞(独立 bug, 前文已记)
+
+---
+
+## [2026-09-08 17:10] V48 手术记录 — 连锁强载根治（B1方案）
+
+**定性**：V47复测判读定案（长期记忆085）的修复。8分钟597 episodes/276s总停摆，大冻3次（28.06/27.57/19.92s）；主线程~85%里程碑快照停在 ServerChunkCache.getChunkFuture.join 等 FULL chunk，零死锁；现行抓获：THT-TreeGen 12线程洪峰期经 getBiome→Environment.getAt→testChunkStatus 裸getChunk 同步强载 chunk（holder存在未FULL也join），与主线程同管线互踩；强载出的 FULL chunk 再触发 eventChunkLoaded→洪峰自喂（反馈环）。
+
+**手术**：TreeLocation.getBiome（L438-444单方法）——旧体 containsKey→BlockPos→Environment.getAt（阻塞路）改为 cache_biome.computeIfAbsent + level_accessor.getUncachedNoiseBiome（纯函数路）。采样点严格等价：quartX/Z=(chunk中心+7)>>2，quartY=getBuildHeight(true)>>2（纯函数只读levelData）。API先例：GameUtils L1348（作者同函数已编译上线）。顺修 containsKey+put 的 check-then-act 竞态。5个调用点（L291/L387/L350→L544-547）自动改道。git diff：TreeLocation.java 17行（5删12增），签名行与收尾括号原样。
+
+**编译**：BUILD-EXIT 0，零错误。产物 tanshugetrees-1.0-20260908170603.jar（64,479,516B，较V47 +130B）。
+
+**部署**：禁用旧现役: tanshugetrees-1.0-20260908020722.jar；部署新jar: tanshugetrees-1.0-20260908170603.jar。
+
+**验证协议（单变量纪律）**：本轮只动 getBiome 一处，EventCenter/池/processTick/TreePlacer/watchdog 全部原样。判据：①>5s episode 从9次归零/近零 ②总停摆276s塌缩 ③同种子同航线 tree_locations bin字节/树数census回归检查。回滚 = git checkout 单文件 + 换回旧jar。git未提交，复测判读后单独提交V48。
+
+**悬账**：processTick:198 主线程getChunk（514次小冻元凶，V49候选）/ C批写 / D光照 / testChunkStatus 其他调用者。
+
+---
+
+## [2026-09-08 19:05] V48 复测判读 + String 锁结案
+
+**V48 判定**：B1 验尸通过——getBiome/getAt/getNoiseBiome 在 38605 栈帧全零绝迹；episode 597→278（-53%），总停摆 276→195.5s。但 >10s 大冻结 8 个仍在（21.4/19.6/19.1/17/14.3/12.7/11.9/10.6s），max 体感不变。
+
+**String 锁结案**：java.lang.String@36a39c36 = vanilla BlockableEventLoop.managedBlock 的 park blocker（24/28 milestone 同一 identity = interned 字面量）。源码静态全清白：模组 0 个 synchronized(字面量)、0 个 .wait()、唯一 Thread.sleep 在 watchdog 自身。主线程大冻结两形态：A = ServerChunkCache 主线程执行链（AsyncSupply→m_8475_→m_7587_→managedBlock，7/8 大冻结）；B = waitUntilNextTick 泵（1/8）。同义：主线程在 vanilla chunk 系统主线程轨道泵任务并停等。
+
+**树池形态**：336 块中 288 WAITING parked（疑池 idle）、43 RUNNABLE 全在文件 I/O（getBooleanAttributes0=File.exists ×20、FileOutputStream.writeBytes ×14、open0 ×4、RandomAccessFile.writeBytes0 ×2）——树计算不饱和，C 批账目坐实。
+
+**日志洪峰**：FORCED FAILED 74185 条全部 Server thread 打印（同步 System.out→log4j 滚动锁，2/28 BLOCKED）；峰值 24075 条/min。但 18:46-47 FF 已回落（3590/588）而大冻结仍在（21.4s@18:47:24）→ DQ churn 非唯一驱动。光照 3 帧，D 方向降级。
+
+**下一轮**：FF 失败原因归因 + 21.4s 冻结深栈（帧 10 下找模组调用者）+ Worker-Main 形态 + TreePlacer.processTick 源码 → V49 手术单。
+
+---
+
+## [2026-09-08 19:20] V48 复测尸检收官 — 终证链
+
+**V48 终判定**：有效保留。B1 验尸通过（getBiome/getAt/getNoiseBiome 全 38605 帧绝迹）；episode 597→278（-53%），总停摆 276→195.5s；>10s 大冻结 8 个仍在（21.4/19.6/19.1/17/14.3/12.7/11.9/10.6s）。
+
+**残余三刀（终证）**：
+1. 树线程 join 洪峰：271/272 块同链 CompletableFuture.join ← ServerChunkCache.getChunkFuture ← Level.getChunk(x,z) ← Level.m_8055_ = getBiome(BlockPos)（Level.java:355）。B1 只换了 TreeLocation.getBiome，第二入口 = GameUtils.set（1x 幸存模组帧，watchdog 12 帧截断吞掉其余归属）+ TreeLocation.getData（gd=41 帧）+ gcf=326。全仓 0 处 getChunkNow。
+2. DQ 病理：FF 74185 条 100% hasChunk=false；双峰分布 = 头部 23740 条 retries=0 重入洪流 + 尾部 16 永尸各磨满 400 tick（DROPPED=16 吻合）；top pair 1,9→0,9 2000 行 = 同目标重建 ≥5 次 = 重入环未死透。
+3. 主线程活埋机制：Worker-Main 224/252 idle（vanilla 池不忙），主线程 7/8 大冻结在 ServerChunkCache chunk 完成回调泵（m_8475_→m_7587_→managedBlock）嵌套停等——模组索要的 FULL chunk 的晋升回调必须主线程执行，tick 被回调队列活埋；伴随 log4j 滚动锁 BLOCKED（主线程 2x + 树线程 5x，log_deferred_queue=true，日志 106MB）。
+
+**V49 手术单（报批）**：刀A = processTick L146-152/L192-198 的 hasChunk+裸getChunk 三连检 → getChunkNow(cx,cz) 单检（null=未就绪，零强制零 join）；刀B = Tile.set 的 getBiome(join) → getUncachedNoiseBiome（B1 同款）+ getData 的 getChunk → getChunkNow 未就绪即 defer；刀C = DQ 事件驱动化（ChunkEvent.Load 唤醒 + addForced 去重杀重入环 + 轮询降为慢扫安全网）；开关0 = 测试期 log_deferred_queue 关闭或换计数器。
+
+---
+
+## [2026-09-08 19:40] V49 侦察终版 — 三实锤 + 手术单
+
+**实锤① getAt=树线程join真凶本体**：GameUtils.java L1342-1344，testChunkStatus("biomes") 通过后 level_accessor.getChunk(x,z) 两参裸调 = FULL join（工作线程）。B1 只修了 TreeLocation 调用侧，本体带 3 个活调用者：TreePlacer:539（abscission 检测）、TXTFunction:238、LivingMechanics:96。修本体 = 三路全免疫。
+
+**实锤② 12帧截断**：Watchdog.java W261 dumpAllThreads(true, false, 12) — maxDepth 12。getAt 链 11 帧 vanilla + 1 帧边界，GameUtils 帧恰好被吞 = 271/272 块"无模组帧"谜底。取证教训：12 帧对深层业务栈是盲区。
+
+**实锤③ 测试环境 log 全开**：lmax-debuglog.json 全 8 键 true（含主开关 debug_log_print，OR 语义无差别全开）。106MB 日志 + THT-DEBUG 24.3万行 + FF 74k 行 + log4j 滚动锁 BLOCKED（主线程2x+树线程5x）全是它。watchdog 不受控，冻结遥测无损。V49 复测前关（或仅留单键）。
+
+**Tile.set GU515 = 长期记忆 078 旧案未执行**：V43 P0 判决书原文"强载凶器=GameUtils.Tile.set GU515无守卫getChunk，施工加守卫方块回PendingBlocks"，B1 没动它，本次尸检 1x 幸存帧+12帧理论 = 补执行令。
+
+**V49 手术单（待批）**：
+- 刀A（主线程，~8行，简单）：processTick L146-158/L192-206 三连检 → getChunkNow 单检。hasChunk+裸getChunk+isOrAfter(FULL) 压缩为 ServerChunkCache.getChunkNow(cx,cz)（原子、null=未就绪、零join零TOCTOU）。
+- 刀B（工作线程，~13行，简单+中等）：getAt L1342-1350 删 biomes 分支统一走 getUncachedNoiseBiome（B1 同款换法，V48 已验证无回归）；Tile.set L514-519 getChunk → getChunkNow + null 时方块转 PendingBlocks（078 判决执行，PendingBlocks API/线程安全待术前侦察）。
+- 刀C（DQ 架构，~45行，中偏大）：add/addForced 去重键（ConcurrentHashMap keySet，杀重入环 11411 对/同目标≥5次重建）+ ChunkEvent.Load 主线程事件唤醒（滴灌保留为安全网）+ 400 重试上限自然消亡。
+- 开关0（零代码）：lmax-debuglog.json debug_log_print → false。
+
+**打法两案**：甲 = A+开关0 → 复测 → B → 复测 → C → 复测（3轮，归因最纯）；乙 = A+B+开关0 → 复测 → C → 复测（2轮，A效果看Server thread块形态、B效果看THT-TreeGen块形态，watchdog快照观测面正交可分离，不污染归因）。推荐乙。
+
+**最坏预案**：三刀+开关砍完大冻结仍在 → 主线程瓶颈转 vanilla 侧（chunk 保存 serialize PALETTE 帧 1x 为伏笔），议价对象换预生成/模拟距离，不再动模组代码。
+---
+
+## [2026-09-08 20:15] 归一化修正判读 — B1 真实成绩单（max 质疑"呆越久 episode 越多"触发重算）
+
+**账目自首**：此前 597→278（-53%）为绝对值对比，废账。V47 会话 11.1min（14:28 启动），V48 仅 7.0min（18:40 启动）。
+
+**归一化分桶对照（eps/min）**：
+- 100-500ms（B1 靶区）：27.5 → 15.3（**-44%**）
+- <100ms：18.8 → 16.9（-11%）
+- 1-5s：1.08 → 0.86（-20%）；5-10s：0.18 → 0（-100%，2个→0）
+- >10s（刀A 靶区）：V47=7个/125.0s，V48=8个/126.6s，**绝对数持平=常数项**
+- 剔除大冻结后：V47 13.6 s/min → V48 9.8 s/min（**-28%**）；"+13% 恶化"系短分母假象
+
+**时间累积假设裁决：不成立**。两次会话 episode 逐分钟曲线均与 FF 飞行洪峰同升同降（V47 峰 873/876/878m，V48 峰 18:44-45），飞行结束归零；大冻结全部绑定洪峰窗（V47 集中 14:35-14:38，V48 集中 18:42-18:47），与时长零相关。episode = 飞行事件函数，非时长函数。凌晨 00:03/00:49 两次启动 episode=0（待 max 确认未飞图 = 对照组）。长会话慢泄漏未证伪 → V49 验证保留"静止 10min"项。
+
+**微冻结 -44% 而非 -100% 的解释**：B1 只修 TreeLocation 调用侧，getAt 本体（GameUtils:1342）+ Tile.set（GU515）272 块 join 残余 = 残存 15.3 eps/min → 刀B 落点验证。
+
+**方法论教训（长期）**：跨会话对比必须（1）归一化到速率；（2）按冻结尺寸分桶（靶区分离）；（3）识别常数项（未治病灶）防止分母假象。绝对值对比 = 废纸。
+---
+
+## [2026-09-08 22:00] V49 乙案第一轮落刀执行记录（刀A+刀B+开关0）
+
+**改动清单**：
+1. TreePlacer.java 刀A×2：processTick forced(L139-159)/normal(L185-206) 的 hasChunk+裸getChunk 双检 → getChunkNow 原子单检。裸 getChunk(cx,cz)=getChunk(FULL,load=true) 是主线程大冻结 125s 常数项直源（V47/V48 大冻结绝对数 7vs8 持平的铁证项）；getChunkNow 纯读只查已加载 map，null=未就绪（语义=旧 hasChunk=false）。
+2. TreePlacer.java PendingBlocks×4：cache_blocks/add_count 字段退役迁 core；add→薄转发；place/placeForced→DeferredBlocks.take 原子取走（顺修旧 get→写→remove 的并发丢块窗口）。
+3. GameUtils.java 刀B×2：getAt(L1338) 删 testChunkStatus("biomes") 分支统一 getUncachedNoiseBiome（B1 同款；272 join 块首要源；TreePlacer:539/TXTFunction:238/LivingMechanics:96 三调用者自动受益）；Tile.set(L514) else-if 分支 sl.getChunk→getChunkNow 探测，null 转 DeferredBlocks 缓存（078 执行令本体，冲刷走 A3 chunk Load 事件闭环）。
+4. 新建 core/game/DeferredBlocks.java：容器原语 add/take/size + V39 诊断计数随迁。架构决策：GameUtils（反编译区）与 handcode 共用缓存，避免 core→handcode 反向依赖污染反编译区；同包直调零 import；职责边界=纯容器，冲刷策略全留 handcode（计算与调度解耦）。
+5. 测试环境 lmax-debuglog.json：9 键全 false（含主开关）——106MB 日志税归零，watchdog 遥测不受此开关控制照常工作。
+
+**写入方式**：行号数组法+锚验证（ANCHOR-FAIL 即中止不写盘）+行保真（换行风格检测/BOM 无/tab 缩进 ToTab 转换/文件尾换行保持）+降序替换防行号漂移。
+
+**验证链**：gradlew compileJava → BUILD SUCCESSFUL → 下一步：build jar + 部署测试环境 mods → max 飞图复测（与 V47/V48 同法：episode 分桶归一化对比）→ 达标判据：>10s 大冻结归零 + 微冻结（100-500ms 档）显著再降。之后进刀C（DQ 重入环+16 具永尸）。
+---
+
+## [2026-09-08 22:30] V49 第一轮落刀勘误 — TreePlacer 首次写入中止与补刀
+
+**勘误**：上节（22:00）执行记录中"TreePlacer.java 刀A×2 + PendingBlocks×4 已完成"与事实不符。真实时序：TreePlacer op1（placeForced 替换）锚定差一行（want[placeForced] 落在 L1967 注释行上，签名实际在 L1968），ANCHOR-FAIL 抛出，整套写入中止，TreePlacer 分毫未动。GameUtils/DeferredBlocks/开关0 三项落地属实，编译 BUILD SUCCESSFUL 亦属实（但那是半执行状态下的通过）。
+
+**半执行风险**（本轮裁决不可带伤测试）：GameUtils.Tile.set 的 null 分支已把未加载 chunk 的块写入 DeferredBlocks，而 TreePlacer 侧 place/placeForced 仍是旧代码读旧容器 cache_blocks——DeferredBlocks 无人 take = 静默丢块（吞树）。冲刷闭环断裂，必须补完才能跑测试。
+
+**补刀**：锚修正（op1 双重锚：L1967 注释行 + L1968 签名行）+ 前置校验（旧 cache_blocks 字段在预期区=确认原版）+ 后置校验（全文件残留 cache_blocks/add_count 引用即中止）+ 降序替换防行号漂移。预期 TreePlacer delta 约 +8 行。
+
+**教训**：锚验证首战即实战——写坏被拦在盘外，代价只是重来一轮而不是静默损坏。锚的正确姿势=want 内容必须精确对准该行实际内容，注释行与方法签名行差一行就会失败（这正是不以猜行号、以现读内容为锚的意义）。
+---
+
+## [2026-09-08 23:10] V49 乙案第一轮终录 — TreePlacer 落地 + build + 部署
+
+**TreePlacer 补刀第 2 次重跑一次通过**：后置校验 v2（跳过 // 注释行只查代码行残留）修正上轮自伤。TP-ORIG 2039 → TP-NEW 2043（delta +4），六 op 全中（placeForced/place/add/字段退役/normal 三连检/forced 三连检），刀A×2 + PendingBlocks 容器迁移完成。git stat：TreePlacer 60 行改动，全项目三文件 65+/52-。gradlew compileJava BUILD SUCCESSFUL 36s。
+
+**V49 第一轮完整改动盘点**（工作树未提交，V47 提交 be558c8 为回滚锚）：
+- TreeLocation.java（V48/B1）：getBiome→getUncachedNoiseBiome + computeIfAbsent
+- GameUtils.java：getAt 删 "biomes" 分支统一纯函数路（刀B1）；Tile.set getChunkNow 探测 + null→DeferredBlocks（刀B2/078 执行令）
+- TreePlacer.java：processTick 两分支 getChunkNow 原子单检（刀A，主线程大冻结 125s 常数项靶区）；PendingBlocks 四处迁移至 core 容器（take 原子取走顺修丢块窗口）
+- DeferredBlocks.java（新建，core 层 49 行）：容器原语 add/take/size，职责边界=纯容器，冲刷策略留 handcode
+- lmax-debuglog.json：9 键全 false（106MB 日志税归零，watchdog 遥测独立不受控）
+
+**拦截战例累计**：两次 ANCHOR/POSTCHECK 拦截零静默损坏。判例沉淀：①锚 want 必须对准行实际内容（注释行/签名行差一行即失败，这正是锚的意义）②后置校验必须区分注释行/代码行（退役注释合法提及旧字段名）③写盘前三重防线=前置状态校验+锚+后置校验。
+
+**build + 部署**：gradlew build → 旧 jar 改名 .bak 退役（Forge 只扫 .jar 结尾）→ 新 jar 复制入 mods。部署结果以回执 MODS-FINAL 为准。
+
+**测试流程（呈 max）**：同一存档进世界 → 未探索方向匀速直线飞 10 分钟（对齐 V47 的 11 分钟窗口）→ 原地静止 2 分钟 → 退出通知判读。判据：>10s 大冻结归零（刀A 靶区）+ 100-500ms 档对比 V48 的 15.3 eps/min 显著再降（刀B 靶区）+ 静止期 episode≈0（冲刷闭环健康 + 累积病理排除）。
+---
+
+## [2026-09-09 00:20] V49 部署终态 + 退役过滤器误伤还原
+
+**部署确认**：tanshugetrees-1.0-20260909000937.jar（V49）为 mods 内唯一可加载 THT jar；V48 退役为 tanshugetrees-1.0-20260908170603.jar.bak（mods 级回滚锚，与 git 工作树锚双保险）。
+
+**误伤还原**：部署脚本退役过滤器（-match 'tanshuge'）误把 19 个本已退役的历史文件（.disabled/.bak 层）追加了第二重 .bak 后缀（.disabled.bak/.bak.bak）。功能零影响（Forge 只扫 .jar 结尾），已全部剥掉多余后缀还原原始命名，保留项仅 V48→.jar.bak + V49 新 jar。教训：批量退役过滤器应只匹配"当前可加载"（.jar 结尾）的文件，而非名字含关键字的全部文件。
+
+**遗留账目（待 max 裁决）**：mods 目录 20 个旧 jar ≈ 1.29GB 死重（git 史 + build/libs 双重留底，删除安全但需 max 点头）。
+
+**测试指纹**：启动后 latest.log 应出现 "[LMax] Debug log config loaded: master=false, modules(on)=" ——V49 jar 实际加载 + 开关0 生效的双重确认。
+---
+
+## [2026-09-09 01:20] V48+V49-r1 git 提交（max 授权：外部测试者经 fork 页面聚集，开放测试）
+
+max 批文：有人通过 fork 仓库页面加了交流群，提交上去让别人想测就测。原计划"V48+V49 一把提交"提前执行（外部需求驱动，别人测出问题=并行数据源）。
+
+提交内容 = 工作树全部：V48(B1 TreeLocation) + V49-r1(刀A×2/刀B×2/DeferredBlocks.java/文档)。.agent 记忆文件随仓库既有追踪一并提交。
+
+提交信息结构：标题=根治连锁强载；正文六要点（刀A/刀B1/刀B2/B1/架构/开关）+ 状态声明"乙案第一轮，刀C 留第二轮，未经完整复测欢迎反馈"——给外部测试者诚实状态。
+
+push 目标 origin（指向待 remote -v 回执确认）。push 失败不伤本地提交。回滚锚：V47=be558c8。
