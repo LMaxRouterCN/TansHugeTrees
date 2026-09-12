@@ -354,3 +354,19 @@ tag: 架构决策, DeferredBlocks, V49, 刀B2, core, 反编译区, 原子化, �
 写入拦截三重防线判例(TansHugeTrees V49实战沉淀): ①前置状态校验(写前确认文件=侦察时状态: 旧字段在位/锚行内容) ②锚替换(多行指令的want必须对准该行实际内容, 注释行与方法签名行差一行即ANCHOR-FAIL——这正是不猜行号以现读为锚的意义; 关键操作用双锚: 注释行+签名行) ③后置校验(替换后全文件查残留, 但必须区分注释行/代码行——退役注释合法提及旧字段名, v1正则误咬自己, v2跳过//开头行只查代码). 两次实战拦截(锚差一行/校验自伤)全部拦在写盘前, 零静默损坏, 代价只是重跑. 教训: 校验规则也会写bug, 自伤和漏检同样值得防; 降序替换防行号漂移
 tag: 工具bug, 教训, 行保真, 锚, 校验, V49, 方法论
 <!-- END:090 -->
+<!-- ID:091 -->
+刀C终审判决(2026-09-13): 失败回档。世界实测大树全灭(灌木枯树独活, vanilla管线), 证据=DeferredQueue depth 336→304十四分钟仅消费32, 矩形就绪门(r=4)实际永不满足=defer黑洞(本人预标红旗成真)。性能判据可能全绿(树连同join一起被消灭)=语义死vs性能好的观测陷阱。处置=保现场分支knife-c-failed-20260912→主线reset --hard 2cb5750(树正常最后版)→GOAL-PLAN/.agent护档恢复→rollback jar部署。教训: 门类改动必须实证"生成速率>defer速率", 光看join数自欺。reset --hard坑: tracked的GOAL-PLAN会被误伤重置, 必须先保分支后checkout侧分支恢复。背景病: shr/storage|wendy missing=031字典错位老病非主凶。
+tag: 刀C, 失败判例, 回档, defer黑洞, 矩形门, 判决, 教训, reset-hard护档
+<!-- END:091 -->
+<!-- ID:092 -->
+THT config三雷铁律(2026-09-10刀C部署血泪, 原记忆094/096/097随reset事故蒸发, 此为重存): #1 charset——writeTXT:154用FileWriter=平台GBK vs readTXT:182用Files.readAllLines=NIO UTF-8, 经writeTXT落盘字符串必须纯ASCII(模板|注释行尤其), Java源码中文注释无害; #2 Default is契约——模板加key必须同步扩展该组’| Default is [v] [v]…'行, repair按文件序位置对齐三列表, 缺条目=越界崩; #3 eq误吸——描述行(|前缀)禁含" = “子串, 阶段1判定contains(” = ")无|排除, 误吸伪option=越界崩. 判例: v2崩charset(刀C-3汉字), v3崩eq误吸(“0 = center chunk only”), v4三雷清后构造期通(运行时判死另案).
+tag: 刀C事故, charset, GBK, Default is, eq误吸, 毒描述行, config, 铁律, 教训, 启动崩溃
+<!-- END:092 -->
+<!-- ID:093 -->
+THT遗留债务(原记忆095随reset蒸发, 重存): D-1 FileManager charset分裂(大修五步: 双侧显式UTF-8+CharsetDecoder REPLACE容错+apply裸get改getOrDefault告警+GBK旧数据迁移审计+writeBIN:211同审); D-2 apply约40处裸data.get任何读失败=构造期必崩(readTXT层吞错); D-3 ConfigClassic.repair三列表位置索引耦合(加键/文案变动皆可越界, 大修=键控map+charset统一+阶段1补|排除). max裁定先凑合日后大修.
+tag: 债务, 大修, charset, apply脆性, 索引耦合, repair
+<!-- END:093 -->
+<!-- ID:094 -->
+git reset --hard数据丢失判例(2026-09-13): 回档刀C时治愈态commit只add了src, GOAL-PLAN/.agent近期追加为脏改动被reset连脏抹除, checkout分支只能救回最后commit旧版(自证: 目标标记计数=0, 恢复后status空, 长期记忆ID从091重起=091-097七条蒸发). 损失: GOAL-PLAN自上次commit全部追加+记忆7条(094-097从上下文重存, 091-093永久失除非fsck捞回). 铁律: 破坏性git操作(reset/rebase/filter)前GOAL-PLAN与.agent必须先commit入库; 里程碑commit禁止src-only; 护档验证门=标记计数>0而非status空.
+tag: reset, 数据丢失, 提交纪律, 护档, 教训, GOAL-PLAN
+<!-- END:094 -->

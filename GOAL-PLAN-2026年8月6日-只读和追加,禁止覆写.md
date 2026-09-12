@@ -1744,3 +1744,39 @@ max 批文：有人通过 fork 仓库页面加了交流群，提交上去让别�
 提交信息结构：标题=根治连锁强载；正文六要点（刀A/刀B1/刀B2/B1/架构/开关）+ 状态声明"乙案第一轮，刀C 留第二轮，未经完整复测欢迎反馈"——给外部测试者诚实状态。
 
 push 目标 origin（指向待 remote -v 回执确认）。push 失败不伤本地提交。回滚锚：V47=be558c8。
+### 2026-09-13 刀C 判决：失败回档（判例：同 P0-R）
+v4 (20260910014947) 世界实测：max 跑图几圈，**大树全灭，只见灌木枯树**（vanilla 装饰管线独活，V44.5 同形症状，凶手=刀C）。
+**证据**: latest.log (09-12 22:57~23:11) `DeferredQueue depth: 336→304`，14 分钟消费 32 个——矩形就绪门（r=4, 9×9 chunk）在实际生成节奏下几乎永不满足，大树全部 defer 挂起 = 本人预标红旗"defer 雪球"成真。MILESTONE 18 次、最高 stall 2421ms（比基线 42s 好，但语义死了：性能判据可能全绿，因为树连同 join 一起被消灭）。
+**判决**: 查询层收口（GameUtils.Query 哨兵）方向或可留，但矩形就绪门+DEFER 路径整体判死——defer 不是降级路径，是黑洞。
+**处置**: git 保现场分支 `knife-c-failed-20260912`（刀C全链含治愈）→ 主线 `reset --hard 2cb5750`（V48+V49-r1，树正常最后版本）→ GOAL-PLAN/.agent 从侧分支恢复护档 → 重编译部署 rollback jar。存档建议弃（缺树已落盘），开新世界测。
+**背景噪音**: log 刷 `Tree shape missing: shr/storage|wendy_*.bin` = 031 字典前缀错位老病，非本次主凶。
+**教训**: 刀C 在构造期连吃三颗 config 雷后，运行时又踩自己预标的最坏情况——"门"类改动必须配出生成速率实证（观察期树密度>defer 速率），光看 join 数是自欺。
+### 2026-09-13 reset 事故：护档半失败与上下文重构
+**事故**: 刀C回档执行时, 治愈态 commit 只 add 了 src(沿用 src-only 提交纪律), GOAL-PLAN/.agent 的近期追加(脏改动)被 reset --hard 连脏抹除; 随后 checkout knife-c-failed-20260912 只救回最后一次 commit 的旧版。回执自证: DEBT-HITS=0 / KNIFEC-REPORT=0 / 恢复后 git status 空(=与 2cb5750 一致) / 长期记忆 ID 从 091 重新起算(091-097 七条蒸发)。
+**损失与恢复**: GOAL-PLAN 自上次 commit 后全部追加 + 记忆 091-097。三雷事故×3 与债务登记自对话上下文 verbatim 重灌(下列[重构]块); 记忆 094-097 重存; 091-093 与刀C/V48 手术报告原稿不可复原(手术细节幸存于 commit diff: 39a1779/2cb5750/b97d1d2)。fsck 捞尸结果见当日回执。
+**纪律修正(铁律)**: 破坏性 git 操作前 GOAL-PLAN/.agent 必须先 commit 入库; 里程碑 commit 禁止 src-only; 护档验证门 = 标记计数>0, 而非仅 status 空。护档 commit 即日生效。
+
+### [重构] 2026-09-10 刀C 手术简报（原稿失, 全量详见 commit 39a1779 diff; 该手术已于 2026-09-13 判失败回档, 全链存于分支 knife-c-failed-20260912）
+五文件 +221/-59: ① GameUtils.Query 收口(ServerLevel getBlockState/getChunk/isWaterAt → getChunkNow 纯读+哨兵 AIR/false/null, region 路原样) ② TreePlacer+EventCenter 双矩形就绪门(树线程与 DQ 消费门共用 findUnreadyChunk, r=4) ③ Watchdog dump 帧深 12→32 + MILESTONE 行带 DQ/DeferredBlocks 深度 ④ 新键 tree_gen_readiness_radius_chunks=4 / watchdog_dump_stack_depth=32(getOrDefault 兜底, 旧 config 零迁移)。V48/V49-r1(2cb5750) 手术报告原稿同失, 详见其 commit diff。
+
+### [重构] 2026-09-10 刀C 事故修复（v2→v3）
+v2 (20260910001141) 启动硬崩：Handcode config 模板 | 注释含中文"刀C-3/刀C-4" → 模组 config 写读 charset 隐性错配被非 ASCII 引爆 → FileManager.readTXT MalformedInputException("Input length = 1") → getValues 吞错返空 map → Config.apply 裸 data.get() parseInt(null) 崩于构造期。v3 修复：模板注释 ASCII 化（V49 C-3/C-4，Java 源注释保留中文）+ 磁盘 config.txt 两行字节级治愈（备份 .crashfix.bak）+ 重编译重部署。
+两面旗（待拍板）：① 作者 writeTXT/readTXT charset 错配为原生地雷，动它恐伤 bin 数据兼容 ② apply 全裸 data.get——任何 config 读失败 = 启动必崩，可 getOrDefault 加固但会掩盖配置问题。
+
+### [重构] 2026-09-10 遗留债务登记（max 裁定：先凑合，日后彻底大修）
+**D-1 FileManager charset 分裂（根因已实锤）**
+- 写侧：FileManager.writeTXT（FileManager.java:154）用 new FileWriter(file, append) → 平台默认 GBK（中文 Windows）
+- 读侧：FileManager.readTXT（FileManager.java:182）用 Files.readAllLines(path) → NIO 默认 UTF-8
+- 实锤证据：v2 崩溃时磁盘 config.txt 恰 4 个非 ASCII 字节 = 两个"刀"字的 GBK 编码（2×2=4；UTF-8 应为 6）；UTF-8 解码器撞 GBK 码 B5 → MalformedInputException("Input length = 1")，与日志逐字吻合
+- 一年未爆原因：作者模板纯 ASCII，两 charset 同码位；"刀C-3"是该管道首个非 ASCII
+- 大修方案（日后，按序）：①双侧统一显式 UTF-8 ②readTXT 换 CharsetDecoder+REPLACE 容错 ③apply 全裸 get → getOrDefault+告警 ④GBK 旧数据迁移审计 ⑤writeBIN（FileManager.java:211 起）charset 同审
+- 临时铁律：任何经 writeTXT 落盘的字符串一律纯 ASCII；Java 源码注释中文无害（javac UTF-8）
+**D-2 Config.apply 裸 get 脆性**
+- Handcode$Config.apply 约 40 处裸 data.get 直接 parse；Core.repairConfig:254-256 同款 3 处
+- 任何一次读失败 = 模组构造期必崩；"记日志继续"是假象（readTXT 层吞错）
+**D-3 ConfigClassic.repair 索引耦合（补录）**
+- 三列表 options/values/defaults 按文件序位置对齐 + Test Keep 按位索引; 加键/描述行文案变动皆可越界。大修 = 键控 map 重构（与 D-1 charset 统一、阶段1 判定补 | 排除一并做）
+**关联事故**: v2 (20260910001141) 启动崩。修复链 v3 (20260910003831) → v4 (20260910014947)。
+
+### [重构] 2026-09-10 v3 崩溃 #3（毒描述行）根因与修复
+v3 (20260910003831) 崩 ConfigClassic.repair:62 idx77/len77 = 阶段1 options 78 vs defaults 77。根因: V49 模板描述行 "| Unready chunks defer via queue retry. 0 = center chunk only." 含 " = "——repair 阶段1 的 eq 判定 scan.contains(" = ") 无 | 前缀排除（Generate 侧有、阶段1 侧无，作者埋的不对称）→ 该 | 行被误吸为第 78 个 option → 越界。时间线: v2 阶段1 读旧盘对齐通过 → Generate 把毒行写盘 → v2 崩 charset → 治愈后 v3 读毒盘秒崩。修复 v4: 模板+磁盘双侧 Replace（备份 config.txt.poison.bak）。铁律#3: 模板/描述行文案禁用 " = " 子串。
