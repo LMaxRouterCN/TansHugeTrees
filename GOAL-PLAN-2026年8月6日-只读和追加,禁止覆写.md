@@ -1780,3 +1780,7 @@ v2 (20260910001141) 启动硬崩：Handcode config 模板 | 注释含中文"刀C
 
 ### [重构] 2026-09-10 v3 崩溃 #3（毒描述行）根因与修复
 v3 (20260910003831) 崩 ConfigClassic.repair:62 idx77/len77 = 阶段1 options 78 vs defaults 77。根因: V49 模板描述行 "| Unready chunks defer via queue retry. 0 = center chunk only." 含 " = "——repair 阶段1 的 eq 判定 scan.contains(" = ") 无 | 前缀排除（Generate 侧有、阶段1 侧无，作者埋的不对称）→ 该 | 行被误吸为第 78 个 option → 越界。时间线: v2 阶段1 读旧盘对齐通过 → Generate 把毒行写盘 → v2 崩 charset → 治愈后 v3 读毒盘秒崩。修复 v4: 模板+磁盘双侧 Replace（备份 config.txt.poison.bak）。铁律#3: 模板/描述行文案禁用 " = " 子串。
+### 2026-09-13 reset 事故终稿（捞尸死心 + 回滚收尾）
+**捞尸结论**: fsck dangling blob 无意义——丢失的 GOAL-PLAN/.agent 追加是脏改动, 从未 git add(src-only 纪律), 在 git 对象库中从未存在, 无 blob 可捞。上下文重构(上条)为唯一且已完成的恢复路径。上轮判读"记忆 091-093 蒸发"修正: 091(刀C判决)在, 092-094 重存, 内容零损失, 仅编号器乱序一次。
+**回滚收尾**: clean build 181s 绿, rollback jar 20260912233418 部署 ACTIVE(=2cb5750 代码, v4 退役 .knifec-failed.bak)。护档 commit d7ec855 入库, src diff vs 2cb5750 为空(零污染验证过)。上轮 13s 快败 = 增量构建脏缓存, clean 全量即过。
+**测试须知(下一轮实测)**: 2cb5750 (V48+V49-r1) 从未活体实测——"树正常"是推断(V47/V48 未碰生成语义)非实证。三结局预案: a树活无冻结=V48赢 b树活仍冻结=刀C尸检价值升 c树死=锚点再回退 be558c8→6eda304。观测降级: Watchdog 帧深回12(32帧为刀C改动), MILESTONE 无 DQ depth 字段。
