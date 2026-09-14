@@ -91,6 +91,9 @@ public class EventCenter {
             ServerLevel level_server = event.getServer().overworld();
             // [LMax Fix V16] 动态设置 path_world_mod 为当前存档路径，确保 dictionary.txt 生成在存档内部，彻底解决跨存档字典污染
             Core.path_world_mod = event.getServer().getWorldPath(net.minecraft.world.level.storage.LevelResource.ROOT).toString();
+
+            // [LMax Fix V50 刀F] [长期记忆: 095] 会话开始清空放置门等待表（跨存档/重进世界的陈旧登记防御）
+            tannyjung.tanshugetrees_handcode.systems.world_gen.TreePlacer.PlacementGate.clear();
             // [LMax Debug] 检查 biome modifier 是否生效
             try {
                 net.minecraft.core.Holder<net.minecraft.world.level.biome.Biome> biome_holder = level_server.getBiome(new net.minecraft.core.BlockPos(0, 64, 0));
@@ -166,6 +169,11 @@ public class EventCenter {
             net.minecraft.world.level.ChunkPos chunk_pos = event.getChunk().getPos();
             net.minecraft.world.level.chunk.ChunkGenerator generator = level_server.getChunkSource().getGenerator();
 
+            // [LMax Fix V50 刀F] [长期记忆: 095] Load 唤醒接线：PlacementGate 登记的等待者在本 chunk 加载完成时
+            // 被唤醒（纯内存 map 操作，微秒级，无磁盘/管线访问）。置于 DelayedWork 提交之前：唤醒链与
+            // 5 秒延迟链相互独立，互不依赖。
+            tannyjung.tanshugetrees_handcode.systems.world_gen.TreePlacer.PlacementGate.wake(level_server, chunk_pos);
+
             // [LMax Fix V37] 延迟 100 Tick (5 秒) 后在后台线程执行种树！
             // 5 秒后区块加载风暴结束，异步读取绝对不会死锁，且绝不阻塞世界生成！
             Core.DelayedWork.create(true, 100, () -> {
@@ -195,6 +203,23 @@ public class EventCenter {
                         }
                     } catch (Exception e) { e.printStackTrace(); }
                 });
+            });
+        }
+
+        // [LMax Fix V50 刀F] [长期记忆: 095] PlacementGate 唤醒重提交入口：镜像 eventChunkLoaded 的提交闭包
+        // （TREE_GEN_EXECUTOR 异步线程跑 TreePlacer.start，placed>0 才 resyncChunk 防包风暴）。
+        // 门在 start() 内部（四个调用方全覆盖）；resubmit → start → 门再验 = 唤醒链自愈。
+        public static void resubmitPlacement (ServerLevel level_server, String dimension, net.minecraft.world.level.ChunkPos chunk_pos) {
+            TREE_GEN_EXECUTOR.submit(() -> {
+                try {
+                    net.minecraft.world.level.chunk.ChunkGenerator generator = level_server.getChunkSource().getGenerator();
+                    int placed = tannyjung.tanshugetrees_handcode.systems.world_gen.TreePlacer.start(level_server, level_server, generator, dimension, chunk_pos);
+                    if (placed > 0) {
+                        resyncChunk(level_server, chunk_pos);
+                    }
+                } catch (Exception e) {
+                    e.printStackTrace();
+                }
             });
         }
             

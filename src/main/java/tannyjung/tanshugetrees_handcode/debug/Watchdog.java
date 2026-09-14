@@ -17,7 +17,7 @@ import java.lang.management.ThreadMXBean;
  * 3. [LMax Fix V47] 事件门控（替代旧版 500ms 冷却轰炸式刷屏）：
  *    - 事件开始：报告一次主线程完整堆栈 + 锁信息（reportStall，每事件仅一次）
  *    - 冻结持续到里程碑（1s / 5s / 20s，此后每 10s）：追加全线程 dump
- *      （RUNNABLE/BLOCKED 全栈 ≤12 帧 + 阻塞锁归属 + 死锁环检测；纯 park 空闲线程压一行）
+ *      （RUNNABLE/BLOCKED 全栈 ≤24 帧 + 阻塞锁归属 + 死锁环检测；纯 park 空闲线程压一行）
  *    - 主线程恢复后的第一个 tick：打事件总结行（总时长 + 报告数），聊天摘要刷新为真实总时长
  * 4. 聊天栏摘要带点击复制（tellraw，主线程恢复后发送，每事件一条）
  *
@@ -242,7 +242,7 @@ public class Watchdog {
     /**
      * [LMax Fix V47] 全线程 dump（单条日志事件输出，避免与其他日志交错）：
      * - findDeadlockedThreads() 检测死锁环（监视器 + 可同步锁），涉事线程标 [DEADLOCKED]
-     * - 非空闲线程打全栈（≤12 帧）+ 阻塞锁归属（waiting on ... held by ...）
+     * - 非空闲线程打全栈（≤24 帧）+ 阻塞锁归属（waiting on ... held by ...）
      * - 纯 park/wait 且无锁归属的空闲线程压成一行（worker 池 idle / Netty epoll 等无信息量）
      */
     private static void appendAllThreadsDump (ThreadMXBean bean, StringBuilder sb) {
@@ -258,7 +258,7 @@ public class Watchdog {
         }
 
         // dumpAllThreads(lockedMonitors, lockedSynchronizers, maxDepth)
-        ThreadInfo[] all = bean.dumpAllThreads(true, false, 12);
+        ThreadInfo[] all = bean.dumpAllThreads(true, false, 24); // [LMax Fix V50 刀F] [长期记忆: 095] 帧深 12→24：12 帧截断把 TreeGen 读侧 join 的调用者帧（第 13 帧）挡在盲区（V49 判读主障碍），24 帧可直呼其名
         for (ThreadInfo ti : all) {
             if (ti == null) continue;
 

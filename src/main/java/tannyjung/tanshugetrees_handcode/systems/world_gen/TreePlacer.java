@@ -249,6 +249,154 @@ public class TreePlacer {
         }
     }
 
+
+    // [LMax Fix V50 刀F] [长期记忆: 095] 放置就绪门 + Load 事件唤醒链（读侧强载洪峰根治，终审手术）
+    // 病理（V49 终审定案）：TXTFunction run 分支与放置路径对邻域 chunk 无门裸读——getBlockState 等 Level
+    // 便捷方法内部 getChunk(FULL,load=true) 强载 join——12 条 TreeGen 线程持续灌区块管线 → 主线程 35s 级
+    // 冻结×44 + region 扫描排队饿死（甜甜圈一角）。病灶为作者原装（TXTFunction 自 6eda304 起 0 diff），
+    // V38 池化收走"无限线程"旧免疫后两层病同时显症。
+    // 手术：start() 进放置循环前干跑解析树数据（每树 28 字节记录的 from/to 矩形并集 = 精确足迹），
+    // getChunkNow 纯读探测全部 FULL 才放行；任一未就绪 → 登记等待表，由 ChunkEvent.Load 事件唤醒重提交
+    // （事件驱动零轮询，与 V42 region-wake 链同构 = 空数据先例的对称半边）。门内所有读访问传递性安全，
+    // 此为 V16 注释承诺"不在生成期间直接访问邻近区块"的真正兑现。
+    // 并发协议：①exact-once 认领——waiting 原子摘表，双缺口并发到齐 / 与 gate 复查竞态均只放行一次
+    // （防双放置）；②insert-then-recheck——先登记后复查，关闭"检查与登记之间 chunk 恰好加载完成"的
+    // 竞态窗；③resubmit → start() → 门再验，自愈唤醒链中间态。
+    // 护栏：容量满 fail-open 放行（V7 同款思路；单 chunk 单次 join 有界，风暴需 12 线持续灌才成形，
+    // 不回归）；病态记录（跨度>64 chunk）fail-open 交原路径 try-catch 兜底。
+    public static class PlacementGate {
+
+        // primary（等待放置的 chunk）→ 尚未 FULL 的足迹 chunk 集合；外层 key = 维度横杠串（与 Data.get 同格式）
+        private static final java.util.concurrent.ConcurrentHashMap<String, java.util.concurrent.ConcurrentHashMap<ChunkPos, java.util.Set<ChunkPos>>> waiting
+                = new java.util.concurrent.ConcurrentHashMap<>();
+        // 反向索引：missing chunk → 等它的 primary 集合（Load 唤醒 O(1) 定位免全表扫；被认领 primary 的
+        // 残留反向项由各自 chunk 的 Load 自然消费，clear() 兜底清空）
+        private static final java.util.concurrent.ConcurrentHashMap<String, java.util.concurrent.ConcurrentHashMap<ChunkPos, java.util.Set<ChunkPos>>> reverse
+                = new java.util.concurrent.ConcurrentHashMap<>();
+
+        public static void clear () {
+            waiting.clear();
+            reverse.clear();
+        }
+
+        // gate：true = 放行（足迹全就绪 / 门禁用 / 数据异常 fail-open）；false = 已登记等待，调用方直接返回
+        public static boolean gate (ServerLevel level_server, String dimension, ChunkPos chunk_pos, ByteBuffer data) {
+
+            if (Handcode.Config.placement_gate_enabled == false) {
+                return true; // 总开关（默认开）：false = 一键退回无门行为（诊断对照，免回档）
+            }
+
+            // 干跑解析：duplicate 共享内容独立游标，不消费 start() 的正式 buffer
+            java.util.HashSet<ChunkPos> footprint = new java.util.HashSet<>();
+            {
+                ByteBuffer probe = data.duplicate();
+                while (probe.remaining() > 0) {
+                    if (probe.remaining() < 28) break; // 残帧防御（正式解析自会按既有语义异常返回 0）
+                    probe.getShort(); // id（干跑无需字典解析）
+                    probe.getShort(); // chosen
+                    probe.getInt(); // centerX
+                    probe.getInt(); // centerZ
+                    int from_chunkX = probe.getInt();
+                    int from_chunkZ = probe.getInt();
+                    int to_chunkX = probe.getInt();
+                    int to_chunkZ = probe.getInt();
+                    // 病态防御：跨度超 64 chunk（1024 格）必为损坏记录 → fail-open 交原路径兜底
+                    if (from_chunkX > to_chunkX || from_chunkZ > to_chunkZ || (to_chunkX - from_chunkX) > 64 || (to_chunkZ - from_chunkZ) > 64) {
+                        return true;
+                    }
+                    for (int x = from_chunkX; x <= to_chunkX; x++) {
+                        for (int z = from_chunkZ; z <= to_chunkZ; z++) {
+                            footprint.add(new ChunkPos(x, z));
+                        }
+                    }
+                }
+            }
+            if (footprint.isEmpty() == true) {
+                return true; // 零足迹（异常数据形态）→ 放行由原路径兜底
+            }
+
+            // 纯读探测：getChunkNow 只查已加载 map（可见 map 只收 FULL），非 null 即就绪，不调度不等待
+            java.util.ArrayList<ChunkPos> missing = new java.util.ArrayList<>();
+            for (ChunkPos fp : footprint) {
+                net.minecraft.world.level.chunk.LevelChunk ready_chunk = level_server.getChunkSource().getChunkNow(fp.x, fp.z);
+                if (ready_chunk == null || ready_chunk.getHighestGeneratedStatus().isOrAfter(net.minecraft.world.level.chunk.ChunkStatus.FULL) == false) {
+                    missing.add(fp);
+                }
+            }
+            if (missing.isEmpty() == true) {
+                return true; // 足迹全就绪：放行，此后放置循环的所有读不再触发强载 join
+            }
+
+            // 容量护栏：等待表满 = 足迹 chunk 永不加载的滞留病态 → fail-open（详见类头注释）
+            java.util.concurrent.ConcurrentHashMap<ChunkPos, java.util.Set<ChunkPos>> primaries
+                    = waiting.computeIfAbsent(dimension, k -> new java.util.concurrent.ConcurrentHashMap<>());
+            if (primaries.size() >= Handcode.Config.placement_gate_max_waiting) {
+                return true;
+            }
+
+            // insert：primary → missing 集合 + 反向索引
+            java.util.Set<ChunkPos> missing_set = java.util.concurrent.ConcurrentHashMap.newKeySet();
+            missing_set.addAll(missing);
+            primaries.put(chunk_pos, missing_set);
+            for (ChunkPos m : missing) {
+                reverse.computeIfAbsent(dimension, k -> new java.util.concurrent.ConcurrentHashMap<>())
+                        .computeIfAbsent(m, k -> java.util.concurrent.ConcurrentHashMap.newKeySet())
+                        .add(chunk_pos);
+            }
+
+            // then-recheck：登记期间缺口可能已被 Load 填补（wake 曾扑空）→ 复查摘除已就绪项
+            java.util.Iterator<ChunkPos> it = missing_set.iterator();
+            while (it.hasNext() == true) {
+                ChunkPos m = it.next();
+                net.minecraft.world.level.chunk.LevelChunk ready_chunk = level_server.getChunkSource().getChunkNow(m.x, m.z);
+                if (ready_chunk != null && ready_chunk.getHighestGeneratedStatus().isOrAfter(net.minecraft.world.level.chunk.ChunkStatus.FULL) == true) {
+                    it.remove();
+                    java.util.concurrent.ConcurrentHashMap<ChunkPos, java.util.Set<ChunkPos>> rev = reverse.get(dimension);
+                    if (rev != null) {
+                        java.util.Set<ChunkPos> rev_set = rev.get(m);
+                        if (rev_set != null) {
+                            rev_set.remove(chunk_pos);
+                        }
+                    }
+                }
+            }
+            if (missing_set.isEmpty() == true) {
+                // 复查后全就绪：原子摘表，成功者唯一放行（与并发 wake 认领互斥，防双放置）
+                if (primaries.remove(chunk_pos) != null) {
+                    return true;
+                } else {
+                    return false; // wake 已认领并 resubmit → 本线程退出，放置交给唤醒链
+                }
+            }
+
+            if (Core.log_placer_start) System.out.println("[THT-DEBUG] PlacementGate wait: chunk " + chunk_pos + " missing " + missing_set.size() + "/" + footprint.size() + " footprint chunks (dim=" + dimension + ")");
+            return false;
+        }
+
+        // wake：ChunkEvent.Load 事件入口（EventCenter 接线）。纯内存 map 操作微秒级，无磁盘/管线访问。
+        // 反向项 remove = exact-once 消费（同 chunk 重复 Load / proto 期提前触发均无副作用）。
+        public static void wake (ServerLevel level_server, ChunkPos loaded) {
+            String dimension = GameUtils.Space.getDimensionID(level_server).replace(":", "-");
+            java.util.concurrent.ConcurrentHashMap<ChunkPos, java.util.Set<ChunkPos>> rev = reverse.get(dimension);
+            if (rev == null) return;
+            java.util.Set<ChunkPos> primaries_waiting = rev.remove(loaded);
+            if (primaries_waiting == null) return;
+            for (ChunkPos primary : primaries_waiting) {
+                java.util.concurrent.ConcurrentHashMap<ChunkPos, java.util.Set<ChunkPos>> w = waiting.get(dimension);
+                if (w == null) continue;
+                java.util.Set<ChunkPos> missing_set = w.get(primary);
+                if (missing_set == null) continue;
+                missing_set.remove(loaded);
+                if (missing_set.isEmpty() == true) {
+                    // 原子认领：摘表成功者唯一提交（多缺口并发到齐 / 与 gate 复查竞态，均只放行一次）
+                    if (w.remove(primary) != null) {
+                        if (Core.log_placer_start) System.out.println("[THT-DEBUG] PlacementGate wake: chunk " + primary + " footprint complete, resubmit (dim=" + dimension + ")");
+                        tannyjung.tanshugetrees_core.game.EventCenter.Server.resubmitPlacement(level_server, dimension, primary);
+                    }
+                }
+            }
+        }
+    }
     // [LMax Fix V42] 返回值语义：0=本次未写入任何方块（空数据且无 pending / 解析异常）；1=可能写入了方块（调用方应 resync）
     public static int start (LevelAccessor level_accessor, ServerLevel level_server, ChunkGenerator chunk_generator, String dimension, ChunkPos chunk_pos) {
 
@@ -281,6 +429,14 @@ public class TreePlacer {
 
         // [LMax Fix V42] 读到数据 → 立即注销等待集，本 chunk 不再需要唤醒（speculative register 的对偶操作）
         TreeLocation.unregisterPendingEmpty(dimension, chunk_pos);
+
+        // [LMax Fix V50 刀F] [长期记忆: 095] 放置就绪门：进放置循环前干跑解析树数据收集精确足迹 chunk
+        // （from/to 矩形并集），getChunkNow 纯读探测（只查已加载 map，不调度不等待）全部 FULL 才放行；
+        // 任一未就绪 → PlacementGate 登记等待，由 ChunkEvent.Load 事件唤醒重提交（异步线程，零轮询）。
+        // 病理与并发协议详见 PlacementGate 类头注释。返回 0 = 本次未写入方块（V42 语义，调用方不 resync）。
+        if (PlacementGate.gate(level_server, dimension, chunk_pos, data) == false) {
+            return 0;
+        }
 
         // [LMax Debug] 追踪 TreePlacer 执行情况
         int data_size = data.remaining();

@@ -213,6 +213,13 @@ public class Handcode {
         // （世界22 的 0,0.bin 735 桶中 spawn 圈 ±10 chunk 零桶零条）。前放后放功能等价
         // （唯一差异是客户端同步，已由 V42 EventCenter.resyncChunk 补齐），故默认废除。
         public static boolean chunk_status_guard = false;
+
+        // [LMax Fix V50 刀F] [长期记忆: 095] 放置就绪门（默认开）：TreePlacer.start 放置循环前按树数据精确足迹
+        // getChunkNow 探测 FULL，未就绪登记等 ChunkEvent.Load 唤醒，根治读侧强载 join 洪峰（主线程 35s 级
+        // 冻结×44 + region 扫描饿死）。false = 一键退回无门行为（诊断对照，免回档）。
+        public static boolean placement_gate_enabled = true;
+        // 等待表容量护栏：满 = fail-open 放行（单 chunk 单次 join 有界，风暴形态不回归；详见 PlacementGate 类头）
+        public static int placement_gate_max_waiting = 4096;
         
 
           
