@@ -415,6 +415,27 @@ public class TreePlacer {
             // [LMax Fix V39] 即使没有树数据，当前chunk可能被相邻chunk的树写入了方块，必须尝试place
             // [LMax Fix V42] place 现返回实际落块数：>0 说明本 chunk 有跨 chunk 方块落地，调用方需要 resync
             int placed_pending = PendingBlocks.place(level_accessor, chunk_pos);
+// [LMax Fix V50.1 刀G] [长期记忆: 095] 空读自愈钩子（冷启动零树根治）。
+            // 病理：region 扫描收尾三连 writeBIN→Data.invalidate→wake，被唤醒的 start() 撞上
+            // 「旧 future 已失效、新 future 重解析在飞」窗口——Data.get 对未完成 future 直接返回空，
+            // DQ 任务读空即被消费（重试只保 chunk 就绪不保数据非空），wake 每 region 只发一次且
+            // set.remove 先于任务执行 → 三路驱动烧尽，磁盘上万条记录无人消费（世界53 实测零树，
+            // 世界52 历史 bin 掩盖断链）。修复：空读遇 in-flight future 挂 thenRun 完成回调，
+            // 数据到手事件直达重提交——与 V42 region-wake / V50 chunk-Load 同构的第三条事件链，
+            // 三链全部汇入 EventCenter.Server.resubmitPlacement 同一入口，事件驱动零轮询。
+            // 终态分支同样受益：TERMINAL 判定后钩子仍会带数据回放（future 完成非空时）。
+            // 双放置无虞：树记录由世界种子确定性派生（RandomSource 同种子同方块），重复写入幂等。
+            // level_server 为 null 的理论外路径不挂钩，保留 pendingEmpty 等待语义。
+            if (level_server != null) {
+                Data.onRegionParsed(dimension, chunk_pos.x >> 5, chunk_pos.z >> 5, () -> {
+                    try {
+                        if (Core.log_placer_start) System.out.println("[THT-DEBUG] V50.1-G hook fired: resubmit chunk " + chunk_pos);
+                        tannyjung.tanshugetrees_core.game.EventCenter.Server.resubmitPlacement(level_server, dimension, chunk_pos);
+                    } catch (Exception e) {
+                        Core.logger.error("[THT-DEBUG] V50.1-G resubmit hook failed for chunk " + chunk_pos, e);
+                    }
+                });
+            }
             // [LMax Fix V42] churn 斩杀：空数据不再 DeferredQueue.add 无限重入队（旧实现单日 64.6 万次
             // 空转重入，队列永久满载挤压真实 forced 载荷）。改为等待 TreeLocation 的 region 完成事件唤醒；
             // 3×3 邻 region 全部完成仍无数据 = 确定终态，注销退出（本 chunk 的树记录确定不存在）
@@ -1253,6 +1274,20 @@ public class TreePlacer {
             bin_convert_futures.remove(dimension + "/" + regionX + "," + regionZ);
         }
 
+// [LMax Fix V50.1 刀G] [长期记忆: 095] 空读自愈钩子：暴露 in-flight future 的完成事件给消费方。
+        // 返回 true = future 在飞且回调已挂上（其完成后执行 action）；false = 无在飞解析（已完成或
+        // 不存在），调用方走原 pendingEmpty / 终态路径。同一 future 可被多路空读各挂一个回调，各自
+        // 触发一次重提交；重复放置由树记录确定性派生保证幂等。future 被 invalidate 移除后仍会正常
+        // 完成并触发已挂回调（remove 只摘 map 引用，future 对象本体存活），链条自愈无悬挂键。
+        public static boolean onRegionParsed (String dimension, int regionX, int regionZ, Runnable action) {
+            java.util.concurrent.CompletableFuture<Map<ChunkPos, ByteArrayOutputStream>> future =
+                    bin_convert_futures.get(dimension + "/" + regionX + "," + regionZ);
+            if (future == null || future.isDone()) {
+                return false;
+            }
+            future.thenRun(action);
+            return true;
+        }
         private static void clearChunk (String dimension, ChunkPos chunk_pos) {
             // 异步模式下，clearChunk 操作变得复杂且无必要，直接清空整个 Future 缓存即可。
         }
