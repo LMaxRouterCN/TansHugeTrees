@@ -77,6 +77,13 @@ public class EventCenter {
         @SubscribeEvent
         public static void eventWorldAboutToStart (ServerAboutToStartEvent event) {
 
+            // [LMax Fix V50.2 刀J] [长期记忆: 105] 静态池复活：上一世界 ServerStopping 已 shutdown 本池
+            // （单机整合服务器同 JVM 多世界进出的常态），新服务器接管前复活；同时复位停服窗口 warn-once 标志。
+            if (TREE_GEN_EXECUTOR.isShutdown() == true) {
+                TREE_GEN_EXECUTOR = createTreeGenExecutor();
+            }
+            tree_gen_rejected_logged = false;
+
             String path_world = event.getServer().getWorldPath(new LevelResource(".")).toString();
             Core.path_world_core = path_world + "/data/tannyjung/" + Core.data_structure_version_core;
             Core.path_world_mod = path_world + "/data/" + Core.mod_id;
@@ -130,6 +137,7 @@ public class EventCenter {
 
             first_player_joined = false;
             // [LMax Fix V3] 优雅关闭专属线程池
+            // [LMax Fix V50.2 刀J] 保留 shutdown 让在途任务自然排空；池由下一个世界的 AboutToStart 复活，不再永久死亡
             TREE_GEN_EXECUTOR.shutdown();
         }
 
@@ -144,14 +152,42 @@ public class EventCenter {
         // 之前的有界队列 (8192) 在主线程卡顿时会满载，导致 RejectedExecutionException 并静默丢弃区块生成任务。
         // 现在使用 Executors.newFixedThreadPool，确保有足够的线程并发，且永远不会丢弃任务。
         private static final int TREE_GEN_THREADS = Math.max(4, Math.min(16, Runtime.getRuntime().availableProcessors()));
-        private static final java.util.concurrent.ExecutorService TREE_GEN_EXECUTOR = java.util.concurrent.Executors.newFixedThreadPool(
-            TREE_GEN_THREADS,
-            r -> {
-                Thread t = new Thread(r, "THT-TreeGen");
-                t.setDaemon(true);
-                return t;
+        // [LMax Fix V50.2 刀J] [长期记忆: 105] static final → volatile + 工厂复活：单机整合服务器同一 JVM 内
+        // 世界可多次进出（每个世界一个 MinecraftServer 实例），上个世界退出 ServerStopping→shutdown() 后，
+        // JVM 级静态池对下一个世界永久 Terminated——世界55实录：chunk Load → PlacementGate.wake →
+        // resubmitPlacement 往死池 submit → RejectedExecutionException 沿 ChunkMap future 链上浮
+        // = "Exception ticking world" 崩溃 + 存档收尾期 "Failed to save chunk" 刷屏（同根因余震）。
+        // 生命周期对齐：池是 JVM 级单例，服务器是实例级短命对象 → 池随新服务器 AboutToStart 复活（见上），
+        // 投递统一走守卫入口（见下）。工厂体提取自原声明，线程命名/daemon/线程数语义不变。
+        private static volatile java.util.concurrent.ExecutorService TREE_GEN_EXECUTOR = createTreeGenExecutor();
+
+        private static java.util.concurrent.ExecutorService createTreeGenExecutor () {
+            return java.util.concurrent.Executors.newFixedThreadPool(
+                TREE_GEN_THREADS,
+                r -> {
+                    Thread t = new Thread(r, "THT-TreeGen");
+                    t.setDaemon(true);
+                    return t;
+                }
+            );
+        }
+
+        // [LMax Fix V50.2 刀J] [长期记忆: 105] 停服窗口守卫：ServerStopping 之后、存档收尾期仍有
+        // ChunkEvent.Load → wake → resubmitPlacement 链路活跃（世界55崩溃栈实证），撞已 shutdown 的池必抛
+        // RejectedExecutionException。单点吞掉 + 每世界 warn-once（AboutToStart 复位标志）：该窗口内的
+        // 任务属于正在死去的旧世界，丢弃即正确语义；新世界由复活后的池接管，无任务损失。
+        private static boolean tree_gen_rejected_logged = false;
+
+        private static void submitTreeGen (Runnable task) {
+            try {
+                TREE_GEN_EXECUTOR.submit(task);
+            } catch (java.util.concurrent.RejectedExecutionException e) {
+                if (tree_gen_rejected_logged == false) {
+                    tree_gen_rejected_logged = true;
+                    Core.logger.warn("[TansHugeTrees] TreeGen executor rejected a task in server shutdown window (old world ending, task dropped)");
+                }
             }
-        );
+        }
 
         // [LMax Fix] Region 级别扫描锁：确保 TreeLocation 扫描完成后才跑 TreePlacer
         private static final java.util.concurrent.ConcurrentHashMap<String, java.util.concurrent.CompletableFuture<Void>> region_scans
@@ -181,7 +217,7 @@ public class EventCenter {
                 // 原实现每区块一个线程，2400区块=2400并发线程把12核饿死（主线程stall 10.5s根因）
                 // submit进固定池(4-16线程)由无界队列调度，线程数恒定，任务被排队消化
                 // [长期记忆: 004] 先A后B的A2：消灭线程风暴
-                TREE_GEN_EXECUTOR.submit(() -> {
+                submitTreeGen(() -> {
                     try {
                         // [LMax Fix V38] contains+add两步非原子(check-then-act竞态)→add()原子check-and-add
                         // Set.add()返回true=新增成功(本次处理)，false=已存在(跳过)，彻底消除窗口
@@ -210,7 +246,7 @@ public class EventCenter {
         // （TREE_GEN_EXECUTOR 异步线程跑 TreePlacer.start，placed>0 才 resyncChunk 防包风暴）。
         // 门在 start() 内部（四个调用方全覆盖）；resubmit → start → 门再验 = 唤醒链自愈。
         public static void resubmitPlacement (ServerLevel level_server, String dimension, net.minecraft.world.level.ChunkPos chunk_pos) {
-            TREE_GEN_EXECUTOR.submit(() -> {
+            submitTreeGen(() -> {
                 try {
                     net.minecraft.world.level.chunk.ChunkGenerator generator = level_server.getChunkSource().getGenerator();
                     int placed = tannyjung.tanshugetrees_handcode.systems.world_gen.TreePlacer.start(level_server, level_server, generator, dimension, chunk_pos);
