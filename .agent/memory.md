@@ -370,3 +370,43 @@ tag: 债务, 大修, charset, apply脆性, 索引耦合, repair
 git reset --hard数据丢失判例(2026-09-13): 回档刀C时治愈态commit只add了src, GOAL-PLAN/.agent近期追加为脏改动被reset连脏抹除, checkout分支只能救回最后commit旧版(自证: 目标标记计数=0, 恢复后status空, 长期记忆ID从091重起=091-097七条蒸发). 损失: GOAL-PLAN自上次commit全部追加+记忆7条(094-097从上下文重存, 091-093永久失除非fsck捞回). 铁律: 破坏性git操作(reset/rebase/filter)前GOAL-PLAN与.agent必须先commit入库; 里程碑commit禁止src-only; 护档验证门=标记计数>0而非status空.
 tag: reset, 数据丢失, 提交纪律, 护档, 教训, GOAL-PLAN
 <!-- END:094 -->
+<!-- ID:095 -->
+TansHugeTrees V49结案(2cb5750双症状根因定案): 根因=读侧强载洪峰。杀链: eventChunkLoaded直提TreePlacer.start(无就绪门)→DetailedDetection/placeCalculate/TXTFunction每方块读(getBlockState m_8055_/getChunkAt m_46745_/getChunk(BlockPos) m_6325_)→Level.getChunk(FULL,load=true)强载join→12 TreeGen线程灌满管线→主线程排尾35s冻结×44+Worker被预占+池占满→region扫描饿死=甜甜圈。V16注释自供(TreePlacer L1531): 前人确诊同类死锁"修复=全走DQ不直接访问邻近区块"但只修直接getChunk, 读侧便捷方法全漏网。GameUtils L1205=getHeightWorldGen用instanceof ProtoChunk探测=强载到FULL查恒false(post-load语境), DD每树调2-7次四角跨chunk。刀A/刀B/刀B2各自有效但读侧从未动。先天病: 读调用全先于6eda304, 超平坦掩盖(chunk零成本join秒完)普通地形暴露→回档不治病待地形确认。刀F=直提路径±4就绪门(复用DQ getChunkNow检查+重试链)+拔L1205探测, 对称刀B2。Watchdog maxDepth=12(L261)=帧13+盲区源, 验刀时12→24。
+tag: TansHugeTrees, V49, 读侧强载, 刀F, 根因, 洪峰, 冻结, 饿死, V16自供
+<!-- END:095 -->
+<!-- ID:096 -->
+TansHugeTrees 刀G根因+修复(冷启动零树终审, V50.1): 根因=V42一次性唤醒链撞V41 invalidate重解析窗口: region扫描收尾三连writeBIN→Data.invalidate(拔future)→wake, 新future解析460KB在飞; 被唤醒的start()读空(Data.get对未完成future返allocate(0)), DQ任务读空被消费不重试(重试只保chunk就绪), wake每region只发一次且set.remove先于任务执行→三路烧尽, 磁盘上万条记录无人消费→冷启动零树; 世界52历史bin掩盖(首读命中done future), 新世界53首曝; 出生点灌木=扫描中途增量flush幸运孤例. 修复刀G(36行纯增): Data.onRegionParsed(dim,rx,rz,action)=future非null非done→thenRun挂action; TreePlacer.start()空数据分支(level_server非null)挂钩→EventCenter.Server.resubmitPlacement重提交, try-catch防thenRun异常被静默吞, 遥测行’V50.1-G hook fired’; =第三条事件链(bin解析完成), 与region扫描完成(V42)/chunk加载(V50)同构, 三链汇入resubmitPlacement; 双放置幂等=树记录世界种子确定性派生(RandomSource同种子同方块); 有界=回调数≤空读数; 终态TERMINAL后钩子仍带数据回放救场. 长期教训: ①future类缓存’读空妥协’必须有完成事件回投闭环, 否则一次性唤醒链全死在重解析窗口 ②旧数据会掩盖冷启动断链, 冷启动场景必须独立验收(世界53式新世界) ③thenRun回调异常无人观察会静默吞, 挂钩必须自带try-catch+日志.
+tag: TansHugeTrees, 刀G, V50.1, 冷启动零树, future窗口, thenRun, 自愈钩子, 一次性唤醒, 事件链, 冷启动验收
+<!-- END:096 -->
+<!-- ID:097 -->
+TansHugeTrees 刀G验收(世界54, 21:32-21:37, 4.5min)判决翻转: 服务端生效实锤—hook1495次0失败, start()拿到数据0→51chunk, 792棵进入DetailedDetection放置路径(53对比全为0); resubmitPlacement=无条件TREE_GEN_EXECUTOR重跑start(此前未验收关节无罪); 冻结面优—MAX2647ms且全在登录15s视距生成期(65×65chunk), 之后干净, 104993次DQ FAILED=视距生成期就绪等待非病; 新谜题=792进放置但玩家只见出生点几灌木: H错位(树散在视距半径500格+放树时刻人已跑远)vs H滤网(DetailedDetection placing日志后到落块段静默return); 残留缺口=bin增量写3min但future事件每future只fire一次, 后续增量数据无唤醒(世界53"扫描完成vs bin mtime时序乱"的真相); 判决实验=进54回出生点站1min(bin在盘首读即命中).
+tag: TansHugeTrees, 刀G生效, 判决翻转, 可见性谜题, 复测协议, 残留缺口
+<!-- END:097 -->
+<!-- ID:098 -->
+TansHugeTrees 滤网尸检背景(世界54, 792棵进placing后视觉零落块): 铁证—CP1=CP2=792(getHeightWorldGen全通过且Y恒27=登录高度, grove群系180格半径零地形方差=本身异常); SHAPE-ERROR=0; 遥测biome=minecraft:grove; DetailedDetection.test解剖: placing日志(L1400)到placeCalculate(L1716)之间13个静默退出点(11 break test+2 return)仅1个带日志, 头号嫌疑Ground Level(地表方块须匹配config ground_block标签, bush/polaris配#minecraft:dirt, grove雪地地表=snow/powder_snow家族→全暗杀零日志); 旁证定案: 53时代THT零放置却见灌木=原版内容, THT两世界可见输出恒0; 旧世界52有树=草地过检查, 雪地新世界全灭=滤网杀伤地形依赖. 长期教训: ①静默break/return链=取证盲区制造机, 多出口分支必须全员打点或至少会计闭环(入口计数=Σ出口+PASS) ②"玩家看到的植被"未必是你的产出, 判可见性先验产出者身份 ③恒定高度值跨大范围=地形或高度计算异常的即时红旗.
+tag: TansHugeTrees, 滤网, 静默退出, GroundLevel, ground_block, grove, 死亡直方图, 刀H, V50.2
+<!-- END:098 -->
+<!-- ID:099 -->
+TansHugeTrees 刀H复测判决(世界54二进, 23:09-23:16, max站位(71,-365)非出生点): 滤网无罪释放—placing19棵中13棵通过全部检测进入placeCalculate(shape blocks 152-1592含千块级真树), 会计闭环19=ΣE(6)+PASS(13)分毫不差, E分布E1×2/E2×3/E11×1; E2反转证据ground=grass_block[snowy=false] vs want=minecraft:snow_block(grove草地被群系匹配选中雪地配置, 仅杀3); 杀场移至下游: 9000+块服务端处理而玩家零可见, 头号嫌疑=DQ processTick缺resyncChunk(V42注释预言"后置放置落块后必须调用resync否则客户端永远看不到", Tile.set全静默写, 三驱动方唯DQ未验resync); 旁证=8.5s单次停顿(疑内联放置爆发)+DATA=1数据稀疏(南region半截bin补扫中). 判别实验=重进同点位看树是否从盘显形(setUnsaved已存盘, 显形=纯可见性).
+tag: TansHugeTrees, 滤网释放, DQ, resync, 可见性, 刀H复测, placeCalculate
+<!-- END:099 -->
+<!-- ID:100 -->
+TansHugeTrees 刀H复测二次翻案(世界54三进, max站位(71,-366)): 滤网释放后地理判决—13棵PASS树全落chunk(-1,-1)出生点旁(方块X[-16,-1]Z[-15,-1]), 距max站位367格, resync半径32格(沿袭原版eventChunkLoaded内联判定)设计上就够不着; max周围"啥也没有"=bin诚实回答(南region 0,-2/-1,-2上次扫描半途废仅25/29KB, 本会话只发生4个1.1s快速bin载入非普查, 南方无记录); 同会话不可见机理=静默写+客户端先持chunk旧版+resync半径, 重登从盘重载应显形; 三大unknown: placeCalculate无落块计数遥测(进≠写)/触发覆盖谜(全会话133 chunk跑start vs 上会话4300)/bin消费制vs持久制; 配置债: polaris ground要snow_block实际grass_block(grove群系错配). 长期教训: 验收测试必须先对账"产出坐标vs观测者坐标", 地理错位会让有效修复读作失败.
+tag: TansHugeTrees, 地理翻案, 观测者坐标, resync半径, 南方扫描, resume, 触发覆盖, 消费制, placeCalculate, 刀H
+<!-- END:100 -->
+<!-- ID:101 -->
+TansHugeTrees 刀H复测三轮判读(世界54三进): 决定性数字—GATE-WAIT 890/GATE-PASS 0/WAKE 0(门黑洞: 全部loaded chunk进等待, 零放行零唤醒, Load事件持续发生却无一次完成→疑坐标/键错位), L414与L446同66chunk双重早退(start内部结构未读), 全会话仅1个DQ任务执行([-1,-1] got data Server thread), 890=TreeLocation.start=eventChunkLoaded 5秒延迟链; 地理真相—13棵PASS树全在出生点chunk(-1,-1), max三次测试从未观测出生点, 南方bin半截使其站位无数据, "啥也没有"无需新bug; 写入未验证—placeCalculate blocks.get null静默continue可能零写入, MCA直接解剖(r.-1.-1.mca chunk(-1,-1)解压扫tanshugetrees:方块名)可零成本书面裁决, 控制组=玩家chunk(4,-23). 长期教训: ①"运行了"≠"写入了", 无落块计数的放置调用不算证据 ②观测者位置与产出坐标必须先对账再下"失败"结论(本轮两次翻案同因) ③多出口控制流必须会计闭环(进=Σ出).
+tag: TansHugeTrees, 门黑洞, GATE, 坐标错位, MCA解剖, 写入验证, 出生点, 刀H复测三轮
+<!-- END:101 -->
+<!-- ID:102 -->
+TansHugeTrees 门跨线程盲区+DQ唯一进料口理论(世界54三进定案): PlacementGate探针(getChunkNow)跨线程读visibleChunkMap不可靠——同秒同chunk对照实验: Server线程DQ探针放行 vs THT-TreeGen线程890/890全盲(MISS=footprint全额含已加载primary自身); DeferredQueue.add仅存在于requeueChunk(空读路径)=DQ是全系统唯一放置进料口, executor主路径(每chunk加载必经)自始100%死于门, 历会话全部放置无一例外出自DQ/Server线程; 统一方程: DQ进料量∝region重扫窗口(新世界65s慢扫=51chunk进料, 暖bin 1.1s快扫=1chunk); 等待表孤儿病: executor线程登记后等"已加载chunk的下次Load"永不来, 携旧数据滞留至关服. 修复刀I: gate非Server线程不探测, 转投DQ由processTick在Server线程重探(预算滴灌+Load唤醒链收敛). 长期教训: ①跨线程读MC chunk层结构(非线程安全快照)结果不可信, 探测类代码必须固定在数据所属线程执行 ②"全系统的产出都走一条窄路"本身是架构警号——进料意外依赖另一个bug的窗口期是系统性脆弱.
+tag: TansHugeTrees, 跨线程, getChunkNow, visibleChunkMap, 门黑洞, DQ, 进料口, 刀I, 线程安全
+<!-- END:102 -->
+<!-- ID:103 -->
+TansHugeTrees 刀I重落轮判读(世界54三进后): ①start尾部L506存在PendingBlocks.place⇒"尾部搁浅"疑点正式排除, 管线设计闭环完整 ②K1准定罪证据链: config tree_location=true+bush的can_leaves_decay/drop/regrow全true⇒每棵成功放置的树必召唤marker实体(ForgeData NBT含"tanshugetrees"串), 历史放置点P1-P4解压扫零tanshugetrees串⇒marker从未被召唤⇒placeCalculate循环历会话零产出; 凶器候选=Caches.TreeSettings.getBlock的blockStateCache.put(id,convert)无条件缓存——首次调用DataText未就绪时空map被永久缓存, 后续全type miss→L996静默continue, 与历会话一致零产出吻合; 裁决= json log_pending_blocks的place()cache/placed计数(cache=0⇒add从未发生) ③polaris内容错位: biome=minecraft:grove+ground_block=minecraft:snow_block, 自定义世界实为草地grove⇒该树配置上几乎全灭(内容债, 动config需用户拍板) ④bush全原版方块(oak_wood/stripped)⇒MCA方块名探针天生失明, 判存在性可用marker NBT(实体区段)替代 ⑤PokerAgent锚点校验教训: 校验目标文本前必须跳空行(结构性校验对空行敏感, 上轮因此误ABORT).
+tag: TansHugeTrees, K1, placeCalculate, marker, getBlock, 空缓存, 无条件缓存, 内容错位, polaris, 锚点校验
+<!-- END:103 -->
+<!-- ID:104 -->
+TansHugeTrees 刀I验证战果(2026-09-17凌晨 max测试报告): 世界54 tp到出生点时灌木已生成, 跑图后灌木+枯树正常生成=冷启动零树战役主路径打通实锤(刀I 890黑洞chunk转DQ后落地); 遗留三案: ①视距内树生成迟滞+TPS卡顿(嫌疑=刀I架构副作用: 放置从executor全引流主线程DQ 40ms/tick预算) ②大树polaris未生成(max按"大树只生雪块"新建表面雪块超平坦测试无效→头号嫌疑=群系过滤: polaris biome=minecraft:grove, 超平坦默认plains; 雪块只满足ground_block关, 群系关在bin生成阶段就杀记录) ③雪块超平坦新世界跑图后崩溃(待crash report定罪). max测试方法论进步: 主动构造对照世界验证假设.
+tag: TansHugeTrees, 刀I生效, 灌木复活, 枯树, polaris, 群系过滤, 超平坦, 崩溃, TPS卡顿, 迟滞
+<!-- END:104 -->
