@@ -285,6 +285,26 @@ public class TreePlacer {
             if (Handcode.Config.placement_gate_enabled == false) {
                 return true; // 总开关（默认开）：false = 一键退回无门行为（诊断对照，免回档）
             }
+        // [LMax Fix V50.2 刀I] [长期记忆: 100/101] 跨线程探针盲区根治：getChunkNow 从非 Server 线程读取
+        // visibleChunkMap 不可靠。世界54三进 A/B 实锤（同秒同批 chunk，唯一变量=线程）：Server 线程 DQ 探针
+        // 放行（chunk -1,-1 十九棵全放置），THT-TreeGen 线程 890/890 全盲——footprint 全额 missing，
+        // 含必然已加载的等待者自身（其进场凭证就是该 chunk 的 Load 事件）。
+        // 修复：非 Server 线程不再探测（结果不可信），转投 DeferredQueue NORMAL 任务——processTick 在
+        // Server 线程重跑 start()→gate() 精确足迹探测：就绪即放置（40ms/tick 预算滴灌，与既有 DQ 补种
+        // 同管道同限速）；未就绪则在此登记等待表，由 Load 唤醒链驱动（唤醒→resubmit→executor→再转 DQ，
+        // 每事件一跳，天然收敛）。顺治两病：①executor 主路径自始 100% 黑洞（历会话全部放置均出自
+        // DQ/Server 线程，无一例外）；②等待表孤儿——旧实现在 executor 线程登记后永远等不到"已加载
+        // chunk 的下一次 Load"，890 条目携旧解析数据滞留至关服（内存滞留+永不放置）。
+        if (level_server == null) {
+            return true; // 理论外路径（无 Server 上下文）：fail-open 交原路径兜底
+        }
+        if (Thread.currentThread().getName().equals("Server thread") == false) {
+            // self= 为本线程对 primary 自身的探针现场：已加载却探为 null = 跨线程盲区活体证据
+            boolean self_seen = level_server.getChunkSource().getChunkNow(chunk_pos.x, chunk_pos.z) != null;
+            if (Core.log_placer_start) System.out.println("[THT-DEBUG] PlacementGate off-thread requeue: chunk " + chunk_pos + " self=" + self_seen + " (thread=" + Thread.currentThread().getName() + ")");
+            DeferredQueue.add(dimension, level_server.dimension(), chunk_pos);
+            return false;
+        }
 
             // 干跑解析：duplicate 共享内容独立游标，不消费 start() 的正式 buffer
             java.util.HashSet<ChunkPos> footprint = new java.util.HashSet<>();
