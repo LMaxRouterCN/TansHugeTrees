@@ -1433,6 +1433,8 @@ public class TreePlacer {
             int[] rotation_mirrored = TreeLocation.getRotationMirrored(level_accessor, centerX, centerZ, id);
 
             if (rotation_mirrored == null) {
+                // [LMax Debug V50.2 刀H] R2 = rotation null 退出点 (探针复活: 原行传输事故合并为注释)
+                if (Core.log_place_calculate) System.out.println("[THT-DEBUG] DD-REJECT-R2 rotation-null id=" + id + " at " + centerX + "," + centerZ);
 
                 return;
 
@@ -1472,10 +1474,14 @@ public class TreePlacer {
 
                             if (block.canBeReplaced() == true) {
 
+                                // [LMax Debug V50.2 刀H] [长期记忆: 098] 滤网尸检遥测: E1-E11 = test:块内11个break退出点按文件序编号,
+                                // 零行为改动, log_place_calculate 门控; 一次测试得死亡直方图后精准补刀 (探针复活: 原行传输事故合并为注释)
+                                if (Core.log_place_calculate) System.out.println("[THT-DEBUG] DD-REJECT-E1 id=" + id + " at " + centerX + "," + centerZ + " block=" + block);
                                 break test;
 
                             } else if (GameUtils.Tile.test(block, ground_block) == false) {
 
+                                if (Core.log_place_calculate) System.out.println("[THT-DEBUG] DD-REJECT-E2 id=" + id + " at " + centerX + "," + centerZ + " ground=" + block + " want=" + ground_block);
                                 break test;
 
                             }
@@ -1501,6 +1507,7 @@ public class TreePlacer {
 
                                 if (random.nextDouble() < Handcode.Config.unviable_ecology_skip_chance) {
 
+                                    if (Core.log_place_calculate) System.out.println("[THT-DEBUG] DD-REJECT-E3 id=" + id + " at " + centerX + "," + centerZ + " y=" + pos_original.getY() + " highestY=" + highestY);
                                     break test;
 
                                 }
@@ -1547,6 +1554,7 @@ public class TreePlacer {
                             short[] size_data = Caches.TreeShape.getTreeShapeSize(location);
                             if (size_data == null || size_data.length < 6) {
                                 Core.logger.error("[THT] Tree shape data is missing or corrupted: " + location);
+                                if (Core.log_place_calculate) System.out.println("[THT-DEBUG] DD-REJECT-E4 id=" + id + " at " + centerX + "," + centerZ);
                                 break test;
                             }
                             sizeX = size_data[0];
@@ -1559,6 +1567,7 @@ public class TreePlacer {
                         } catch (Exception exception) {
 
                             OutsideUtils.exception(new Exception(), exception, "This is normal error when a tree shape is no longer in your world. Here is that shape ID [ " + location + " ].");
+                            if (Core.log_place_calculate) System.out.println("[THT-DEBUG] DD-REJECT-E5 id=" + id + " at " + centerX + "," + centerZ);
                             break test;
 
                         }
@@ -1592,12 +1601,14 @@ public class TreePlacer {
 
                         if ((sizeY - center_sizeY) + pos_center.getY() >= level_accessor.getMaxBuildHeight()) {
 
+                            if (Core.log_place_calculate) System.out.println("[THT-DEBUG] DD-REJECT-E6 id=" + id + " at " + centerX + "," + centerZ + " y=" + pos_center.getY() + " sizeY=" + sizeY);
                             break test;
 
                         }
 
                         if (pos_original.getY() == GameUtils.Space.getBuildHeight(level_accessor, false)) {
 
+                            if (Core.log_place_calculate) System.out.println("[THT-DEBUG] DD-REJECT-E7 id=" + id + " at " + centerX + "," + centerZ + " y=" + pos_original.getY());
                             break test;
 
                         }
@@ -1606,6 +1617,7 @@ public class TreePlacer {
 
                             if (pos_original.getY() > Handcode.Config.max_height_spawn) {
 
+                                if (Core.log_place_calculate) System.out.println("[THT-DEBUG] DD-REJECT-E8 id=" + id + " at " + centerX + "," + centerZ + " y=" + pos_original.getY() + " cap=" + Handcode.Config.max_height_spawn);
                                 break test;
 
                             }
@@ -1661,6 +1673,7 @@ public class TreePlacer {
 
                                                 if (structure.step() == GenerationStep.Decoration.SURFACE_STRUCTURES) {
 
+                                                    if (Core.log_place_calculate) System.out.println("[THT-DEBUG] DD-REJECT-E9 id=" + id + " at " + centerX + "," + centerZ);
                                                     break test;
 
                                                 }
@@ -1683,6 +1696,7 @@ public class TreePlacer {
 
                         if (testSurfaceSmoothness(level_accessor, level_server, chunk_generator, pos_center, sizeX, sizeY, sizeZ, center_sizeX, center_sizeY, center_sizeZ, pos_original) == false) {
 
+                            if (Core.log_place_calculate) System.out.println("[THT-DEBUG] DD-REJECT-E10 id=" + id + " at " + centerX + "," + centerZ);
                             break test;
 
                         }
@@ -1691,6 +1705,7 @@ public class TreePlacer {
 
                             if (testFallenArea(level_accessor, level_server, chunk_generator, location, pos_center, rotation_mirrored, fallen_direction, dead_tree_level) == false) {
 
+                                if (Core.log_place_calculate) System.out.println("[THT-DEBUG] DD-REJECT-E11 id=" + id + " at " + centerX + "," + centerZ);
                                 break test;
 
                             }
@@ -1700,6 +1715,8 @@ public class TreePlacer {
                     }
 
                     pass = true;
+                    // [LMax Debug V50.2 刀H] PASS = 通过全部检测进入 placeCalculate (存活计数, 与E1-E11+R2构成会计闭环) (探针复活)
+                    if (Core.log_place_calculate) System.out.println("[THT-DEBUG] DD-PASS id=" + id + " at " + centerX + "," + centerZ + " y=" + pos_center.getY());
 
                 }
 
