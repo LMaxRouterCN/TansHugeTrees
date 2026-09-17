@@ -5,7 +5,7 @@ plugins {
 
 // 构建时间戳，格式 yyyyMMddHHmmss，拼进文件名
 def buildTimestamp = new java.text.SimpleDateFormat("yyyyMMddHHmmss").format(new Date())
-version = "1.0-${buildTimestamp}"
+version = "1.8.0-${buildTimestamp}" // [LMax Fix] 版本号修正: 前作者遗留默认1.0, 实际发布版本1.8.0(曾靠手动改jar文件名)
 base.archivesName = "tanshugetrees"
 
 java.toolchain.languageVersion = JavaLanguageVersion.of(17)
