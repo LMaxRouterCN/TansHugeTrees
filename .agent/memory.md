@@ -466,3 +466,15 @@ tag: TansHugeTrees, 刀L落地, 刀M落地, BOM判例, UTF8Encoding, commit乱�
 编码判例终审(2026-09-18): 中文git乱码三态模型: ①存储真GBK(需重写) ②存储UTF-8显示乱(无需处理, 化石在git输出→PS控制台GBK解码层, -F文件方式写入后回显依然乱即为本态实测证据, 字节级验证=cmd重定向原始字节搜UTF-8序列E5 88 80=刀) ③无BOM问题(UTF8Encoding($false))。本轮实测: 原commit存储本好+amend -F后字节验证True+回显仍乱=三态模型②的完整证据链; 定型流程=中文commit永久走-F文件, 乱码回显不惊慌不惊动, 只有字节验证才说话.
 tag: 判例, 编码, git乱码, 显示层, 三态模型, 字节验证
 <!-- END:118 -->
+<!-- ID:119 -->
+TansHugeTrees 幽灵方块案结案判例(2026-09-18): 案件全程=lc.setBlockState静默直写(is_world_gen=true主线程路径)→圈外玩家客户端持旧chunk版本=幽灵方块→刀L主线程统一flag=2(原版接管section增量同步+光照)→验收判据三件套=当面冒出(实时性)+树影(光照增量附带治愈, 旧路径无影)+撞墙必中→全过结案; resyncChunk从主力降级双保险再待收尸的三段生命周期完整走完. 刀K数据实锤: 同JVM旧世界→新世界零树, 数据签名=E2=0(对照期间2170)+DQ挂等region唤醒+fresh JVM正常, 机理=region_scan_claims静态跨世界状态+dimension key无存档身份; 修复方向B=世界卸载事件钩子清空静态状态(需静态池全面审计)优于方向A=claims键加存档身份(治标). log取证判例: 计数必须按行号+方法名锁定, 字面匹配会吸走EARLY RETURN内嵌字样(placed=EARLY完全相等=同批行污染信号).
+tag: TansHugeTrees, 幽灵方块, 结案, 刀L, 刀K, E2, 静态池生命周期, region_scan_claims, 同JVM污染, 计数污染, 收尸刀
+<!-- END:119 -->
+<!-- ID:120 -->
+TansHugeTrees 仓库元信息(2026-09-18): 实际版本1.8.0(前作者build.gradle留默认1.0靠编译后手动改jar文件名+mods.toml, max终结此土法=build.gradle改1.8.0-${buildTimestamp}; modid原为MCreator默认max后改; jar时间戳后缀max加); license现状=根目录无LICENSE文件+前作者README条款版权全保留+禁未授权发布修改版→MPL-2.0不能单方面挂(max偏好MPL-2.0但需前作者授权, 三选项待定A授权/B私有/C公开自担); README已重写中文版含原作署名; 原作=TannyJung(2021年4月起, Patreon tannyjung), 维护者=LMaxRouterCN(2026起); 公开前注意.agent/暂存旧文件/.tmp被git跟踪. 刀K方向B利好: eventWorldStopping钩子已存在(EventCenter L136, 刀J遗产), 清理方法大半已在(TreePlacer.Data.clear/PlacementGate.clear/invalidate, TreeLocation.flushCachesAsync), 手术=补调用非造机制.
+tag: TansHugeTrees, 版本号, license, README, 公开, 署名, build.gradle, 刀K审计
+<!-- END:120 -->
+<!-- ID:121 -->
+TansHugeTrees公开策略(2026-09-18): max定调=先只公开修改后源码到GitHub, 不分发编译版; README含About this Fork段(中英双语): 修复完善后PR回馈上游+功归原作者+仅源码公开+异议即时配合; 长线(已记): 联系作者→提PR→若几个月到一年无回复视为弃坑→再发编译版(姿态=实在联系不上, 侵权删除; 届时metadata留credit+发布页标fork); 法律判断: 前作者条款字面禁publish own edit但GitHub fork社区惯例覆盖, 源码fork+署名+空Releases实际风险≈零(最坏DMCA下架), 编译版分发=真红线排时间线最后; push前必清git索引: .agent/(记忆文件)/.agent_temp_files/.tmp_*/暂存旧文件/; GOAL-PLAN.md公开与否待max定(透明vs黑话).
+tag: TansHugeTrees, 公开策略, license, fork, PR, DMCA风险, 姿态
+<!-- END:121 -->
