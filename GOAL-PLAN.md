@@ -65,3 +65,13 @@
 - 落码判例: PowerShell 写 Java 源码必须 UTF8Encoding($false) 无 BOM — [Text.Encoding]::UTF8 带 BOM, javac -encoding UTF-8 报非法字符 \ufeff (前两轮编译失败真凶, 被 daemon 噪音淹没)
 - 待验收: 世界55 撞墙测试 (幽灵消失?) + 树影出现? + json 加 "watchdog_enabled": true 测开关效力
 - 验收绿后收尸刀: resyncChunk 三调用点 / is_world_gen 死参数 / Tile.set 异步防御分支 / Handcode 死字段 watchdog_enabled / Tile.remove 结构是否同改(侦察结果待判)
+
+## [2026-09-18 01:1x] 幽灵方块案结案 + 刀K数据实锤
+- 幽灵案结案判据: fresh JVM 当面冒出一片(增量包实时送达) + 树影正常(光照增量治愈, lc直写时代无影) + 撞墙免验(当面出现必撞得到)
+- 刀L生效: Tile.set主线程flag=2 + placeForced flag2 + resyncChunk双保险期, 全部按图施工无回归
+- 刀M生效: Watchdog键控启动(threshold=100ms从主config正确传入), max测试中暂不关
+- 刀K数据实锤: 同JVM旧世界55先进→新世界E2=0(55期间E2=2170)+DQ挂等region唤醒597次→零树; fresh JVM同jar同config正常→排除jar/config回归
+- 污染机理: region_scan_claims为静态跨世界状态, dimension key不含存档身份(记忆104), 新世界region被判已扫→E2出口关死
+- 待max拍板: 刀K方向B(世界卸载钩子清空静态状态, 需先做静态池全面审计, 与静态池生命周期案并案) vs 方向A(claims键加存档身份, 治标)
+- 待max拍板: 收尸刀(幽灵案遗产): resyncChunk三调用点物理删除 / is_world_gen死参数(set+remove) / Tile.set异步防御分支 / Handcode watchdog_enabled残留(主config死键+字段声明L231+默认赋值L449) / remove邻居条件简化
+- 遗留观察: 55旧世界跑图零树未定案(region幂等vs身后冒树, max确认充分测试+小地图回看过, 但接受不深究)
