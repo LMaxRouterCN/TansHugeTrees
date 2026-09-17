@@ -75,3 +75,19 @@
 - 待max拍板: 刀K方向B(世界卸载钩子清空静态状态, 需先做静态池全面审计, 与静态池生命周期案并案) vs 方向A(claims键加存档身份, 治标)
 - 待max拍板: 收尸刀(幽灵案遗产): resyncChunk三调用点物理删除 / is_world_gen死参数(set+remove) / Tile.set异步防御分支 / Handcode watchdog_enabled残留(主config死键+字段声明L231+默认赋值L449) / remove邻居条件简化
 - 遗留观察: 55旧世界跑图零树未定案(region幂等vs身后冒树, max确认充分测试+小地图回看过, 但接受不深究)
+
+## [2026-09-18 02:3x] 刀K手术单·终稿(静态池审计完成, 待max审批后动刀)
+- 案情: 同JVM旧世界→新世界零树, 击杀链三段接力:
+  1. processed_chunks(EventCenter L148, key无dimension): 同坐标chunk add=false→start整链短路
+  2. region_scan_claims TRUE残留(TreeLocation L49): putIfAbsent命中→扫描跳过→新世界盘上无bin
+  3. Data.bin_convert_futures跨世界投毒(TreePlacer L1283): future读盘路径L1337执行时求值+key无存档身份→新世界命中旧世界解析结果=旧种子树记录灌入新世界(最毒)
+- 清理时机判决: eventWorldAboutToStart L85后L87路径切换前(旧任务已死透=menu间隙人类时间尺度; 理论外straggler写旧路径=不污染新存档, 注释记录)
+- 手术内容(四处):
+  A. TreeLocation.clearWorldState(): 清region_scan_claims/pendingEmptyChunks/cache_biome/cache_write_tree_location/cache_write_place/cache_other_region
+  B. TreePlacer.clearWorldState(): 清DeferredQueue.queue/Data.clear()接线(孤儿方法转正)/LeafLitterGeneration.cache_locations/Function.cache_functions/PlacementGate.clear()(复用, Started L103保留不动)
+  C. DeferredBlocks.clear()新增(core层, 现有API只有add/take/size)
+  D. EventCenter: AboutToStart补四行调用+processed_chunks.clear()
+- 设计原则: EventCenter不直接摸外部类私有字段, 走各类聚合入口(PlacementGate先例推广); PlacementGate.clear的Started调用保留(冗余无害, 不动刀F遗产)
+- 不清理: ConfigDynamic等config缓存(每JVM语义, 正确保留); DetailedDetection.memoryCache(已废除L1409); overlay原子字段(自复位)
+- 收尸刀清单+1: region_scans(EventCenter L193)死字段, 全项目仅声明零引用
+- 验收协议(术后): 同JVM先进旧世界跑图→退出存档→新建世界→树应生成; 复跑fresh JVM回归; Watchdog盯stall
