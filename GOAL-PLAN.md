@@ -91,3 +91,9 @@
 - 不清理: ConfigDynamic等config缓存(每JVM语义, 正确保留); DetailedDetection.memoryCache(已废除L1409); overlay原子字段(自复位)
 - 收尸刀清单+1: region_scans(EventCenter L193)死字段, 全项目仅声明零引用
 - 验收协议(术后): 同JVM先进旧世界跑图→退出存档→新建世界→树应生成; 复跑fresh JVM回归; Watchdog盯stall
+
+## [2026-09-18 02:4x] 夜班收官·CacheManager对账
+- CacheManager.clear (DataLogic/DataText/DataShort/DataInt四池) 与刀K的11池零重叠: 前者=config/字典层通用KV, 后者=生成链专属池; AboutToStart同钩子各清各层互补
+- 历史呼应: V16跨存档字典污染修复(path_world_mod切换L87-89+restart L92调CacheManager.clear)正是本钩子前哨战; 刀K=把战线推到最后一块未清扫阵地(生成数据池)
+- 手术单不去重, 原样成立; region_scans死刑确认(RS-REFS=1仅声明行)
+- 夜班交付: ad87724(README+fork段)/00ca85c(README重写+版本号1.8.0)/349de96(仓库整理)/ced0714(刀K手术单); max醒后三决定: 手术单审批/push/收尸刀排期
