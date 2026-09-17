@@ -410,3 +410,27 @@ tag: TansHugeTrees, K1, placeCalculate, marker, getBlock, 空缓存, 无条件�
 TansHugeTrees 刀I验证战果(2026-09-17凌晨 max测试报告): 世界54 tp到出生点时灌木已生成, 跑图后灌木+枯树正常生成=冷启动零树战役主路径打通实锤(刀I 890黑洞chunk转DQ后落地); 遗留三案: ①视距内树生成迟滞+TPS卡顿(嫌疑=刀I架构副作用: 放置从executor全引流主线程DQ 40ms/tick预算) ②大树polaris未生成(max按"大树只生雪块"新建表面雪块超平坦测试无效→头号嫌疑=群系过滤: polaris biome=minecraft:grove, 超平坦默认plains; 雪块只满足ground_block关, 群系关在bin生成阶段就杀记录) ③雪块超平坦新世界跑图后崩溃(待crash report定罪). max测试方法论进步: 主动构造对照世界验证假设.
 tag: TansHugeTrees, 刀I生效, 灌木复活, 枯树, polaris, 群系过滤, 超平坦, 崩溃, TPS卡顿, 迟滞
 <!-- END:104 -->
+<!-- ID:105 -->
+TansHugeTrees 雪块超平坦崩溃案定罪(2026-09-17 02:07 crash): RejectedExecutionException全链=TREE_GEN_EXECUTOR静态池在世界54退出时被shutdown, 同JVM新建世界后池仍Terminated, chunk Load→wake完成路径(刀F埋引信刀I通电, 首次有活完成者)→resubmitPlacement submit进死池→"Exception ticking world"崩溃→关服余震"Failed to save chunk"刷屏(同根因). 教训: ①单机整合服务器=每个世界一个MinecraftServer实例, 静态线程池在ServerStopping shutdown后跨世界存活但永死, 模组静态池必须在ServerStarted/AboutToStart重建+submit点守卫RejectedExecutionException ②新增唤醒路径部署前必须审"谁还活着"的矩阵: 池生命周期 vs 事件源生命周期 ③max看见灌木=placeCalculate写块实锤=K1(getBlock空缓存)理论翻案: "看不见产出"的疑因列表里, 视觉确认优先于一切代码推演.
+tag: TansHugeTrees, 刀J, RejectedExecutionException, 静态池生命周期, 整合服务器, 崩溃, wake, 雪块超平坦
+<!-- END:105 -->
+<!-- ID:106 -->
+TansHugeTrees 刀I量化终验+刀J静态池复活(2026-09-17凌晨): session4(世界54四进fresh JVM)数据—off-thread requeue 2843/2843 self=false(跨线程getChunkNow盲区100%复现), DQ承接placing 11178/PASS 6693/E杀4485(E2×4019=polaris在草地grove被ground_block设计性全灭, 世界54永不生polaris; E11×464倒木区), 灌木枯树肉眼可见=冷启动零树战役端到端终验; gateWait1040/gateWake505=唤醒链收敛正常; TPS意外: 刀I引流主线程后≥1s停顿与keepup双零(40ms预算滴灌有效), max体感卡顿待量化(嫌疑: resync全chunk包风暴打客户端/MSPT逼近50ms/滴灌积压=迟滞本体); 崩溃: REJ×61, pool completed=5286=session4工作量吻合, 以前不炸因主路径全黑洞wake从无活完成者(刀I通电引信); 世界55 NO-BIN=管线全死(polaris雪块测试无效待重测); 刀J=字段volatile+工厂/AboutToStart复活/submitTreeGen守卫. 长期教训: ①静态池×整合服务器多世界=生命周期错配, 修复模式=AboutToStart复活+投递守卫 ②体感性能问题先量化后动手(本轮硬指标全零推翻"TPS炸了"预设) ③"以前从不炸"的雷被新功能引爆时要查引信是不是自己接的.
+tag: TansHugeTrees, 刀J, 静态池复活, submitTreeGen, AboutToStart, 刀I终验, TPS双零, polaris定局, 世界55, 日志税
+<!-- END:106 -->
+<!-- ID:107 -->
+TansHugeTrees 刀J落地终态(2026-09-17 02:37): commit e702ed4(45ins/9del), jar tanshugetrees-1.0-20260917023702唯一部署, verify全绿(锚about@78/shutdown@133/field@147-154/submit@184,213); commit链 e702ed4→75dc0a9→ecb8c93→0558c3f, 其中75dc0a9=max自制存档commit(内容=测试小结: 灌木枯树正常生成/大树不生成/劈树90%根除视觉确认=刀F足迹门战果/树生成慢/tps卡顿/预生成没搞好, 测试环境写在GOAL-PLAN); 世界55崩溃案ERROR清点: 真案仅REJ余震族(ChunkMap28+Server3+EventBus1), 其余=环境噪音(KleeSlabs引用不存在的pale_oak_slab/buildinggadgets2配方parse/auth); E2×4019构成: polaris3605+bush365+bush_big33+chimera7+shrub6+degradation3, bush多biome行结构(草地大量PASS又365杀).
+tag: TansHugeTrees, 刀J落地, commit链, 75dc0a9, 劈树根除, ERROR清点, E2构成
+<!-- END:107 -->
+<!-- ID:108 -->
+TansHugeTrees 项目档案事实(2026-09-17): GOAL-PLAN.md长期失修——本体仅20行为2026-07-27 V15时代内容(类级synchronized串行化worker的旧案), 与当前V50战役完全脱节; max在75dc0a9自称"测试环境在goalplan"实际信息在.agent/memory.md的40行commit插入里(用户自己的指路偏差, 后续引用GOAL-PLAN前必须先核对内容时效); 世界55=雪面grove超平坦(polaris试验台, 表面层配方待75dc0a9记忆文件提取确认snow_block vs snow layer); config_world_gen共75条目, polaris是唯一直接绑定minecraft:grove的条目(其余全tag匹配), bush家族/bush_big/shrub以#minecraft:is_forest/#c:is_taiga/#forge:is_coniferous等tag覆盖grove; "预生成没搞好"(max原话)=架构事实: 本mod树管线天然后置(TreeLocation扫描→bin→DeferredQueue/executor放置), 树永远晚于chunk可见, 非vanilla worldgen同步期生成, 是迟滞案的结构性根源.
+tag: TansHugeTrees, GOAL-PLAN失修, 75dc0a9, 世界55, polaris试验台, config解析, 后置管线, 预生成
+<!-- END:108 -->
+<!-- ID:109 -->
+TansHugeTrees 世界55终裁前备战(2026-09-17 03:xx): ①75dc0a9真相=max的记忆护档commit(.agent 40行=长期记忆095-104入库), "测试环境在goalplan"指空(GOAL-PLAN.md仅20行V15时代活化石, 2026-07-27后失修, 引用前必须核对时效) ②config_world_gen 75条目雪地图谱: polaris是唯一biome=minecraft:grove条目(ground=minecraft:snow_block精确匹配); 雪地6条目中glamor/snowland/helios(hypothermia/spike_ices)绑snowy_plains/snowy_taiga/ice_spikes; bush家族tag匹配grove(实证)但ground=#minecraft:dirt标签→snow_block表面全灭 ③E2语义确认: want带#=tag匹配(grass_block∈#dirt故草地PASS), want不带#=精确方块匹配(polaris want=snow_block); 世界54 bush E2×365=grove局部雪面位置被杀, 设计内 ④超平坦preset取证方法论: level.dat(gzip NBT)解压后ASCII串提取minecraft:名字序列=层序(数组序底到顶), 方块名后12字节hex含TAG_Int("height")=层高, biome字段直接搜minecraft:grove ⑤刀J测试协议要点: fresh JVM首次进世界不考验池复活逻辑, 必须退出→不关游戏→再进另一世界才是实弹考验.
+tag: TansHugeTrees, 75dc0a9, GOAL-PLAN失修, 雪地图谱, polaris试验台, E2语义, level.dat取证, 测试协议
+<!-- END:109 -->
+<!-- ID:110 -->
+TansHugeTrees 跨世界静态泄漏全家桶(刀K立案, 2026-09-17): 单机整合服务器"退出→同JVM再进"场景全部静态状态跨世界存活——TreeLocation.region_scan_claims(W54 TRUE认领→新世界扫描跳过→零bin零树, 最致命; V38注释"JVM重启自动清空"=设计者已知未修的自供) / TreePlacer.Data.bin_convert_futures(dimension key不含存档身份→W54树记录喂W55) / EventCenter.processed_chunks(坐标跳过) / DeferredQueue.queue(任务污染) / PendingBlocks等(方块错界投放); PlacementGate是唯一有clear的(刀F); 证据=W55崩溃会话的gate日志来自W54残留DQ任务消费; 修复=刀K统一世界重置入口(候选落点Core.restart). 同轮: W54也是超平坦(flat+grove各x1, 修正"自然地形"误判, Y恒27=超平坦本相非红旗), W55雪面grove超平坦书证成立+biome modifier生效. 长期教训: ①静态单例生命周期必须在设计时对齐实例级短命对象(MinecraftServer) ②"JVM重启自动清空"注释=已知未修自供, 见到即立悬案 ③fresh JVM与同JVM重进是不同测试环境: 前者静态全清, 后者全污染, 测试协议必须区分并声明.
+tag: TansHugeTrees, 刀K, 跨世界, 静态泄漏, region_scan_claims, 世界生命周期, 超平坦翻案, 测试环境
+<!-- END:110 -->
