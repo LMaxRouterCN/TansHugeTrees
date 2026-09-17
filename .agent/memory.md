@@ -454,3 +454,15 @@ tag: TansHugeTrees, 幽灵方块, is_world_gen, 刀L终稿, 刀M, Watchdog迁移
 TansHugeTrees 刀L+刀M落地(2026-09-18): 刀L=幽灵方块根治: Tile.set主线程统一flag=2(旧is_world_gen=true主线程走lc.setBlockState静默直写=幽灵主凶; flag2=bit2 section级增量包+光照增量+无bit1邻居更新), placeForced flag4→2, resyncChunk降级双保险, is_world_gen成死参数; 刀M=Watchdog开关迁移: watchdog_enabled入lmax-debuglog.json默认false, 启动点迁Core.loadDebugLogConfig解析后(治Handcode.start早于json读取时序坑), 关键细节=thresholdMs/dumpAllThreadsEnabled静态赋值必须无条件保留在Handcode(若随旧if块摘除→阈值卡死默认值), threshold解析加getOrDefault50ms兜底. 落码方法论: ①搬迁代码块时必须审计块内副作用赋值(本例两条静态赋值藏在if内, 摘块不摘赋值) ②Level.setBlock内置光照checkBlock+setUnsaved, lc.setBlockState直写绕过一切=光照/存盘/同步三重静默 ③core层调handcode一次性启动调用合规(EventCenter先例), 高频路径才需避免反向依赖(V49判例).
 tag: TansHugeTrees, 刀L落地, 刀M落地, Watchdog迁移, 静态赋值审计, flag2, 幽灵方块根治
 <!-- END:115 -->
+<!-- ID:116 -->
+工程判例: PowerShell改写Java源码的BOM陷阱(2026-09-18, 刀L前两轮编译失败真凶): [Text.Encoding]::UTF8属性返回带BOM编码实例, WriteAllLines用它写文件=文件头盖EF BB BOM戳; javac -encoding UTF-8对BOM零容忍报"非法字符\ufeff"(package声明被顶坏, 连锁报"需要class/interface/enum/record"); 正确写法=New-Object System.Text.UTF8Encoding($false)无BOM实例. 取证方法论升级: ①编译失败错误窗口必须error行过滤+宽tail, daemon生命周期噪音(daemon started/stopOnExpiration/awaitExpiration)会淹没真实javac错误, 12行窗口=取证自杀(该判例今天回本: 真凶藏了整整一轮) ②基线编译对照法: 写入前先编译HEAD态(已知可编译), 基线绿+写入炸=错误归写入侧(编码/格式), 基线红=环境问题(daemon/offline/依赖); 三轮两败后第三轮一举定罪即靠此分流 ③判别信号: 错误全在L1且"非法字符\ufeff"=文件头BOM指纹, 四文件同秒同错=写入工具侧bug非代码逻辑.
+tag: TansHugeTrees, BOM, PowerShell, javac, 错误捕获, 基线对照, UTF8Encoding, 判例
+<!-- END:116 -->
+<!-- ID:117 -->
+TansHugeTrees 刀L+刀M落地战果(2026-09-18凌晨): BOM判例闭环—[Text.Encoding]::UTF8带BOM致javac"非法字符ufeff"(前两轮编译失败真凶), 修复=UTF8Encoding($false); 刀L生效形态: Tile.set主线程统一flag=2+placeForced flag4→2+resyncChunk降级双保险+is_world_gen全域死参数(set+remove两处, remove=set薄转发且两调用方全传false零风险); 刀M生效形态: watchdog_enabled入lmax-debuglog.json默认false+启动点迁Core.loadDebugLogConfig+静态赋值无条件保留Handcode; Tile.remove结构判读方法=先读方法体再查全部调用方实参(参数语义由调用现场决定, remove的is_world_gen死参数因调用方全false); commit中文乱码判别法: 回显"鍒"形态=UTF-8字节被GBK解读=显示层问题存储大概率好, 字节级验证=cmd重定向拿原始字节搜UTF-8序列(E5 88 80=刀), 中文commit永久走git -F文件方式绕参数编码层.
+tag: TansHugeTrees, 刀L落地, 刀M落地, BOM判例, UTF8Encoding, commit乱码, 字节级验证, 收尸刀清单
+<!-- END:117 -->
+<!-- ID:118 -->
+编码判例终审(2026-09-18): 中文git乱码三态模型: ①存储真GBK(需重写) ②存储UTF-8显示乱(无需处理, 化石在git输出→PS控制台GBK解码层, -F文件方式写入后回显依然乱即为本态实测证据, 字节级验证=cmd重定向原始字节搜UTF-8序列E5 88 80=刀) ③无BOM问题(UTF8Encoding($false))。本轮实测: 原commit存储本好+amend -F后字节验证True+回显仍乱=三态模型②的完整证据链; 定型流程=中文commit永久走-F文件, 乱码回显不惊慌不惊动, 只有字节验证才说话.
+tag: 判例, 编码, git乱码, 显示层, 三态模型, 字节验证
+<!-- END:118 -->
