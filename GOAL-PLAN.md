@@ -97,3 +97,13 @@
 - 历史呼应: V16跨存档字典污染修复(path_world_mod切换L87-89+restart L92调CacheManager.clear)正是本钩子前哨战; 刀K=把战线推到最后一块未清扫阵地(生成数据池)
 - 手术单不去重, 原样成立; region_scans死刑确认(RS-REFS=1仅声明行)
 - 夜班交付: ad87724(README+fork段)/00ca85c(README重写+版本号1.8.0)/349de96(仓库整理)/ced0714(刀K手术单); max醒后三决定: 手术单审批/push/收尸刀排期
+
+## [2026-09-18 03:0x] 收尸刀手术单v1 (七项尸检完成, 与刀K并案待批)
+- #1 resyncChunk 死刑: 调用点5个(修正, 非3): EC L229/L237/L254 + TP L182/L235 + 定义L267; 注释提及4处(GameUtils L513-514/Handcode L214/TreeLocation L649/TP L2137)改写措辞保留历史
+- #2 is_world_gen set侧: 死参数确认(主线程行为无差异), set签名瘦身
+- #3 is_world_gen remove侧: 半死, L570分支(if false→neighborChanged L572)语义待定; 术前看remove调用方传参分布, 恒定后展开; #7并入此项
+- #4 watchdog_enabled双字段真相: Core.L84=真身(lmax-debuglog.json刀M控制) / Handcode.L231=尸体(apply无赋值行, 纯死物)+主config模板键L449; 删Handcode侧零引用(WE-TOTAL=8交叉验证), 用户旧config死键无害不清理
+- #5 Tile.set异步防御分支: 探针取偏(Tile.test方法体L332-451), set本体L482-538手术时现场取; 骨架已定位(B节签名+L512-515注释)
+- #6 region_scans: 死刑已确认(RS-REFS=1), 字段+注释删除
+- 前置验证红线: 删resyncChunk前全项目setBlockState调用点扫描, 确认所有落块路径flag=2; 漏一个裸写0路径=幽灵方块回归, 不满足不删
+- 部署建议: 与刀K同次部署同轮验收(手术单两份摆一案, max一次批)
