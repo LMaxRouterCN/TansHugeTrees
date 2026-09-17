@@ -507,11 +507,16 @@ public class GameUtils {
 
 			}
 
-            // [LMax Fix V19] 恢复 lc.setBlockState 高性能写入，绕过昂贵的光照和邻居更新
-            // 客户端通知由 EventCenter 在服务器线程上统一发送 chunk 刷新包
-            if (is_world_gen == false && Thread.currentThread().getName().equals("Server thread")) {
+            // [LMax Fix V50.3 刀L] [长期记忆: 111/112/113/114] 幽灵方块根治：主线程统一 flag=2，同步交还原版引擎。
+            // flag=2 = bit2 客户端同步（section 级增量包，原版同 tick 同区段自动合并）+ 光照增量（Level.setBlock 内置），
+            // 不含 bit1 邻居更新（V19 绕行诉求仅剩此项，flag=2 天然满足）。旧路径 is_world_gen=true 主线程走
+            // lc.setBlockState 静默直写（不通知光照与客户端），依赖 resyncChunk 32 格补偿包 → 圈外玩家客户端持
+            // 旧 chunk 版本 = 幽灵方块（撞得到看不到，跑出视距重载才显形）。resyncChunk 降级为双保险；
+            // is_world_gen 自此为死参数（主线程行为无差异，验收绿后收尸刀统一处理）。
+            if (Thread.currentThread().getName().equals("Server thread")) {
                 level_accessor.setBlock(pos, block, 2);
 	        } else if (level_accessor instanceof net.minecraft.server.level.ServerLevel sl) {
+                // [LMax Fix V50.3 刀L] 异步线程防御分支（刀I 后主路径 100% 主线程，理论死路保留防御）：
 	            // [LMax Fix V49 刀B2] [长期记忆: 078] sl.getChunk 裸调用=getChunk(FULL,load=true) 强制 join，
 	            // 树线程洪峰 272 join 块的次源。改 getChunkNow 纯读探测：null(未加载)→写入意图转
 	            // DeferredBlocks 缓存，等该 chunk Load 事件冲刷（A3 既有闭环，零丢失零轮询）；

@@ -562,16 +562,14 @@ public class Handcode {
           
             cache_other_region_max = Integer.parseInt(data.get("cache_other_region_max"));
 
-            // [LMax Fix] 看门狗配置解析与启动
-            watchdog_enabled = Boolean.parseBoolean(data.get("watchdog_enabled"));
-            watchdog_threshold_ms = Long.parseLong(data.get("watchdog_threshold_ms"));
+            // [LMax Fix V50.3 刀M] [长期记忆: 113/114] watchdog_enabled 开关与启动迁至 Core.loadDebugLogConfig
+            // （lmax-debuglog.json 键控体系统一入口，默认 false 生产静默；新建 json 模板已含该键）。threshold /
+            // dump_all_threads 两键保留在此且静态赋值无条件执行（先于新启动点，赋值顺序成立）；threshold 加兜底。
+            watchdog_threshold_ms = Long.parseLong(data.getOrDefault("watchdog_threshold_ms", "50"));
             // [LMax Fix V47] 全线程dump开关解析: getOrDefault 兜底旧配置缺键(默认 true)
             watchdog_dump_all_threads = Boolean.parseBoolean(data.getOrDefault("watchdog_dump_all_threads", "true"));
-            if (watchdog_enabled) {
-                tannyjung.tanshugetrees_handcode.debug.Watchdog.thresholdMs = watchdog_threshold_ms;
-                tannyjung.tanshugetrees_handcode.debug.Watchdog.dumpAllThreadsEnabled = watchdog_dump_all_threads; // [LMax Fix V47] 里程碑全线程dump开关
-                tannyjung.tanshugetrees_handcode.debug.Watchdog.start();
-            }
+            tannyjung.tanshugetrees_handcode.debug.Watchdog.thresholdMs = watchdog_threshold_ms;
+            tannyjung.tanshugetrees_handcode.debug.Watchdog.dumpAllThreadsEnabled = watchdog_dump_all_threads; // [LMax Fix V47] 里程碑全线程dump
         }
 
     }

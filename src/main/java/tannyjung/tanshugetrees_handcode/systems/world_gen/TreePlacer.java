@@ -2211,9 +2211,9 @@ public class TreePlacer {
             int placed_count = 0;
             for (Map.Entry<BlockPos, BlockState> entry : data.entrySet()) {
 
-                // [LMax Fix] flags=4 (UPDATE_INVISIBLE): 跳过所有更新。
-                // 客户端通知由 EventCenter 在服务器线程上统一发送。
-                level_server.setBlock(entry.getKey(), entry.getValue(), 4);
+                // [LMax Fix V50.3 刀L] [长期记忆: 113/114] flags 4→2：bit2 客户端 section 级增量同步 + 光照增量，
+                // 无 bit1 邻居更新。旧 flag=4 不广播 → 后置补写方块对已持 chunk 的玩家永久不可见（幽灵方块案）。
+                level_server.setBlock(entry.getKey(), entry.getValue(), 2);
                 placed_count++;
 
             }

@@ -434,3 +434,23 @@ tag: TansHugeTrees, 75dc0a9, GOAL-PLAN失修, 雪地图谱, polaris试验台, E2
 TansHugeTrees 跨世界静态泄漏全家桶(刀K立案, 2026-09-17): 单机整合服务器"退出→同JVM再进"场景全部静态状态跨世界存活——TreeLocation.region_scan_claims(W54 TRUE认领→新世界扫描跳过→零bin零树, 最致命; V38注释"JVM重启自动清空"=设计者已知未修的自供) / TreePlacer.Data.bin_convert_futures(dimension key不含存档身份→W54树记录喂W55) / EventCenter.processed_chunks(坐标跳过) / DeferredQueue.queue(任务污染) / PendingBlocks等(方块错界投放); PlacementGate是唯一有clear的(刀F); 证据=W55崩溃会话的gate日志来自W54残留DQ任务消费; 修复=刀K统一世界重置入口(候选落点Core.restart). 同轮: W54也是超平坦(flat+grove各x1, 修正"自然地形"误判, Y恒27=超平坦本相非红旗), W55雪面grove超平坦书证成立+biome modifier生效. 长期教训: ①静态单例生命周期必须在设计时对齐实例级短命对象(MinecraftServer) ②"JVM重启自动清空"注释=已知未修自供, 见到即立悬案 ③fresh JVM与同JVM重进是不同测试环境: 前者静态全清, 后者全污染, 测试协议必须区分并声明.
 tag: TansHugeTrees, 刀K, 跨世界, 静态泄漏, region_scan_claims, 世界生命周期, 超平坦翻案, 测试环境
 <!-- END:110 -->
+<!-- ID:111 -->
+TansHugeTrees 正确性战役收官+幽灵方块案开庭(2026-09-17晚): polaris世界55实见生成(21:42, 无劈树, TPS基本无卡)=冷启动零树/门黑洞/REJ崩溃/劈树/K1翻案/E2设计内全案终结; 新P0=放置可见性案(迟滞真身): 三件套症状(视距内放几颗就停等多久不新增/空白chunk空气墙=服务端有客户端无/跑出再回来chunk重载显形), 根因假设=resync小半径+一次性无补发(记忆099"9000+块服务端处理玩家零可见"案底应验), max自述修复曾被刀C回档抹掉→git分支knife-c-failed-20260912=修复弹药库; 判别分叉=全放但可见几颗(纯resync案)vs放置真停(DQ案), 判据=log对账placing数vs视觉数; 新P1=密度频率审查(TreeLocation选点算法→换算表); P2刀K方案备好等拍板; max节奏令: 不着急多停下谈, GOAL-PLAN已重写(旧的挪暂存归档), Watchdog开关入lmax-debuglog.json.
+tag: TansHugeTrees, 幽灵方块, 可见性, resync, 刀C回档, knife-c-failed, 正确性收官, GOAL-PLAN重写, 密度审查, 节奏
+<!-- END:111 -->
+<!-- ID:112 -->
+TansHugeTrees 幽灵方块案机理成型(2026-09-17深夜): max证词(跑出视距才有效/十几格无效/身边一小圈可见/远处只见落叶)与代码三重吻合→根因=后置放置写循环setBlock flag=4(无bit2客户端同步位)+resyncChunk仅32格半径补偿(V42当年因flag4不发包被迫造的手动全量包); flag语义: bit2=标记chunk section dirty→原版tick末自动打包ClientboundSectionBlocksUpdatePacket发给所有跟踪玩家(不限距离,自带同tick同section批处理), 服务端上bit4单独=只光照不同步; 落叶可见而树干幽灵=两套写入路径flag不同; 修法方向刀L=后置flag带同步位让原版接管+resyncChunk退役候选(需两轮验证纪律); 三件套症状统一解释: 视距内放几颗就停(resync圈外全幽灵)/空气墙(服务端有客户端无)/跑出回来显形(chunk重载全量包). 长期教训: ①手动补偿机制(resyncChunk)是底层flag错误的遮羞布, 修根源后补偿变冗余甚至有害(双份带宽) ②"玩家可见性"三态模型: 服务端真相层/客户端缓存层/同步事件层, 排查可见性bug沿这三层走 ③git log中文经PowerShell管道乱码(GBK判例重演), 翻历史用hash+name-only文件指纹法.
+tag: TansHugeTrees, 幽灵方块, flag位, setBlock, resyncChunk, 可见性三态, 刀L铺路, git乱码
+<!-- END:112 -->
+<!-- ID:113 -->
+TansHugeTrees 幽灵方块案方案定调(2026-09-18凌晨): max判决=resyncChunk不应存在, 删除, 客户端同步交还原版; 判决正确性论证: 原版bit2路径=section级增量包(同tick同section批量, 2KB级)远优于手动全量chunk+光照包(几十~200KB), V19绕行理由(光照贵/邻居更新)在1.20.1均不成立; 连带新bug立案=树影缺失(lc.setBlockState不通知光照引擎, 服务端光照表无树, resyncChunk发的WithLight包内容即旧光照, 树无影无荫); 刀L范围: Tile.set(is_world_gen=true主线程走flag2)+PendingBlocks.place/forced(flag4→2)+resyncChunk处置(一刀删vs双保险待max选)+死代码收尸(Tile.set异步分支刀I后全死预判); is_world_gen实参=树/落叶可见性分岔钥匙; leaf_litter双假设=原版worldgen feature出生在初始包. 长期教训: ①手动补偿机制是底层flag错误的遮羞布, 修复方向永远是让写入本身携带正确语义 ②可见性三态模型(服务端真相/客户端缓存/同步事件)沿层排查 ③静默写入连光照都会失真——"不通知"的代价永远是复利的.
+tag: TansHugeTrees, 幽灵方块, resyncChunk退役, flag2, 树影, is_world_gen, 刀L方案, 原版接管
+<!-- END:113 -->
+<!-- ID:114 -->
+TansHugeTrees 幽灵方块案链路闭合(2026-09-18): 凶器=is_world_gen布尔实参——Tile.set 9调用方中8传false(落叶/植被/手动生成器, 主线程flag=2原版同步=可见)唯TreePlacer PendingBlocks.place L2185传true(后置放置主力出口, session4 PB日志22293行)→lc.setBlockState静默直写=幽灵; leaf_litter非原版worldgen feature(翻案)=living_mechanics独立系统; V42 resyncChunk=刀C时代幽灵修复(补偿方案), flag4由63fb857(2026-08-06)引入; Watchdog开关迁移(刀M): 主config Handcode L566已有watchdog_enabled键→搬lmax-debuglog.json默认false+启动点随迁Core.loadDebugLogConfig尾部(治Handcode.start早于json读取时序坑); 刀L终稿=Tile.set保留getChunkNow探测语义+已加载主线程改sl.setBlock(flag2)+placeForced flag4→2+resyncChunk双保险保留; 长期教训: ①布尔参数按调用语境分裂行为=is_world_gen式陷阱, 参数语义与实际调用场景错位时(后置放置传"worldgen"名)埋幽灵 ②排查可见性先列全部写块出口的flag位矩阵(出口审计比流程审计锋利).
+tag: TansHugeTrees, 幽灵方块, is_world_gen, 刀L终稿, 刀M, Watchdog迁移, 出口审计, flag矩阵
+<!-- END:114 -->
+<!-- ID:115 -->
+TansHugeTrees 刀L+刀M落地(2026-09-18): 刀L=幽灵方块根治: Tile.set主线程统一flag=2(旧is_world_gen=true主线程走lc.setBlockState静默直写=幽灵主凶; flag2=bit2 section级增量包+光照增量+无bit1邻居更新), placeForced flag4→2, resyncChunk降级双保险, is_world_gen成死参数; 刀M=Watchdog开关迁移: watchdog_enabled入lmax-debuglog.json默认false, 启动点迁Core.loadDebugLogConfig解析后(治Handcode.start早于json读取时序坑), 关键细节=thresholdMs/dumpAllThreadsEnabled静态赋值必须无条件保留在Handcode(若随旧if块摘除→阈值卡死默认值), threshold解析加getOrDefault50ms兜底. 落码方法论: ①搬迁代码块时必须审计块内副作用赋值(本例两条静态赋值藏在if内, 摘块不摘赋值) ②Level.setBlock内置光照checkBlock+setUnsaved, lc.setBlockState直写绕过一切=光照/存盘/同步三重静默 ③core层调handcode一次性启动调用合规(EventCenter先例), 高频路径才需避免反向依赖(V49判例).
+tag: TansHugeTrees, 刀L落地, 刀M落地, Watchdog迁移, 静态赋值审计, flag2, 幽灵方块根治
+<!-- END:115 -->

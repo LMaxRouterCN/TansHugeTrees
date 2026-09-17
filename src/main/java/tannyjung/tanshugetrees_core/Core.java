@@ -80,6 +80,9 @@ public class Core {
     // [LMax] 调试日志开关，读取 config/tanshugetrees/lmax-debuglog.json
     public static boolean debug_log = false;
 
+    // [LMax Fix V50.3 刀M] [长期记忆: 113/114] 看门狗总开关（lmax-debuglog.json 键控体系，默认 false = 生产静默）
+    public static boolean watchdog_enabled = false;
+
         // [LMax V42] 模块级日志有效开关（已预计算 = debug_log || 对应模块键），调用点单布尔判断零开销
         // [长期记忆: 015] 键控日志体系：lmax-debuglog.json 中 8 个模块键独立控制各自子系统
         public static boolean log_deferred_queue = false;  // DeferredQueue 任务生命周期
@@ -125,7 +128,7 @@ public class Core {
             if (file.exists() == false) {
                 // 首次运行：创建 config 目录与默认模板（全 false，生产环境静默）
                 file.getParentFile().mkdirs();
-                java.nio.file.Files.writeString(file.toPath(), "{\n  \"debug_log_print\": false,\n  \"log_deferred_queue\": false,\n  \"log_placer_start\": false,\n  \"log_place_calculate\": false,\n  \"log_pending_blocks\": false,\n  \"log_tree_location\": false,\n  \"log_event_center\": false,\n  \"log_world_gen_step\": false,\n  \"log_queue_overflow\": false\n}\n");
+                java.nio.file.Files.writeString(file.toPath(), "{\n  \"debug_log_print\": false,\n  \"log_deferred_queue\": false,\n  \"log_placer_start\": false,\n  \"log_place_calculate\": false,\n  \"log_pending_blocks\": false,\n  \"log_tree_location\": false,\n  \"log_event_center\": false,\n  \"log_world_gen_step\": false,\n  \"log_queue_overflow\": false,\n  \"watchdog_enabled\": false\n}\n");
                 System.out.println("[LMax] lmax-debuglog.json not found, created default template (all false)");
                 return;
             }
@@ -142,6 +145,14 @@ public class Core {
             log_event_center    = debug_log || get.apply("log_event_center");
             log_world_gen_step  = debug_log || get.apply("log_world_gen_step");
             log_queue_overflow  = debug_log || get.apply("log_queue_overflow");
+        watchdog_enabled = get.apply("watchdog_enabled"); // [LMax Fix V50.3 刀M] 看门狗开关解析（缺键安全 false，不回写用户文件）
+
+        // [LMax Fix V50.3 刀M] [长期记忆: 113/114] 启动点随迁至此（json 读取后）——治旧时序坑：
+        // 旧启动点在 Handcode.start 内，早于本方法执行，开关永远来不及生效。threshold / dump_all_threads
+        // 两键仍留主 config（Handcode 解析先于本方法，静态赋值已无条件完成，顺序依然成立）。
+        if (watchdog_enabled) {
+            tannyjung.tanshugetrees_handcode.debug.Watchdog.start();
+        }
             System.out.println("[LMax] Debug log config loaded: master=" + debug_log + ", modules(on)=" + (log_deferred_queue?"deferred_queue,":"") + (log_placer_start?"placer_start,":"") + (log_place_calculate?"place_calculate,":"") + (log_pending_blocks?"pending_blocks,":"") + (log_tree_location?"tree_location,":"") + (log_event_center?"event_center,":"") + (log_world_gen_step?"world_gen_step,":"") + (log_queue_overflow?"queue_overflow":""));
         } catch (Exception e) {
             // 解析失败：全 false 兜底（含 debug_log 本身），不让坏配置炸启动
