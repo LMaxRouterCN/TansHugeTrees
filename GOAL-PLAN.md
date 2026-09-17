@@ -107,3 +107,17 @@
 - #6 region_scans: 死刑已确认(RS-REFS=1), 字段+注释删除
 - 前置验证红线: 删resyncChunk前全项目setBlockState调用点扫描, 确认所有落块路径flag=2; 漏一个裸写0路径=幽灵方块回归, 不满足不删
 - 部署建议: 与刀K同次部署同轮验收(手术单两份摆一案, max一次批)
+
+## [2026-09-18 03:2x] 收尸刀手术单v2·终稿 (三待字清零, 批完即动刀)
+- 终验三判决:
+  a) Watchdog三件套: enabled=尸体(刀M断线) / threshold_ms+dump_all=活人(主config→Handcode apply→Watchdog真链路, L568-572); #4只删enabled一具(L231+L449), 另两个保留——README正在引用它们
+  b) Tile.set九调用点: 8×false+1×true(TreePlacer L2185=worldgen直写遗言); 方法体零读取is_world_gen(线程三分支不看), 参数死透
+  c) #5手术形态修正: 异步分支不删改转投——L518-532改写为无条件DeferredBlocks.add(getChunkNow探测+静默直写删除), 异步上下文一律进缓存等主线程冲刷; 幽灵方块从理论可能变物理不可能, resyncChunk可删
+- 终稿手术清单:
+  S1 (#1+#5耦合): GameUtils异步分支改转投 + resyncChunk五调用点(EC L229/L237/L254+TP L182/L235)+定义L267删 + 注释4处改写(GameUtils L513/Handcode L214/TreeLocation L649/TP L2137)
+  S2 (#2): Tile.set签名删boolean+9调用点删末参
+  S3 (#3+#7): Tile.remove签名删boolean+L570分支展开(neighborChanged无条件)+L568转发同步删参+2调用点(LeafLitter L56/LivingMechanics L515)删末参
+  S4 (#4): Handcode L231字段+L449模板键删(threshold/dump_all活体不动)
+  S5 (#6): EventCenter L193 region_scans字段+注释删
+- 改动面: ~13文件; 编译验证必跑; 部署与刀K同批(一次部署一轮验收)
+- 顺带观察(不立案): Core.currentServer(EventCenter L340每tick刷新=自愈, Watchdog L454读它跨世界无害)
