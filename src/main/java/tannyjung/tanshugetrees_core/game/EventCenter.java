@@ -84,6 +84,16 @@ public class EventCenter {
             }
             tree_gen_rejected_logged = false;
 
+            // [LMax Fix V50.4 刀K] [长期记忆: 104] 世界切换静态池清场：同 JVM 换世界零树击杀链三段根治——
+            // ① processed_chunks 无维度键（同坐标 add=false 整链短路）② region_scan_claims TRUE 残留
+            // （region 判"已扫"跳过）③ Data future 跨世界投毒（旧世界解析结果命中新世界）。
+            // 时机判决：AboutToStart = 旧任务死透的 menu 间隙（人类时间尺度）；理论外 straggler 写旧
+            // 路径 = 不污染新存档（注释记录）。生成链经各类聚合入口清场；config/字典层由 Core.restart
+            // → CacheManager.clear 各清各层（V16 前哨战战线闭环）。
+            processed_chunks.clear();
+            tannyjung.tanshugetrees_handcode.systems.world_gen.TreeLocation.clearWorldState();
+            tannyjung.tanshugetrees_handcode.systems.world_gen.TreePlacer.clearWorldState();
+
             String path_world = event.getServer().getWorldPath(new LevelResource(".")).toString();
             Core.path_world_core = path_world + "/data/tannyjung/" + Core.data_structure_version_core;
             Core.path_world_mod = path_world + "/data/" + Core.mod_id;

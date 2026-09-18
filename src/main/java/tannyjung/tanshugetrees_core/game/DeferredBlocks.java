@@ -46,4 +46,11 @@ public class DeferredBlocks {
     public static int size () {
         return cache_blocks.size();
     }
+
+    // [LMax Fix V50.4 刀K] [长期记忆: 104] 世界切换清场入口（TreePlacer.clearWorldState 聚合调用）：
+    // 旧世界的写入意图若不清，新世界同名 chunk 的消费者 take 后 setBlock = 旧方块灌进新世界
+    // （跨世界幽灵投毒物理根除的一环）。add_count 为 JVM 累计诊断计数，日志判读连续性优先，不清。
+    public static void clear () {
+        cache_blocks.clear();
+    }
 }

@@ -147,6 +147,19 @@ public class TreeLocation {
         if (set != null) set.remove(chunk_pos);
     }
 
+    // [LMax Fix V50.4 刀K] [长期记忆: 104] 世界切换静态池清场（EventCenter AboutToStart 钩子聚合调用）：
+    // 同 JVM 世界切换时各池 key 无存档身份——region_scan_claims TRUE 残留 = 新世界 region 判"已扫"
+    // → 零树（世界55 实锤 E2=0）；其余五池同理携带旧世界坐标/生物群系/等待表语义。磁盘 bin 按
+    // 存档路径隔离不受影响，仅清内存。EventCenter 不直接摸私有字段，经本类聚合入口（PlacementGate 先例推广）。
+    public static void clearWorldState () {
+        cache_write_tree_location.clear();
+        cache_write_place.clear();
+        cache_other_region.clear();
+        cache_biome.clear();
+        region_scan_claims.clear();
+        pendingEmptyChunks.clear();
+    }
+
     // [LMax Fix V42] 终态判定：chunk 的 3×3 邻 region 全部扫描完成（TRUE）仍无数据 → 覆盖本 chunk 的
     // 树记录确定不存在（place 数据按树途经 region 写入，半径 >512m 的跨 region 超大树不在保证范围）。
     public static boolean allNeighborRegionsComplete(String dimension, ChunkPos chunk_pos) {

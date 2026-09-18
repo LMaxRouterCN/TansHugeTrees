@@ -418,6 +418,20 @@ public class TreePlacer {
         }
     }
     // [LMax Fix V42] 返回值语义：0=本次未写入任何方块（空数据且无 pending / 解析异常）；1=可能写入了方块（调用方应 resync）
+    // [LMax Fix V50.4 刀K] [长期记忆: 104] 世界切换静态池清场（EventCenter AboutToStart 钩子聚合调用）。
+    // 清理清单：DQ 队列（旧世界重试任务不泄漏进新世界消费循环）/ Data 解析 future（击杀链第三段
+    // 跨世界投毒源：旧 future 含旧世界树记录）/ LeafLitter 与 Function 分组缓存 / DeferredBlocks
+    // 写入意图（core 层原语，旧意图不清 = 旧方块灌进新世界 = 跨世界幽灵投毒）/ PlacementGate 等待表
+    // （复用刀F clear，其内部 Started 语义保留，冗余无害不动刀F遗产）。
+    public static void clearWorldState () {
+        DeferredQueue.queue.clear();
+        Data.clear();
+        LeafLitterGeneration.cache_locations.clear();
+        Function.cache_functions.clear();
+        tannyjung.tanshugetrees_core.game.DeferredBlocks.clear();
+        PlacementGate.clear();
+    }
+
     public static int start (LevelAccessor level_accessor, ServerLevel level_server, ChunkGenerator chunk_generator, String dimension, ChunkPos chunk_pos) {
 
         Core.GlobalLocking.test();
