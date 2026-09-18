@@ -54,7 +54,7 @@ public class FeatureAreaDirt extends Feature <NoneFeatureConfiguration> {
                             if (GameUtils.Tile.test(previous_block, "#minecraft:dirt / #minecraft:sand / #minecraft:base_stone_overworld") == true) {
 
                                 block = Blocks.COARSE_DIRT.defaultBlockState();
-                                GameUtils.Tile.set(level_accessor, pos, block, false);
+                                GameUtils.Tile.set(level_accessor, pos, block);
 
                             }
 

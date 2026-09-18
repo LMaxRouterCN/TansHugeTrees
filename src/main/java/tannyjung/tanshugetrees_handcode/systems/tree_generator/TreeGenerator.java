@@ -1714,7 +1714,7 @@ public class TreeGenerator {
                             // On World
                             {
 
-                                GameUtils.Tile.set(level_accessor, pos, GameUtils.Tile.fromText(level_server, "tanshugetrees:block_placer_" + block_placer), false);
+                                GameUtils.Tile.set(level_accessor, pos, GameUtils.Tile.fromText(level_server, "tanshugetrees:block_placer_" + block_placer));
                                 GameUtils.Data.setBlockText(level_accessor, level_server, pos, "block", GameUtils.Data.getEntityText(entity, block));
                                 GameUtils.Data.setBlockText(level_accessor, level_server, pos, "function", function[1]);
                                 GameUtils.Data.setBlockText(level_accessor, level_server, pos, "function_style", function[2]);

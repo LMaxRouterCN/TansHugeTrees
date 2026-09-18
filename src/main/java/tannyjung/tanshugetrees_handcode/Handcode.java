@@ -211,7 +211,7 @@ public class Handcode {
         // 守卫原逻辑：writeData 写入前扫描 ±4 chunk 的 features 状态，任一命中即整棵丢树。
         // 实锤副作用：出生点/快速跑图轨迹后方的地形已过 features 阶段，树在写入前被整棵拦截
         // （世界22 的 0,0.bin 735 桶中 spawn 圈 ±10 chunk 零桶零条）。前放后放功能等价
-        // （唯一差异是客户端同步，已由 V42 EventCenter.resyncChunk 补齐），故默认废除。
+        // （唯一差异是客户端同步，刀N 后由主线程 setBlock(2) 增量包原生覆盖（resyncChunk 已退役）），故默认废除。
         public static boolean chunk_status_guard = false;
 
         // [LMax Fix V50 刀F] [长期记忆: 095] 放置就绪门（默认开）：TreePlacer.start 放置循环前按树数据精确足迹
@@ -228,7 +228,6 @@ public class Handcode {
           
         public static int cache_other_region_max = 256; // TreeLocation cache_other_region 最大区域数 (原64)
         // [LMax Fix] 看门狗配置
-        public static boolean watchdog_enabled = true; // 是否启用看门狗主线程卡顿监控
         public static long watchdog_threshold_ms = 50; // 看门狗触发阈值（毫秒），正常 tick 为 50ms
         // [LMax Fix V47] 看门狗全线程 dump 开关：冻结持续过里程碑(1s/5s/20s/...)时 dump 全部线程堆栈抓"饥饿者"
         public static boolean watchdog_dump_all_threads = true; // 诊断取证用, 不影响看门狗基本报警
@@ -446,8 +445,6 @@ public class Handcode {
                     Watchdog
                     ----------------------------------------------------------------------------------------------------
 
-                    watchdog_enabled = true
-                    | Enable watchdog to monitor server thread stalls. When the server thread is stuck for longer than the threshold, a full stack trace will be printed to latest.log.
 
                     watchdog_threshold_ms = 50
                     | Watchdog trigger threshold in milliseconds. A normal tick is 50ms. Increase this if the watchdog is too sensitive.

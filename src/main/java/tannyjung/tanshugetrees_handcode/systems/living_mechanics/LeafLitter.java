@@ -40,7 +40,7 @@ public class LeafLitter {
 
                                 }
 
-                                GameUtils.Tile.set(level_accessor, pos, block, false);
+                                GameUtils.Tile.set(level_accessor, pos, block);
 
                             }
 
@@ -53,7 +53,7 @@ public class LeafLitter {
 
                             if (level_accessor.getBlockState(pos).getBlock() == block.getBlock()) {
 
-                                GameUtils.Tile.remove(level_accessor, level_server, pos, false);
+                                GameUtils.Tile.remove(level_accessor, level_server, pos);
 
                             }
 

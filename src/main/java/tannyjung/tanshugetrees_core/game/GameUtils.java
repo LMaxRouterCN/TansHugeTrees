@@ -479,7 +479,7 @@ public class GameUtils {
 
 		}
 
-		public static void set (LevelAccessor level_accessor, BlockPos pos, BlockState block, boolean is_world_gen) {
+		public static void set (LevelAccessor level_accessor, BlockPos pos, BlockState block) {
 
 			// World Height Limit
 			{
@@ -507,36 +507,26 @@ public class GameUtils {
 
 			}
 
-            // [LMax Fix V50.3 刀L] [长期记忆: 111/112/113/114] 幽灵方块根治：主线程统一 flag=2，同步交还原版引擎。
-            // flag=2 = bit2 客户端同步（section 级增量包，原版同 tick 同区段自动合并）+ 光照增量（Level.setBlock 内置），
-            // 不含 bit1 邻居更新（V19 绕行诉求仅剩此项，flag=2 天然满足）。旧路径 is_world_gen=true 主线程走
-            // lc.setBlockState 静默直写（不通知光照与客户端），依赖 resyncChunk 32 格补偿包 → 圈外玩家客户端持
-            // 旧 chunk 版本 = 幽灵方块（撞得到看不到，跑出视距重载才显形）。resyncChunk 降级为双保险；
-            // is_world_gen 自此为死参数（主线程行为无差异，验收绿后收尸刀统一处理）。
+            // [LMax Fix V50.4 刀N] 落块全通道主线程收敛（刀L flag=2 的结构化收尾，幽灵方块案收官）：
+            // 主线程 setBlock(2) = section 级增量包 + 光照增量（原版引擎接管，刀L 验收绿）；异步线程不再
+            // 探测直写（旧 getChunkNow + lc.setBlockState 裸写 = 幽灵方块理论源），无条件转投 DeferredBlocks
+            // 等主线程冲刷——幽灵方块从理论可能变物理不可能，resyncChunk 整包重发使命终结（刀N 退役）。
+            // 异步消费方（TreePlacer.start 空数据分支 / EventCenter 重载冲刷）已同步改 DQ forced 转投，
+            // take→add 回缓存死环在源头消除。理论外非 ServerLevel 上下文 flag=2 安全默认。
             if (Thread.currentThread().getName().equals("Server thread")) {
                 level_accessor.setBlock(pos, block, 2);
-	        } else if (level_accessor instanceof net.minecraft.server.level.ServerLevel sl) {
-                // [LMax Fix V50.3 刀L] 异步线程防御分支（刀I 后主路径 100% 主线程，理论死路保留防御）：
-	            // [LMax Fix V49 刀B2] [长期记忆: 078] sl.getChunk 裸调用=getChunk(FULL,load=true) 强制 join，
-	            // 树线程洪峰 272 join 块的次源。改 getChunkNow 纯读探测：null(未加载)→写入意图转
-	            // DeferredBlocks 缓存，等该 chunk Load 事件冲刷（A3 既有闭环，零丢失零轮询）；
-	            // 非 null→旧直写路径不动（可见 map 的 LevelChunk 必 FULL）。
-	            net.minecraft.world.level.chunk.LevelChunk lc = sl.getChunkSource().getChunkNow(pos.getX() >> 4, pos.getZ() >> 4);
-	            if (lc != null) {
-	                lc.setBlockState(pos, block, false);
-	                // [LMax Fix V27] 恢复 setUnsaved(true)：打通 MC 存盘闭环
-	                // 必须告诉 MC 这个区块被修改过，否则区块卸载时树不会被写入硬盘，导致下次加载时树彻底消失
-	                lc.setUnsaved(true);
-	            } else {
-	                DeferredBlocks.add(pos, block);
-	            }
+            } else if (level_accessor instanceof net.minecraft.server.level.ServerLevel) {
+                // [LMax Fix V50.4 刀N] 异步线程无条件转投：getChunkNow 探测 + 裸直写退役（幽灵方块理论源），
+                // 写入意图一律入 DeferredBlocks 等主线程冲刷（A3 既有事件闭环，零丢失零轮询）。
+                tannyjung.tanshugetrees_core.game.DeferredBlocks.add(pos, block);
             } else {
-                level_accessor.setBlock(pos, block, 4);
+                // 理论外路径（非 ServerLevel 上下文，现实零流量）：flag=2 安全默认
+                level_accessor.setBlock(pos, block, 2);
             }
 
         }
 
-        public static void remove (LevelAccessor level_accessor, ServerLevel level_server, BlockPos pos, boolean is_world_gen) {
+        public static void remove (LevelAccessor level_accessor, ServerLevel level_server, BlockPos pos) {
 
             // World Height Limit
             {
@@ -565,20 +555,17 @@ public class GameUtils {
 
             }
 
-            set(level_accessor, pos, block, is_world_gen);
+            set(level_accessor, pos, block);
 
-            if (is_world_gen == false) {
-
+            // [LMax Fix V50.4 刀N] 邻居更新无条件化：is_world_gen 全调用点恒 false（9 点传值审计），防御壳展开
                 level_server.neighborChanged(pos.above(), level_server.getBlockState(pos.above()).getBlock(), pos);
-
-            }
 
         }
 
 		public static void removeDrop (LevelAccessor level_accessor, ServerLevel level_server, BlockPos pos) {
 
 			Item.spawn(level_server, pos.getCenter(), level_accessor.getBlockState(pos).getBlock().asItem().getDefaultInstance());
-			remove(level_accessor, level_server, pos, false);
+			remove(level_accessor, level_server, pos);
 
 		}
 

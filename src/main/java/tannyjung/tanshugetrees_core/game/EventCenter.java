@@ -199,9 +199,6 @@ public class EventCenter {
             }
         }
 
-        // [LMax Fix] Region 级别扫描锁：确保 TreeLocation 扫描完成后才跑 TreePlacer
-        private static final java.util.concurrent.ConcurrentHashMap<String, java.util.concurrent.CompletableFuture<Void>> region_scans
-            = new java.util.concurrent.ConcurrentHashMap<>();
 
 
 
@@ -235,17 +232,16 @@ public class EventCenter {
                             tannyjung.tanshugetrees_handcode.systems.world_gen.TreeLocation.start(level_server, dimension, chunk_pos);
                             tannyjung.tanshugetrees_handcode.systems.world_gen.TreePlacer.start(level_server, level_server, generator, dimension, chunk_pos);
 
-                            // 种完树后，在主线程手动发包（V42 提取为 resyncChunk，供 DeferredQueue 补写路径复用）
-                            resyncChunk(level_server, chunk_pos);
                         }
                         // [LMax Fix A3] 重载 chunk：不重扫描（processed_chunks 幂等拦重复种树），但必须冲方块缓存。[长期记忆: 071]
                         // V42 旧实现重载后整体跳过 → 跨 chunk 树半边方块永久滞留 PendingBlocks =
-                        // 回型甜甜圈 + 边界劈树 + 缓存泄漏三合一根因。落块 > 0 才 resync（防包风暴，无落块零开销）。
+                        // 回型甜甜圈 + 边界劈树 + 缓存泄漏三合一根因。刀N 后落块走主线程 setBlock(2) 增量包（resyncChunk 已退役）。
                         else {
-                            int placed_pending = tannyjung.tanshugetrees_handcode.systems.world_gen.TreePlacer.flushPendingBlocks(level_server, chunk_pos);
-                            if (placed_pending > 0) {
-                                resyncChunk(level_server, chunk_pos);
-                            }
+                            // [LMax Fix V50.4 刀N] A3 重载冲刷改 DQ 主线程消费：异步线程直接 flushPendingBlocks 会因
+                            // Tile.set 无条件转投形成 take→add 回缓存永动机（方块永不落地）；forced 任务由 processTick
+                            // 主线程消费（就绪检查 + setBlock(2) 增量包全主线程闭环），冲刷延迟从 executor 异步窗口
+                            // 收敛到下一 server tick（≤50ms）。数据滞留缓存零丢失（就绪检查不过 = 缓存留存重试）。
+                            tannyjung.tanshugetrees_handcode.systems.world_gen.TreePlacer.DeferredQueue.addForced(dimension, level_server.dimension(), chunk_pos, chunk_pos);
                         }
                     } catch (Exception e) { e.printStackTrace(); }
                 });
@@ -259,38 +255,16 @@ public class EventCenter {
             submitTreeGen(() -> {
                 try {
                     net.minecraft.world.level.chunk.ChunkGenerator generator = level_server.getChunkSource().getGenerator();
-                    int placed = tannyjung.tanshugetrees_handcode.systems.world_gen.TreePlacer.start(level_server, level_server, generator, dimension, chunk_pos);
-                    if (placed > 0) {
-                        resyncChunk(level_server, chunk_pos);
-                    }
+                    // [LMax Fix V50.4 刀N] 落块全走主线程 setBlock(2) 增量包，resyncChunk 整包重发退役（返回值无消费者）
+                    tannyjung.tanshugetrees_handcode.systems.world_gen.TreePlacer.start(level_server, level_server, generator, dimension, chunk_pos);
                 } catch (Exception e) {
                     e.printStackTrace();
                 }
             });
         }
             
-        // [LMax Fix V42] resyncChunk：把指定 chunk 的完整区块包（含光照）重发给 32 格内的玩家。
-        // 幽灵方块修复的同步落点：world-gen 期间 Tile.set 走 lc.setBlockState/flags=4，均不发客户端包；
-        // 后置放置（DeferredQueue 补种/补写）落块后必须调用本方法，否则这些方块客户端永远看不到。
-        // 内部自动切回主线程执行（getChunk 仅主线程安全），异步线程可直接调用；
-        // 32 格半径沿用原 eventChunkLoaded 内联实现的判定（32^2=1024），行为不变，仅提取复用。
-        public static void resyncChunk (net.minecraft.server.level.ServerLevel level_server, net.minecraft.world.level.ChunkPos chunk_pos) {
-            level_server.getServer().execute(() -> {
-                try {
-                    net.minecraft.world.level.chunk.LevelChunk lc = level_server.getChunk(chunk_pos.x, chunk_pos.z);
-                    if (lc != null && !lc.isEmpty()) {
-                        net.minecraft.network.protocol.game.ClientboundLevelChunkWithLightPacket packet =
-                            new net.minecraft.network.protocol.game.ClientboundLevelChunkWithLightPacket(
-                                lc, level_server.getLightEngine(), null, null);
-                        for (net.minecraft.server.level.ServerPlayer player : level_server.players()) {
-                            if (player.distanceToSqr(chunk_pos.getWorldPosition().getX(), player.getY(), chunk_pos.getWorldPosition().getZ()) < 1024) {
-                                player.connection.send(packet);
-                            }
-                        }
-                    }
-                } catch (Exception e) { e.printStackTrace(); }
-            });
-        }
+        // [LMax Fix V50.4 刀N] resyncChunk 退役：刀N 后全部落块走主线程 setBlock(2) 增量包（原版 section 级
+        // 自动合并），整包重发 32 格补偿不再必要；五调用点（EC×3 + TreePlacer×2）同步拆除。
 
         @SubscribeEvent
         public static void eventPlayerJoined (PlayerEvent.PlayerLoggedInEvent event) {

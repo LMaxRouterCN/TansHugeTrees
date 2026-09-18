@@ -659,7 +659,7 @@ public class TreeLocation {
             // 原逻辑无条件扫描 ±4 chunk 的 features 状态，任一命中即丢弃整棵树——
             // 实锤副作用：出生点/快速跑图轨迹后方的地形已过 features 阶段，树在写入前被整棵拦截，
             // 0,0.bin 735 桶中 spawn 圈 ±10 chunk 零桶零条。前放与后放功能等价（唯一差异是客户端
-            // 同步，已由 V42 EventCenter.resyncChunk 补齐），故默认废除，保留开关供调试对比。
+            // 同步，刀N 后由主线程 setBlock(2) 增量包原生覆盖（resyncChunk 已退役）），故默认废除，保留开关供调试对比。
             if (Handcode.Config.chunk_status_guard == true) {
                     int scan_fromX = from_chunkX - 4;
                     int scan_fromZ = from_chunkZ - 4;

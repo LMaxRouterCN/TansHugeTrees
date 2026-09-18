@@ -338,7 +338,7 @@ public class TXTFunction {
 
                                                                                     }
 
-                                                                                    GameUtils.Tile.set(level_accessor, pos_convert, block, false);
+                                                                                    GameUtils.Tile.set(level_accessor, pos_convert, block);
 
                                                                                 }
 

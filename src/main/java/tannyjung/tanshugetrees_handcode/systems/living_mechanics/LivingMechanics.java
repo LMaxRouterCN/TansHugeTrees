@@ -303,7 +303,7 @@ public class LivingMechanics {
                                         if (GameUtils.Tile.test(block, "#minecraft:leaves") == true) {
 
                                             block = GameUtils.Tile.setPropertyLogic(block, "persistent", false);
-                                            GameUtils.Tile.set(level_accessor, pos, block, false);
+                                            GameUtils.Tile.set(level_accessor, pos, block);
 
                                         } else {
 
@@ -512,7 +512,7 @@ public class LivingMechanics {
 
                         {
 
-                            GameUtils.Tile.remove(level_accessor, level_server, pos, false);
+                            GameUtils.Tile.remove(level_accessor, level_server, pos);
 
                             if (Handcode.Config.leaf_litter == true) {
 
@@ -632,7 +632,7 @@ public class LivingMechanics {
 
                     if (Math.random() < chance) {
 
-                        GameUtils.Tile.set(level_accessor, pos, block, false);
+                        GameUtils.Tile.set(level_accessor, pos, block);
 
                     }
 
