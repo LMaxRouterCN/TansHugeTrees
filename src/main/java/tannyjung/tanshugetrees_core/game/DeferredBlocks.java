@@ -5,7 +5,8 @@ package tannyjung.tanshugetrees_core.game;
 // 12 条树线程洪峰期向区块管线塞 272 个阻塞 join 块，主线程同队挨饿（微冻结残存主成分）。
 // 职责边界（最小执行单元）：只做容器原语 add（存写入意图）/ take（原子取走）/ size（诊断）。
 // 何时冲刷、怎么写块（Tile.set 直写 / setBlock flag=4）全部留在 handcode 调用方——计算与调度解耦。
-// 冲刷闭环由既有事件链承担：chunk Load 事件 → TreePlacer.flushPendingBlocks（A3 路径）→ PendingBlocks.place。
+// 冲刷闭环由既有事件链承担（刀N 后形态）：ChunkEvent.Load → EC else / start 空数据分支均转投 DQ forced →
+// 主线程 processTick → PendingBlocks.placeForced（setBlock(2) 增量包同步）；旧 flushPendingBlocks 直冲路径已退役。
 // 线程契约：ConcurrentHashMap 原子；take=remove 原子取走，取走后并发 add 的新块进新容器留存
 // （对比旧 get→写→remove 的丢块窗口=严格改进，零丢失）。
 

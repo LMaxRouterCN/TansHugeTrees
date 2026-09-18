@@ -475,6 +475,34 @@ TansHugeTrees 仓库元信息(2026-09-18): 实际版本1.8.0(前作者build.grad
 tag: TansHugeTrees, 版本号, license, README, 公开, 署名, build.gradle, 刀K审计
 <!-- END:120 -->
 <!-- ID:121 -->
-TansHugeTrees公开策略(2026-09-18): max定调=先只公开修改后源码到GitHub, 不分发编译版; README含About this Fork段(中英双语): 修复完善后PR回馈上游+功归原作者+仅源码公开+异议即时配合; 长线(已记): 联系作者→提PR→若几个月到一年无回复视为弃坑→再发编译版(姿态=实在联系不上, 侵权删除; 届时metadata留credit+发布页标fork); 法律判断: 前作者条款字面禁publish own edit但GitHub fork社区惯例覆盖, 源码fork+署名+空Releases实际风险≈零(最坏DMCA下架), 编译版分发=真红线排时间线最后; push前必清git索引: .agent/(记忆文件)/.agent_temp_files/.tmp_*/暂存旧文件/; GOAL-PLAN.md公开与否待max定(透明vs黑话).
-tag: TansHugeTrees, 公开策略, license, fork, PR, DMCA风险, 姿态
+TansHugeTrees公开策略终版(2026-09-18 max拍板): 仓库全量公开含.agent记忆文件/GOAL-PLAN/暂存旧文件——理由"薪火相传": max弃坑则下个维护者凭完整案件档案+修复史接手, 上手成本归零; .tmp取证文件+a6.diff已挪暂存旧文件随之公开; license维持不放LICENSE文件(前作者未回复前), README含About this Fork中英双语段(修复完善后PR回馈上游+功归原作者+仅源码公开+异议即时配合); 长线: 联系作者→提PR→几个月到一年无回复视为弃坑→再发编译版(届时metadata留credit+发布页标fork+侵权删除姿态); push时机max定.
+tag: TansHugeTrees, 公开策略, 薪火相传, license, fork, PR
 <!-- END:121 -->
+<!-- ID:122 -->
+TansHugeTrees 刀K静态池审计终版(2026-09-18): 同JVM世界切换零树=三段接力击杀链: ①processed_chunks(EventCenter L148, key连dimension都没有)同坐标短路start ②region_scan_claims TRUE残留跳过扫描(新世界盘上无bin) ③Data.bin_convert_futures跨世界投毒最毒——future内读盘路径Core.path_world_mod执行时求值+key=dimension/region无存档身份, 新世界命中旧世界解析future=旧种子树记录灌入新世界; Data.clear()为孤儿方法罪状升级为投毒通道. 清理时机竞态判决=AboutToStart L85后路径切换前(straggler漏过menu间隙写旧路径不污染新存档), executor复活/路径切换钩子全现成. 手术=各类聚合clearWorldState入口+EventCenter AboutToStart补调用, DeferredBlocks需新增clear. 副产物: region_scans(EventCenter L193)死字段收尸+1; PlacementGate.clear先例(刀F, Started L103)推广为11池; CacheManager.clear经restart在AboutToStart L92被调覆盖面待验.
+tag: TansHugeTrees, 刀K, 静态池生命周期, 跨世界投毒, 击杀链, 清理时机, AboutToStart, bin_convert_futures, processed_chunks
+<!-- END:122 -->
+<!-- ID:123 -->
+TansHugeTrees AboutToStart钩子架构定位(2026-09-18): EventCenter.eventWorldAboutToStart=历代世界切换修复的主战场——V16跨存档字典污染(路径切换L87-89+restart调CacheManager.clear清config/字典层) / 刀J executor复活(L82-84) / 刀F PlacementGate.clear(Started L103) / 刀K生成数据池清理(L85后, 待批). CacheManager管通用KV四池(DataLogic/DataText/DataShort/DataInt)与生成链11池零重叠互补. 判例: 世界切换问题的清理体系分两层(config层已有=CacheManager, 生成数据层缺失=刀K), 同钩子各清各层.
+tag: TansHugeTrees, AboutToStart, 钩子, CacheManager, V16, 字典, 刀K, 架构
+<!-- END:123 -->
+<!-- ID:124 -->
+TansHugeTrees 收尸刀七项尸检(2026-09-18): ①resyncChunk调用点5个非3(EC L229/L237/L254+TP L182/L235) ②watchdog_enabled双字段结构: Core.L84=真身(lmax-debuglog.json刀M), Handcode.L231=尸体(apply无赋值行纯死)+主config模板键L449, 删Handcode侧零引用 ③is_world_gen: set死参数(主线程flag2统一无差异), remove侧半死(L570 if false→neighborChanged L572分支待术前定调用方传参分布) ④Tile.set本体在GameUtils L482-538(探针曾取偏到test L332-451) ⑤region_scans死刑(RS-REFS=1) ⑥红线判例: 删resyncChunk前必须全项目setBlockState扫描确认全路径flag=2, 漏一个裸写0=幽灵方块回归.
+tag: TansHugeTrees, 收尸刀, resyncChunk, watchdog, is_world_gen, 尸检, 刀M, 刀L
+<!-- END:124 -->
+<!-- ID:125 -->
+TansHugeTrees 收尸刀终验三判决(2026-09-18): ①Watchdog三件套活死: watchdog_enabled=Handcode尸体(刀M迁Core断线)可删; watchdog_threshold_ms+watchdog_dump_all_threads=活配置(主config→Handcode.apply L568-572→Watchdog.thresholdMs/dumpAllThreadsEnabled真链路), README引用它们不可删 ②Tile.set is_world_gen终判: 9调用点(8false+TreePlacer L2185一true=worldgen直写遗言)但刀L后方法体零读取, 线程三分支(主线程setBlock2/异步getChunkNow+直写/理论外setBlock4)完全不看参数, 死透 ③异步分支正确手术=改写为无条件DeferredBlocks.add转投(非删除): 保留防御存在但根除直写, 幽灵方块物理不可能, resyncChunk随之可删——判例: 防御代码的缺陷若在行为(直写)而非存在, 改行为优于删结构.
+tag: TansHugeTrees, 收尸刀, Watchdog, is_world_gen, DeferredBlocks, 幽灵方块, 防御分支, 转投
+<!-- END:125 -->
+<!-- ID:126 -->
+PowerShell/PokerAgent工具教训: @(git log 分支…HEAD).Count数的是输出行数非commit数(git log默认格式每commit约6行: hash/Author/Date/空行/消息/空行); 取commit数须git log --oneline或git rev-list --count. 夜班AHEAD=23实为4.
+tag: 工具bug, git, PowerShell
+<!-- END:126 -->
+<!-- ID:127 -->
+刀K落地(c92e5b0): 同JVM世界切换零树根治=AboutToStart静态池清场。四处: TreeLocation.clearWorldState六池(region_scan_claims/cache_write_tree_location/cache_write_place/cache_other_region/cache_biome/pendingEmptyChunks) / TreePlacer.clearWorldState聚合入口(DQ.queue+Data+LeafLitter+Function+DeferredBlocks+PlacementGate) / DeferredBlocks.clear / EventCenter接线(processed_chunks.clear, executor复活后路径切换前)。设计原则: 不摸私有字段走聚合入口(PlacementGate先例)。不清: config缓存(每JVM语义)。时机: menu间隙旧任务死透, straggler理论外不污染新存档。刀K审计=编号104, 本条=落地回执
+tag: 刀K, 静态池生命周期, AboutToStart, 清场, 跨世界
+<!-- END:127 -->
+<!-- ID:128 -->
+刀N落地(65f1c80): 落块全通道主线程收敛, 幽灵方块物理不可能。①Tile.set坍缩二分支: 主线程setBlock(2)/异步无条件DeferredBlocks.add(getChunkNow探测+裸直写删=幽灵理论源) ②永动机坑(术前未预见施工中发现): 无条件转投+异步侧place消费=take→set→add回原缓存死循环; 根治=两异步消费点(start空数据分支/EC A3重载else)改DQ addForced转投, 主线程processTick消费, 环物理不存在 ③resyncChunk五点+定义退役; flushPendingBlocks收尸 ④is_world_gen死参删: set9调用点+remove2调用点+neighborChanged无条件化 ⑤施工判例: 锚点+固定偏移死于原作者空行风格, throw在Save前断点设计=零脏写重跑幂等; javac中文locale错误行滤error:漏报须双locale; naive brace计数对string字面量假阳性, javac裁决为准
+tag: 刀N, Tile.set, 主线程收敛, 永动机坑, 转投, resyncChunk退役
+<!-- END:128 -->

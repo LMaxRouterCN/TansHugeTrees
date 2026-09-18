@@ -249,7 +249,7 @@ public class EventCenter {
         }
 
         // [LMax Fix V50 刀F] [长期记忆: 095] PlacementGate 唤醒重提交入口：镜像 eventChunkLoaded 的提交闭包
-        // （TREE_GEN_EXECUTOR 异步线程跑 TreePlacer.start，placed>0 才 resyncChunk 防包风暴）。
+        // （TREE_GEN_EXECUTOR 异步线程跑 TreePlacer.start；刀N 后落块全走主线程 setBlock(2) 增量包，无后置发包）。
         // 门在 start() 内部（四个调用方全覆盖）；resubmit → start → 门再验 = 唤醒链自愈。
         public static void resubmitPlacement (ServerLevel level_server, String dimension, net.minecraft.world.level.ChunkPos chunk_pos) {
             submitTreeGen(() -> {

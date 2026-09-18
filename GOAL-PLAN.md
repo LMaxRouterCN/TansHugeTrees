@@ -121,3 +121,16 @@
   S5 (#6): EventCenter L193 region_scans字段+注释删
 - 改动面: ~13文件; 编译验证必跑; 部署与刀K同批(一次部署一轮验收)
 - 顺带观察(不立案): Core.currentServer(EventCenter L340每tick刷新=自愈, Watchdog L454读它跨世界无害)
+## [2026-09-18 23:xx] 刀K落地 c92e5b0（同JVM世界切换零树·静态池清场）
+- 四处: DeferredBlocks.clear(core原语补全) / TreeLocation.clearWorldState(六池: region_scan_claims+cache_write_tree_location+cache_write_place+cache_other_region+cache_biome+pendingEmptyChunks) / TreePlacer.clearWorldState聚合入口(DQ.queue+Data+LeafLitter.cache_locations+Function.cache_functions+DeferredBlocks+PlacementGate复用) / EventCenter AboutToStart接线(processed_chunks.clear+两聚合, executor复活之后路径切换之前)
+- 设计原则: EventCenter不直接摸外部私有字段, 走各类聚合入口(PlacementGate先例推广); 不清: config缓存(每JVM语义)/DetailedDetection.memoryCache(已废除)
+- 时机判决: AboutToStart=menu间隙旧任务死透; 理论外straggler写旧路径不污染新存档(注释记录)
+- 4文件44行, BUILD绿
+
+## [2026-09-18 23:xx] 刀N落地 65f1c80（收尸刀S1-S5·落块全通道主线程收敛·幽灵方块物理不可能）
+- 施工中发现术前未预见的永动机坑: Tile.set无条件转投+异步侧直接place消费=take→set→add回原缓存死循环(方块永不落地); 根治=两异步消费点(TreePlacer.start空数据分支/EventCenter A3重载else)改DeferredQueue.addForced转投, 主线程processTick消费(就绪检查+setBlock(2)), 环物理不存在
+- S1: Tile.set坍缩二分支(主线程setBlock(2)/异步无条件DeferredBlocks.add; getChunkNow探测+lc.setBlockState裸直写=幽灵理论源, 删); resyncChunk五调用点(EC×3+TP×2)+定义退役; flushPendingBlocks孤儿收尸
+- S2: Tile.set签名删is_world_gen死参+9调用点(8×false+1×true); S3: Tile.remove删参+neighborChanged无条件化+2调用点; S4: Handcode watchdog_enabled尸体字段+模板键删(threshold/dump_all活体保留); S5: EC region_scans死字段删
+- 施工判例: ①锚点+固定偏移死于原作者空行风格, throw在Save前的断点设计=零脏写重跑幂等, 全改锚点+扫描定位; ②javac中文locale错误行滤error:漏报, 双locale过滤(error:|错误|.java:N); ③naive brace计数对string字面量假阳性(fromText解析{}), javac裁决为准; ④EC else扫描误收内层if收尾→悬空闭括号, 编译拦截后修复
+- 12文件62+/117-, BUILD绿; 陈旧注释2处随盘面票校正(DeferredBlocks冲刷闭环措辞/EC resubmitPlacement头注释)
+- 待验收(max手动): 同JVM旧世界跑图→退存档→新建世界→树应生成; fresh JVM回归; 幽灵撞墙免验(物理不可能); Watchdog盯stall
