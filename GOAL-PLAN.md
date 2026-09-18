@@ -134,3 +134,12 @@
 - 施工判例: ①锚点+固定偏移死于原作者空行风格, throw在Save前的断点设计=零脏写重跑幂等, 全改锚点+扫描定位; ②javac中文locale错误行滤error:漏报, 双locale过滤(error:|错误|.java:N); ③naive brace计数对string字面量假阳性(fromText解析{}), javac裁决为准; ④EC else扫描误收内层if收尾→悬空闭括号, 编译拦截后修复
 - 12文件62+/117-, BUILD绿; 陈旧注释2处随盘面票校正(DeferredBlocks冲刷闭环措辞/EC resubmitPlacement头注释)
 - 待验收(max手动): 同JVM旧世界跑图→退存档→新建世界→树应生成; fresh JVM回归; 幽灵撞墙免验(物理不可能); Watchdog盯stall
+## [2026-09-19 02:04] 验收通过——全案闭合
+- 刀K(世界55翻案): 同种子114514同JVM双世界测试, 世界B出生点有树; 对照V50.2同协议零树 → 单变量因果闭合
+- 刀N(主线程收敛): 世界A(fresh JVM)正常树=回归通过; 世界B树落地=DQ forced→processTick→setBlock(2)主线程闭环; 876次生成事件(THT-TreeGen异步提交+Server thread落地双签名)
+- 171.3s stall定性: 跨服务器生命周期记账伪影。时间轴: 世界A停服01:31:36.823→episode起≈同刻→世界B服启01:34:18.501→episode终01:34:28.194(=世界B首tick); 构成=关服存档等待~1s+建世界菜单静默161s+出生点预生成10s, 用户零冻结感知
+- 171s取证: episode窗口Server thread dump头5处(首L42638/末L45631), 逐块tannyjung扫描零命中, 首末块人工核读为vanilla+CompletableFuture等待; ModernFix平行watchdog同窗触发互证
+- 日志体检: 异常32处全第三方(authlib 401离线登录×2+mixin可选集成×30), 本mod 0; episode真身30次(78=含MILESTONE行计数噪音), 其余max 3.3s
+- 判例: THT⊂ClientHttp大小写不敏感grep误吸(eq误吸家族+1)
+- 现役: tanshugetrees-1.8.0-20260919010509.jar(E盘TEST实例单jar, 27历史jar归档mod-jar-backups)
+- 遗留(不动): 日志税(Gate调试输出21.9MB/12min); watchdog生命周期reset改进案(服停/启闭合episode, 与刀K同钩子); processTick:198同步getChunk(V47旧债)

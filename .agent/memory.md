@@ -506,3 +506,15 @@ tag: 刀K, 静态池生命周期, AboutToStart, 清场, 跨世界
 刀N落地(65f1c80): 落块全通道主线程收敛, 幽灵方块物理不可能。①Tile.set坍缩二分支: 主线程setBlock(2)/异步无条件DeferredBlocks.add(getChunkNow探测+裸直写删=幽灵理论源) ②永动机坑(术前未预见施工中发现): 无条件转投+异步侧place消费=take→set→add回原缓存死循环; 根治=两异步消费点(start空数据分支/EC A3重载else)改DQ addForced转投, 主线程processTick消费, 环物理不存在 ③resyncChunk五点+定义退役; flushPendingBlocks收尸 ④is_world_gen死参删: set9调用点+remove2调用点+neighborChanged无条件化 ⑤施工判例: 锚点+固定偏移死于原作者空行风格, throw在Save前断点设计=零脏写重跑幂等; javac中文locale错误行滤error:漏报须双locale; naive brace计数对string字面量假阳性, javac裁决为准
 tag: 刀N, Tile.set, 主线程收敛, 永动机坑, 转投, resyncChunk退役
 <!-- END:128 -->
+<!-- ID:129 -->
+max测试环境: E:\MC.minecraft\versions\TEST 1.20.1-Forge_47.4.10(E盘vanilla启动器版本隔离实例, gameDir=版本目录自身, config\tanshugetrees存在, 31.9MB latest.log在版本目录logs)。mods考古(2026-09-19): 27个历史tanshugetrees jar从v42到stow-V50.3(v43crash/v44-zerotree/rung5/v1-nowire/v2-cn/v3-poison/knifec-failed等全案物证)+jar-backup怪癖文件, 已全归档至D:\Documents\mcmod\mod-jar-backups并清出mods, 现役=tanshugetrees-1.8.0-20260919010509.jar(刀K c92e5b0+刀N 65f1c80+盘面b2af4e2, build.gradle版本号1.8.0故jar名从1.0跳8.0, 功能无关)。注意: D:\Documents\mcmod下扫描找不到该实例(在E盘), 以后部署/取证直接走此路径
+tag: 测试环境, 部署, 验收, mods考古, TansHugeTrees, max偏好
+<!-- END:129 -->
+<!-- ID:130 -->
+世界55案合棺(2026-09-19): 刀K验收通过。测试协议(世界切换类bug验收模板): 同种子强制出生点坐标重叠→世界A跑图→退标题不关游戏(保同JVM, AboutToStart清场窗口)→世界B看树。种子114514实测: 世界B有树=region_scan_claims清场生效, 无侥幸空间。附带红利: 世界A(fresh JVM正常树)=刀N主线程收敛回归隐式通过; 世界B每棵树=Tile.set→DQ forced→processTick→setBlock(2)全主线程闭环活体证明。教训: 首测作废因mods旧jar(0918 0010), 部署前必须核验jar时间戳vs commit时间
+tag: 世界55, 刀K, 验收, 翻案, 测试方法论, 刀N
+<!-- END:130 -->
+<!-- ID:131 -->
+171s stall终判(2026-09-19验收轮): 同JVM切世界产生171.3s watchdog episode=跨服务器生命周期记账伪影。时间轴: 世界A停服01:31:36.823→episode起≈同刻→世界B服启01:34:18.501→episode终01:34:28.194(=世界B首tick, 结束tellraw在新Server thread执行)。构成=关服存档等待~1s+建世界菜单静默161s+出生点预生成10s, 用户零感知; 垂死Server thread=WAITING on CompletableFuture$Signaller(原版关服等待, 泊车零CPU), ModernFix平行watchdog同窗4触发互证。判例三条: ①watchdog心跳源=server tick, 服务器死亡→菜单期→新服首tick全程计为单stall→改进案=服停/启生命周期事件闭合episode(与刀K的AboutToStart同钩子) ②grep陷阱: ‘THT’⊂’ClientHttp’大小写不敏感-match把authlib 401吸成ours(eq误吸家族+1) ③dump骨架过滤教训: TRANSFORMER/前缀帧不匹配’at net.minecraft’式正则, 须按’^\s*['线程头切块捕获。同JVM双世界协议日志实证: 两次IntegratedServer启动+一次Stopping=无JVM重启
+tag: Watchdog, 判读, 验收, 测试方法论, eq误吸, 幽灵, TansHugeTrees
+<!-- END:131 -->
