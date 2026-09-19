@@ -323,7 +323,7 @@ tag: PokerAgent, PowerShell, 正则, CHK, 绊网, 方法论, 判例
 tag: PokerAgent, 工具bug, 误报, 拦截器, GOAL-PLAN, 规程
 <!-- END:082 -->
 <!-- ID:083 -->
-V47看门狗完工(2026-09-08夜班): commit be558c8(单独纯净提交, 仅Watchdog.java+Handcode.java, +207/-17), jar 20260908020722已部署mods(旧231041禁用留位). 机制: episode门控(初始报告1次+里程碑{1s,5s,20s,此后每10s}全线程dump+结束总结行"Stall episode ended: Xms total"), 删旧500ms冷却(REPORT_COOLDOWN_MS/lastReportTime). 新配置键watchdog_dump_all_threads默认true(getOrDefault兜底旧config.txt缺键). 晨间判读指南: max复现冻结后grep latest.log搜MILESTONE和Stall episode ended→dump里RUNNABLE非idle线程=饥饿者嫌疑, [DEADLOCKED]标记=死锁实锤, waiting on+(held by)链=锁归属. 前置判读已定案: V46闸完好但罩错位(42s冻结=主线程managedBlock等chunk管线,主线程是受害人), 日志风暴已洗清(删json复测无变化). V46归档=3ea8af2. 待办: processTick:198主线程同步getChunk独立bug未修
+V47看门狗完工(2026-09-08夜班): commit be558c8(单独纯净提交, 仅Watchdog.java+Handcode.java, +207/-17), jar 20260908020722已部署mods(旧231041禁用留位). 机制: episode门控(初始报告1次+里程碑{1s,5s,20s,此后每10s}全线程dump+结束总结行"Stall episode ended: Xms total"), 删旧500ms冷却. 新配置键watchdog_dump_all_threads默认true(getOrDefault兜底). 晨间判读指南: grep latest.log搜MILESTONE和Stall episode ended→dump里RUNNABLE非idle线程=饥饿者嫌疑, [DEADLOCKED]=死锁实锤, waiting on+(held by)链=锁归属. 前置判读: V46闸完好但罩错位(42s冻结=主线程managedBlock等chunk管线,主线程是受害人), 日志风暴已洗清. V46归档=3ea8af2. [2026-09-19销账] 原待办processTick:198主线程同步getChunk=V49刀A已修(TreePlacer L197 getChunkNow实锤, 修了没销账), 本条待办清零
 tag: V47, Watchdog, episode, 全线程dump, MILESTONE, be558c8, 部署, 判读, 冻结, 取证
 <!-- END:083 -->
 <!-- ID:084 -->
@@ -522,3 +522,35 @@ tag: Watchdog, 判读, 验收, 测试方法论, eq误吸, 幽灵, TansHugeTrees
 push法证与网络判读(2026-09-19凌晨): git reflog show origin/<分支>可法证push历史(何时/到哪个commit, ‘update by push’=本地成功推送). 案例: 账目’8票待推’实为ahead 1, reflog揭示7票已于02:03:15被推(推断用户手动), 且origin停在验收commit的父提交→reflog时序可反推commit诞生顺序. 网络判读修正: IWR成功+git失败≠系统代理分裂(本案SYS-PROXY空, IWR直连亦通), 真因=GFW对github间歇阻断(RST与SYN超时交替); NET探针只作参考, 证据以git自身尝试为准; push失败属链路非凭据, 重试一次失败即停不恋战; 防挂起双开关=GIT_TERMINAL_PROMPT=0+GIT_SSH_COMMAND含BatchMode+ConnectTimeout
 tag: git, 网络, 判读, push, 方法论
 <!-- END:132 -->
+<!-- ID:133 -->
+判例-睡眠事件判读(2026-09-19翻案): Windows Kernel-Power 42=入睡可靠; 107≠苏醒可靠信号——本案机器(hypervisor/VBS在跑)入睡序列自带+2~3s的107假信号(连续三晚同模式), 真实苏醒必须看Power-Troubleshooter Id=1(WT-1). 睡眠成败三步判定: ①窗口内WT-1计数(0=无人醒过) ②42之后无新42且存在更晚的WT-1=连续睡眠 ③107时刻无对应WT-1=假信号. 教训: 单源判读翻车被用户直接观察推翻(实际睡了13h), 交叉核对先于判决. 附: UpdateOrchestrator Schedule Wake To Work=真实定时叫醒者; schtasks一次性任务+shutdown /h收夜方案验证有效; resume-from-S4不重置LastBootUpTime
+tag: 判读, Windows, 睡眠, 方法论, 教训, eq误吸
+<!-- END:133 -->
+<!-- ID:134 -->
+max四项裁决+验尸结果(2026-09-19): ①A3重载边界测试=销案, 手术链已根治 ②日志税=销案不修, 测试环境debug常开=max有意为之 ③watchdog生命周期reset=立项要修(171s假episode误导调试), 方案=AboutToStart同钩子闭合episode, 侦察中 ④processTick:198=已销案: 刀A实修(TreePlacer L197 getChunkNow+L187注释签名), 修了没销账教训=挂账债在后续版本落地时要主动对账销账. ⑤新雷: TreePlacer L1704裸getChunk(getAllReferences), 不属刀A/B/N任何手术单, V47-50全系列漏网, 线程归属待定性(树线程=慢自己低优/主线程=真雷) ⑥记忆收拾=max指示滚动模式: 每次对话顺手几条, 不做一次性大扫除(爆上下文风险)
+tag: 裁决, watchdog, processTick, L1704, 记忆维护, max偏好
+<!-- END:134 -->
+<!-- ID:135 -->
+刀O落地(2026-09-20, commit cd5273c): watchdog跨世界假episode根治。机制: EC ServerStopping→Watchdog.onServerStopping()=①在挂episode调endEpisode()如实闭合(真冻结保留记录)②armed=false熄火, 守护线程L96-98的!armed continue短路天然跳过→菜单静默期/新服启动期不计stall; 新服首tick的updateTickTime()自动重武装+刷时间戳, AboutToStart端零改动。armed语义从V47一次性熔断改为每生命周期段复位(短路结构现成, 原缺复位路径)。endEpisode()从updateTickTime抽取消除双出口复制。线程模型: ServerStopping在垂死服务器线程执行, armed/episodeActive均volatile单写原子。部署验收待max: 同JVM切世界两次, 假171s episode应消失。判例: 诊断工具观测窗必须与被观测对象生命周期对齐, 生命周期间隙会被读成异常(171s=菜单161s+启动10s构成)。附: 后端卡住事件=回执[running]无[done]但命令流执行完毕, 判读以脚本末条输出为准
+tag: 刀O, watchdog, episode, 生命周期, ServerStopping, armed, 判例, 诊断方法论, cd5273c
+<!-- END:135 -->
+<!-- ID:136 -->
+136 L1704定性终稿(2026-09-20, C案结案): TreePlacer L1704裸getChunk(getAllReferences)三轮侦察+E9实测=挂账不修(推荐案D)。技术真相: L1702 testChunkStatus内部已有首次getChunk(FULL,load=true)(GUB L1134), 返回时chunk已入loaded map, L1704二次getChunk=map直接命中无join, L1704是影子非雷本体; 真雷=testChunkStatus为查structure_references低状态却拉FULL(getAt同构), 位于反编译区GameUtils(动它有同步冲突史)。路径: TreePlacer.test(L1427)→structure_detection扫描循环→E9结构避让, 树线程执行, 灌管线理论危害(V49判例35s级)。实测: E9-TOTAL=0(世界54/55 session, 21.89MB, E分布E1×5/E2×3088/E4×62), 测试环境无表面结构=环境特性; E9=0不证明L1704不执行(拒绝打点≠执行打点), 但无任何可归因危害记录。修=反编译区+树生成语义双重060风险, 收益纯理论。案D=挂账监控: E9=0为基线, 有村庄世界验收时grep E9, >0且伴冻结再立项。判例: "守卫后裸调"定性必须核对守卫内部是否已含同目标getChunk——第一次调用已把chunk拉入map, 第二次裸调通常是无害命中
+tag: L1704, E9, testChunkStatus, getChunk, 结构避让, 反编译区, 树线程, 挂账, 判例, 方法论, TansHugeTrees
+<!-- END:136 -->
+<!-- ID:137 -->
+137 刀O验收before基线(2026-09-19 01:27-01:40 session, 世界54→55切换协议, jar 20260919010509=无刀O): ①假episode铁证: ‘Stall episode ended: 171306ms’@01:34:28.194=世界55首tick闭合; 反推起点01:31:36.888=世界54末tick(Stopping日志01:31:36.823后65ms); 构成分解: 菜单静默01:31:36.9→01:34:18.5(世界55 Starting)=161.6s + spawn prep 01:34:18.5→01:34:28.2=9.7s, 合计171.306s分毫不差, 每毫秒有归属=纯假, 全场唯一60s+ ②真episode画像: 29个全≤5s: <100ms×17, 100ms-1s×7, 1-5s×5(最大3256ms), 5s+桶全空 ③MILESTONE全线程dump共48次 ④E分布: E1×5/E2×3088(grove既知)/E4×62(新面孔, 样本在Server thread, 源码定性中)/E9×0 ⑤刀O验收判据(部署cd5273c jar后同协议切世界): 60s+假episode消失/真episode分布不变/Stopping~新世界首tick窗口无WATCHDOG输出
+tag: 刀O, watchdog, episode, 基线, 验收, 判据, 世界55
+<!-- END:137 -->
+<!-- ID:138 -->
+138 E4案+假家族判读轮(2026-09-20凌晨): ①未闭合episode判别读数: Server thread WAITING on CompletableFuture$Signaller, BLOCKED=0, Render thread RUNNABLE flipFrame=锁竞争死锁排除, 倾向暂停/等future挂起族(130s+超V49极值35s, 结尾=暂停态直接关游戏形状: Render Stopping!后3ms日志终结无server序列); Signaller具体归属未定; 双判别实验: max证人(01:38-01:40是否Esc暂停)+Esc挂2分钟复现 ②刀O覆盖确认: armed仅onServerStopping熄火(WB177-182), 暂停场景不覆盖→判暂停门则刀P立项(镜像刀O挂客户端pause事件, CLIENTTICK-REFS=0需新建) ③E4机制: TreePlacer L1453 location=config.get(path_storage)+|+chosen(L1590消费); Caches L101-103 readBIN读空→空数组入缓存=负缓存永锁, 同id 1371成功/62miss全靠覆写自愈; temporary下751 bin全01:34:18(世界55启动)写入且名含polaris=0→供给方待定(下轮: #vanilla/variants目录结构+chosen构造) ④WorldGenStepEnd真身=region bin自愈写入(world_gen/regions, 与shape bin无关) ⑤dump税: 全session 17430/123332=14% log lines
+tag: E4, polaris, 负缓存, 假episode, 暂停, 刀P, Watchdog, 判读, TansHugeTrees
+<!-- END:138 -->
+<!-- ID:139 -->
+139 第二假家族判别器结案(2026-09-20): max证词+物证闭合判决—未闭合130s+ episode(01:38:06起,十档milestone无ended)=单人暂停假episode, 非死锁。证据链: ①max: Esc暂停+结束时任务管理器杀进程+开LAN时Esc/M全屏地图不暂停(单人暂停机制LAN下失效=hasSingleplayerOwner变false) ②物证: BLOCKED=0, Render thread RUNNABLE翻帧, 体感无20s+卡顿(真episode 29个全≤5s最大3256ms) ③日志终结形状=暂停态外部杀进程(Render Stopping!后3ms终结, 无stopServer/Saving chunks序列, onServerStopping未跑=episode无ended行的死因) ④01:38:03/06两个1.35s真stall=Saving and pausing存档工作(暂停前奏)。判读教训: ①dump的"纯park空闲线程压一行"(Watchdog W20设计)吞掉Server thread帧, park对象(CompletableFuture$Signaller)不足以定位等待源, 判家族靠tick断流本质非park点 ②同id成败≠竞态铁证: 查询key=location(path|随机chosen shape文件), 随机选择+跑图顺序差异使坐标零重叠兼容静态缺失, 真判别器=ERROR行location对账(62条L1592印location全文) 刀P候选(待max裁): ClientTickEvent边缘检测Minecraft.isPaused(), 进入暂停→endEpisode+armed=false(镜像刀O), 恢复→等首tick updateTickTime重新武装, LAN下isPaused恒false天然不误伤; 可与刀O同jar打包部署省一轮验证
+tag: 判别器, 暂停, 假episode, 刀P, Watchdog, E4, 方法论, 竞态判读漏洞, TansHugeTrees
+<!-- END:139 -->
+<!-- ID:140 -->
+140 E4终判翻转(2026-09-20): 竞态论死刑, 真相=单一静态鬼文件。62条ERROR全同一location: presets/#main/wendy/storage|bush_20260616-2118-36-704.bin, 盘上MISSING; 树id=#main/#vanilla/variants/polaris(变体从wendy storage池随机抽shape, 抽中鬼文件=必死, 62/1433≈4.3%)。旧三证据全塌(坐标零重叠/同id成败混合/冷世界翻倍=随机抽取时序+尝试量差异, 均id级聚合假象)。时间线: W54的21次E4(01:31)早于01:34:18全量re-extract, 新旧两代temporary均无此文件=源级缺失非提取竞态。待定根因: 选择列表为何含鬼文件(陈旧索引/扫描路径≠读取路径)。修法三向: A列表完整性(根修: 列表=实际扫描文件)/B日志去重(62条ERROR→每文件一次)/C负缓存硬化(防御性, 永久缺失下无收益, 降级)。判读铁律: id级成败混合≠竞态, 定性前必须按查询key(location全文)分组对账
+tag: E4, 竞态翻案, 鬼文件, 判读, 方法论, polaris, wendy, 静态缺失, TansHugeTrees
+<!-- END:140 -->
