@@ -140,21 +140,45 @@ public class Watchdog {
 
         // [LMax Fix V47] 事件结束检测：主线程 tick 恢复 = 冻结事件结束，打总结行并复位状态
         if (episodeActive) {
-            long totalMs = System.currentTimeMillis() - episodeStartWallMs;
-            Core.logger.warn("[TST WATCHDOG] Stall episode ended: {}ms total, {} report(s)", totalMs, episodeReportCount);
-
-            // [LMax Fix V47] 刷新待发聊天摘要为真实总时长（初始报告里的 ms 是冻结初期读数，偏低）
-            if (pendingChatSummary != null) {
-                pendingChatSummary = "Server thread stalled for " + totalMs + "ms (episode total, " + episodeReportCount + " report(s))";
-            }
-
-            episodeActive = false;
-            nextMilestoneIndex = 0;
-            episodeReportCount = 0;
+            // [LMax Fix V51 刀O] [长期记忆: 131] 闭合逻辑抽取为 endEpisode()（onServerStopping 生命周期出口共用）
+            endEpisode();
         }
 
         armed = true;
         lastTickNanoTime = System.nanoTime();
+    }
+
+    /**
+     * [LMax Fix V51 刀O] [长期记忆: 131] episode 闭合：打总结行 + 复位事件状态。
+     * 双出口共用：updateTickTime()（tick 恢复）与 onServerStopping()（服务器停止）。
+     */
+    private static void endEpisode () {
+        long totalMs = System.currentTimeMillis() - episodeStartWallMs;
+        Core.logger.warn("[TST WATCHDOG] Stall episode ended: {}ms total, {} report(s)", totalMs, episodeReportCount);
+
+        // [LMax Fix V47] 刷新待发聊天摘要为真实总时长（初始报告里的 ms 是冻结初期读数，偏低）
+        if (pendingChatSummary != null) {
+            pendingChatSummary = "Server thread stalled for " + totalMs + "ms (episode total, " + episodeReportCount + " report(s))";
+        }
+
+        episodeActive = false;
+        nextMilestoneIndex = 0;
+        episodeReportCount = 0;
+    }
+
+    /**
+     * [LMax Fix V51 刀O] [长期记忆: 131] 服务器生命周期通知（EventCenter 在 ServerStopping 调用）。
+     * 根治跨世界假 episode：心跳源=server tick，同 JVM 退世界→菜单期→进世界全程无 tick，
+     * 曾被整段计成单次巨型 stall（171s 实录，ModernFix 同窗 4 触发同病）。
+     * ① 在挂的 episode 如实闭合（真实冻结部分保留记录）② armed=false 熄火，守护线程跳过检查，
+     * 直到新服首 tick 的 updateTickTime() 重新武装——菜单静默期与新服启动期天然不计 stall。
+     * 线程模型：ServerStopping 在垂死服务器线程执行，armed/episodeActive 均 volatile 单写原子。
+     */
+    public static void onServerStopping () {
+        if (episodeActive) {
+            endEpisode();
+        }
+        armed = false;
     }
 
     /**

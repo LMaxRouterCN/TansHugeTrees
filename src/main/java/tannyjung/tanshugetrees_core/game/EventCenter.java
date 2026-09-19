@@ -146,6 +146,10 @@ public class EventCenter {
         public static void eventWorldStopping (ServerStoppingEvent event) {
 
             first_player_joined = false;
+            // [LMax Fix V51 刀O] [长期记忆: 131] 跨世界假 episode 根治：通知 watchdog 闭合在挂事件并熄火。
+            // 同 JVM 退世界→菜单期→进世界全程无 server tick，曾整段计成单次巨型 stall（171s 实录）；
+            // armed=false 后守护线程跳过检查，新服首 tick 的 updateTickTime() 重新武装。
+            tannyjung.tanshugetrees_handcode.debug.Watchdog.onServerStopping();
             // [LMax Fix V3] 优雅关闭专属线程池
             // [LMax Fix V50.2 刀J] 保留 shutdown 让在途任务自然排空；池由下一个世界的 AboutToStart 复活，不再永久死亡
             TREE_GEN_EXECUTOR.shutdown();
