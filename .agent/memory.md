@@ -518,3 +518,7 @@ tag: 世界55, 刀K, 验收, 翻案, 测试方法论, 刀N
 171s stall终判(2026-09-19验收轮): 同JVM切世界产生171.3s watchdog episode=跨服务器生命周期记账伪影。时间轴: 世界A停服01:31:36.823→episode起≈同刻→世界B服启01:34:18.501→episode终01:34:28.194(=世界B首tick, 结束tellraw在新Server thread执行)。构成=关服存档等待~1s+建世界菜单静默161s+出生点预生成10s, 用户零感知; 垂死Server thread=WAITING on CompletableFuture$Signaller(原版关服等待, 泊车零CPU), ModernFix平行watchdog同窗4触发互证。判例三条: ①watchdog心跳源=server tick, 服务器死亡→菜单期→新服首tick全程计为单stall→改进案=服停/启生命周期事件闭合episode(与刀K的AboutToStart同钩子) ②grep陷阱: ‘THT’⊂’ClientHttp’大小写不敏感-match把authlib 401吸成ours(eq误吸家族+1) ③dump骨架过滤教训: TRANSFORMER/前缀帧不匹配’at net.minecraft’式正则, 须按’^\s*['线程头切块捕获。同JVM双世界协议日志实证: 两次IntegratedServer启动+一次Stopping=无JVM重启
 tag: Watchdog, 判读, 验收, 测试方法论, eq误吸, 幽灵, TansHugeTrees
 <!-- END:131 -->
+<!-- ID:132 -->
+push法证与网络判读(2026-09-19凌晨): git reflog show origin/<分支>可法证push历史(何时/到哪个commit, ‘update by push’=本地成功推送). 案例: 账目’8票待推’实为ahead 1, reflog揭示7票已于02:03:15被推(推断用户手动), 且origin停在验收commit的父提交→reflog时序可反推commit诞生顺序. 网络判读修正: IWR成功+git失败≠系统代理分裂(本案SYS-PROXY空, IWR直连亦通), 真因=GFW对github间歇阻断(RST与SYN超时交替); NET探针只作参考, 证据以git自身尝试为准; push失败属链路非凭据, 重试一次失败即停不恋战; 防挂起双开关=GIT_TERMINAL_PROMPT=0+GIT_SSH_COMMAND含BatchMode+ConnectTimeout
+tag: git, 网络, 判读, push, 方法论
+<!-- END:132 -->

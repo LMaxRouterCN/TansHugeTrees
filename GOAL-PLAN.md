@@ -143,3 +143,4 @@
 - 判例: THT⊂ClientHttp大小写不敏感grep误吸(eq误吸家族+1)
 - 现役: tanshugetrees-1.8.0-20260919010509.jar(E盘TEST实例单jar, 27历史jar归档mod-jar-backups)
 - 遗留(不动): 日志税(Gate调试输出21.9MB/12min); watchdog生命周期reset改进案(服停/启闭合episode, 与刀K同钩子); processTick:198同步getChunk(V47旧债)
+- [2026-09-19 22:12 勘误] 7票已于09-19 02:03:15上远端(reflog法证, push至b2af4e2); 验收票71e17f1与housekeeping票于2026-09-19 22:12时点待推
