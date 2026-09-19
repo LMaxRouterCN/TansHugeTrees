@@ -551,6 +551,6 @@ tag: E4, polaris, 负缓存, 假episode, 暂停, 刀P, Watchdog, 判读, TansHug
 tag: 判别器, 暂停, 假episode, 刀P, Watchdog, E4, 方法论, 竞态判读漏洞, TansHugeTrees
 <!-- END:139 -->
 <!-- ID:140 -->
-140 E4终判翻转(2026-09-20): 竞态论死刑, 真相=单一静态鬼文件。62条ERROR全同一location: presets/#main/wendy/storage|bush_20260616-2118-36-704.bin, 盘上MISSING; 树id=#main/#vanilla/variants/polaris(变体从wendy storage池随机抽shape, 抽中鬼文件=必死, 62/1433≈4.3%)。旧三证据全塌(坐标零重叠/同id成败混合/冷世界翻倍=随机抽取时序+尝试量差异, 均id级聚合假象)。时间线: W54的21次E4(01:31)早于01:34:18全量re-extract, 新旧两代temporary均无此文件=源级缺失非提取竞态。待定根因: 选择列表为何含鬼文件(陈旧索引/扫描路径≠读取路径)。修法三向: A列表完整性(根修: 列表=实际扫描文件)/B日志去重(62条ERROR→每文件一次)/C负缓存硬化(防御性, 永久缺失下无收益, 降级)。判读铁律: id级成败混合≠竞态, 定性前必须按查询key(location全文)分组对账
-tag: E4, 竞态翻案, 鬼文件, 判读, 方法论, polaris, wendy, 静态缺失, TansHugeTrees
+E4案终审定案(2026-09-20夜班R7全闭合): 根因=CacheManager.getDictionary字典id分配竞态。机制: CM1028 id=文件行数+1, 世界生成441区块多线程并发注册新名→两名读同行数抢同id→双行入档(writeTXT无锁append但单行完整); 内存setNormal(L1035)后写者覆盖id→name, name→id无损→选树short永远正确, E4=碰撞覆写后才放置的树。铁证: 世界(60) id14 dup=wendy_231@L14×bush_704@L15, 世界(61) id29 dup=wendy_742@L29×bush_704@L30, 受害者与鬼同id同行; 62E4=21(60)+41(61)全polaris与dict mtime咬合; 死亡率21/565=3.7%+41/868=4.7%≈1/wendy池20(碰撞前放置幸免折扣); dup-gap算术(k连dup→k-1连gap)54/55/60/61四世界全自洽; 选择侧L582-599洗清, dup坐标=RandomSource确定性重抽。伤害分层: 同类碰撞(wendy×wendy id20/42)静默换树形; 树id碰撞((55)id32 polaris×2×shrub)腐蚀距离检测; 62棵=冰山一角。自愈发现: 受害者行均在鬼行前→冷读首匹配自动正确→修好竞态后region bin重放(语义待验证)62棵死树理论复活。历史统一: 031/037历代字典错位/逐会话轮换=同竞态不同碰撞对。修法菜单待批: 甲(推荐)=注册synchronized+id改max+1(行数+1在有gap时复用旧id) 丁(推荐)=Caches L101-103读空不入缓存 乙(可选)=E4日志去重 丙(否)=旧档手术不需要。判读铁律: 字典错位先按id分组找dup+gap; 会话世界按dictionary mtime对账不凭编号猜(R7自首#4: 54/55为旧世界, 60/61才是本会话)
+tag: E4, 字典, id分配, 竞态, 字典错位, 根因, 静默面, 自愈, 判读, 方法论, TansHugeTrees
 <!-- END:140 -->
