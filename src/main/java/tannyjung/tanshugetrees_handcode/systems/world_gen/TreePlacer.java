@@ -127,7 +127,8 @@ public class TreePlacer {
 
                     if (targetLevel == null) {
                         // [LMax Fix V40] 黑洞封口：维度查找失败必须可见，不再静默丢弃
-                        System.err.println("[TansHugeTrees] DeferredQueue dropped task: level not found for dim_key=" + task.dim_key + " chunk=" + task.chunk_pos + " forced=" + task.is_forced);
+                        // [LMax Fix V53 刀R预备] 补键控守卫: dropped-task裸err, 与同方法FORCED/NORMAL DROPPED同域走log_deferred_queue
+                        if (Core.log_deferred_queue) System.err.println("[TansHugeTrees] DeferredQueue dropped task: level not found for dim_key=" + task.dim_key + " chunk=" + task.chunk_pos + " forced=" + task.is_forced);
                         continue;
                     }
 
@@ -2173,7 +2174,8 @@ public class TreePlacer {
             // [LMax Debug V39] 诊断：place()调用时缓存状态
             if (Core.log_pending_blocks) {
                 int dataSize = (data == null) ? 0 : data.size();
-                System.out.println("[THT-DEBUG] PendingBlocks.place() chunk " + chunk_pos + " cache: " + (data == null ? "NULL" : dataSize + " blocks") + " | total cache chunks: " + tannyjung.tanshugetrees_core.game.DeferredBlocks.size());
+                // [LMax Fix V53 刀R预备] 补键控守卫: 此前零守卫每chunk必打, 烟测09-20判例(THT-DEBUG=全日志93%), 归入pending_blocks域 [长期记忆: 015]
+                if (Core.log_pending_blocks) System.out.println("[THT-DEBUG] PendingBlocks.place() chunk " + chunk_pos + " cache: " + (data == null ? "NULL" : dataSize + " blocks") + " | total cache chunks: " + tannyjung.tanshugetrees_core.game.DeferredBlocks.size());
             }
 
             if (data == null) {

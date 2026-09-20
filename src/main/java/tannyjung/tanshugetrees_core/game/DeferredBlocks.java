@@ -34,7 +34,8 @@ public class DeferredBlocks {
         // [LMax Debug V39 语义保留] 诊断：追踪方块入缓存总数（措辞与旧 PendingBlocks.add 一致，日志判读连续）
         if (Core.log_pending_blocks) {
             long total = add_count.incrementAndGet();
-            if (total % 100 == 0) System.out.println("[THT-DEBUG] PendingBlocks.add() total: " + total + " blocks, last target chunk: " + chunk_pos);
+            // [LMax Fix V53 刀R预备] 补键控守卫: add()热路径每100块打一条原零守卫, 跨包引用用全限定, 归入pending_blocks域
+            if (tannyjung.tanshugetrees_core.Core.log_pending_blocks && total % 100 == 0) System.out.println("[THT-DEBUG] PendingBlocks.add() total: " + total + " blocks, last target chunk: " + chunk_pos);
         }
     }
 
