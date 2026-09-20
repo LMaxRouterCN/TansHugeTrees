@@ -57,6 +57,7 @@ public class Caches {
                             String[] split = id.split("\\|");
                             // [LMax Fix V16] 防御性校验：如果 split[1] 不是 .bin 文件，说明是目录名污染了字典，直接返回空
                             if (split.length < 2 || !split[1].endsWith(".bin")) {
+                                shape_locks.remove(id); // [刀Q·丁] V16提前返回路径补锁对象移除, 原漏此步
                                 return;
                             }
                             path = Core.path_config + "/dev/temporary/" + split[0] + "/" + split[1];
@@ -98,7 +99,13 @@ public class Caches {
                     }
                 }
 
-                if (data_size == null) data_size = new short[0];
+                // [刀Q·丁](记忆140伴生): 加载失败(文件缺失/空文件)不入缓存——原代码无条件写空数组
+                // =毒缓存, 文件恢复后也无法自愈(需重启才重新读盘); 与上方V16守卫同构, 下次调用自然重试
+                if (data_size == null) {
+                    Core.logger.warn("[THT] Tree shape data missing (skip cache, will retry): " + id);
+                    shape_locks.remove(id); // [刀Q·丁] 提前返回同样移除锁对象, 防shape_locks泄漏
+                    return;
+                }
                 if (data_block_count == null) data_block_count = new int[0];
                 if (data_shape == null) data_shape = new short[0];
 

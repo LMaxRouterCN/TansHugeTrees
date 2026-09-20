@@ -975,76 +975,117 @@ public class CacheManager {
 
     }
 
+    // [刀Q] 字典注册锁(记忆140修法甲): 串行化"读文件→分配id→写文件→写内存"整个注册序列
+    // 热路径(缓存命中)不经过此锁, 零开销; 注册仅冷启动缓存miss时发生
+    private static final Object dictionary_lock = new Object();
+
     public static String getDictionary (String key, boolean is_number) {
 
         String get = DataText.getNormal("dictionary").get(key);
 
         if (get == null) {
+            // [刀Q] 甲(记忆140): 注册序列原子化。根因: 441区块生成线程并发注册时
+            // "读文件→行数+1→append"三步非原子, 两线程抢同一id→同id双行入档
+            // →读侧id→name按文件首匹配跨变体互换(E4吞树62棵)
+            // 热路径(缓存命中)不进此锁零开销; 注册是冷启动稀有事件
+            synchronized (dictionary_lock) {
 
-            // Write New
-            {
+                // 双重检查: 等锁期间可能已被其他线程注册, 命中则跳过注册
+                get = DataText.getNormal("dictionary").get(key);
 
-                String value_id = "";
-                String value_text = "";
-                String path = Core.path_world_mod + "/dictionary.txt";
-                String[] data = FileManager.readTXT(path);
+                if (get == null) {
 
-                for (String scan : data) {
+                    // Write New
+                    {
 
-                    if (is_number == true) {
+                        String value_id = "";
+                        String value_text = "";
+                        // [刀Q] 甲: 供下方"max+1"分配的统计变量(见for循环内统计块)
+                        long max_id = 0;
+                        String path = Core.path_world_mod + "/dictionary.txt";
+                        String[] data = FileManager.readTXT(path);
 
-                        if (scan.startsWith(key + "|") == true) {
+                        for (String scan : data) {
+                            // [刀Q] 甲: 单遍扫描顺带统计最大id, 供下方"max+1"分配(未命中路径循环无break完整执行)
+                            // 非数字id行(历史脏数据)防御跳过, 不参与统计
+                            {
+                                int separator_dictionary = scan.indexOf("|");
 
-                            value_id = key;
-                            value_text = scan.substring(scan.indexOf("|") + 1);
-                            break;
+                                if (separator_dictionary > 0) {
+
+                                    try {
+                                        max_id = Math.max(max_id, Long.parseLong(scan.substring(0, separator_dictionary).trim()));
+                                    } catch (NumberFormatException exception_dictionary) {
+                                        // id非数字的历史脏数据行, 不参与统计
+                                    }
+
+                                }
+
+                            }
+
+                            if (is_number == true) {
+
+                                if (scan.startsWith(key + "|") == true) {
+
+                                    value_id = key;
+                                    value_text = scan.substring(scan.indexOf("|") + 1);
+                                    break;
+
+                                }
+
+                            } else {
+
+                                if (scan.endsWith("|" + key) == true) {
+
+                                    value_id = scan.substring(0, scan.indexOf("|"));
+                                    value_text = key;
+                                    break;
+
+                                }
+
+                            }
 
                         }
 
-                    } else {
+                        if (value_id.isEmpty() == true && value_text.isEmpty() == true) {
 
-                        if (scan.endsWith("|" + key) == true) {
+                            if (is_number == false) {
 
-                            value_id = scan.substring(0, scan.indexOf("|"));
-                            value_text = key;
-                            break;
+                                value_text = key;
+
+                            }
+
+                            if (value_text.isEmpty() == false) {
+
+                                // [刀Q] 甲: id分配废除"行数+1"改为"最大id+1"——
+                                // 行数+1在字典存在历史dup/空洞(行数≠最大id)时会复用已占id, 造成二次碰撞
+                                value_id = String.valueOf(max_id + 1);
+                                FileManager.writeTXT(path, value_id + "|" + value_text + "\n", true);
+
+                            }
+
+                        }
+
+                        // [刀Q] 空串守卫: is_number=true且short查无此人时value_text为空,
+                        // 原代码会把 ""→"" 垃圾对写入内存字典(每次未知short污染一次)
+                        if (value_text.isEmpty() == false) {
+                            DataText.setNormal("dictionary", value_id, value_text);
+                            DataText.setNormal("dictionary", value_text, value_id);
+                        }
+
+                        if (is_number == true) {
+
+                            get = value_text;
+
+                        } else {
+
+                            get = value_id;
 
                         }
 
                     }
 
                 }
-
-                if (value_id.isEmpty() == true && value_text.isEmpty() == true) {
-
-                    if (is_number == false) {
-
-                        value_text = key;
-
-                    }
-
-                    if (value_text.isEmpty() == false) {
-
-                        value_id = String.valueOf(data.length + 1);
-                        FileManager.writeTXT(path, value_id + "|" + value_text + "\n", true);
-
-                    }
-
-                }
-
-                DataText.setNormal("dictionary", value_id, value_text);
-                DataText.setNormal("dictionary", value_text, value_id);
-
-                if (is_number == true) {
-
-                    get = value_text;
-
-                } else {
-
-                    get = value_id;
-
-                }
-
             }
 
         }

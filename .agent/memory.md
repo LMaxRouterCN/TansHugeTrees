@@ -539,8 +539,8 @@ tag: 刀O, watchdog, episode, 生命周期, ServerStopping, armed, 判例, 诊�
 tag: L1704, E9, testChunkStatus, getChunk, 结构避让, 反编译区, 树线程, 挂账, 判例, 方法论, TansHugeTrees
 <!-- END:136 -->
 <!-- ID:137 -->
-137 刀O验收before基线(2026-09-19 01:27-01:40 session, 世界54→55切换协议, jar 20260919010509=无刀O): ①假episode铁证: ‘Stall episode ended: 171306ms’@01:34:28.194=世界55首tick闭合; 反推起点01:31:36.888=世界54末tick(Stopping日志01:31:36.823后65ms); 构成分解: 菜单静默01:31:36.9→01:34:18.5(世界55 Starting)=161.6s + spawn prep 01:34:18.5→01:34:28.2=9.7s, 合计171.306s分毫不差, 每毫秒有归属=纯假, 全场唯一60s+ ②真episode画像: 29个全≤5s: <100ms×17, 100ms-1s×7, 1-5s×5(最大3256ms), 5s+桶全空 ③MILESTONE全线程dump共48次 ④E分布: E1×5/E2×3088(grove既知)/E4×62(新面孔, 样本在Server thread, 源码定性中)/E9×0 ⑤刀O验收判据(部署cd5273c jar后同协议切世界): 60s+假episode消失/真episode分布不变/Stopping~新世界首tick窗口无WATCHDOG输出
-tag: 刀O, watchdog, episode, 基线, 验收, 判据, 世界55
+刀O终验案(2026-09-20收档): max裁决——免专门验收, 理由=改动面单一(watchdog armed生命周期)不可能出问题; 烟测协议=max启动游戏到主菜单即退出不进世界(验证mod加载层), 世界内判据(60s+假episode消失/真episode分布不变/切世界窗口零WATCHDOG/无聊天假警报)挂日常使用观察。判例: 部署链完整性(MD5双验/mods唯一)+源码验证+静态分析+改动面单薄+用户风险裁决=可跳过运行时验收; 若日常出现假episode回归则回溯此案。刀O源码设计: armed生命周期随世界切换清零, 参见commit cd5273c
+tag: 刀O, 验收, 裁决, watchdog, 假episode, 测试方法论, TansHugeTrees
 <!-- END:137 -->
 <!-- ID:138 -->
 138 E4案+假家族判读轮(2026-09-20凌晨): ①未闭合episode判别读数: Server thread WAITING on CompletableFuture$Signaller, BLOCKED=0, Render thread RUNNABLE flipFrame=锁竞争死锁排除, 倾向暂停/等future挂起族(130s+超V49极值35s, 结尾=暂停态直接关游戏形状: Render Stopping!后3ms日志终结无server序列); Signaller具体归属未定; 双判别实验: max证人(01:38-01:40是否Esc暂停)+Esc挂2分钟复现 ②刀O覆盖确认: armed仅onServerStopping熄火(WB177-182), 暂停场景不覆盖→判暂停门则刀P立项(镜像刀O挂客户端pause事件, CLIENTTICK-REFS=0需新建) ③E4机制: TreePlacer L1453 location=config.get(path_storage)+|+chosen(L1590消费); Caches L101-103 readBIN读空→空数组入缓存=负缓存永锁, 同id 1371成功/62miss全靠覆写自愈; temporary下751 bin全01:34:18(世界55启动)写入且名含polaris=0→供给方待定(下轮: #vanilla/variants目录结构+chosen构造) ④WorldGenStepEnd真身=region bin自愈写入(world_gen/regions, 与shape bin无关) ⑤dump税: 全session 17430/123332=14% log lines
