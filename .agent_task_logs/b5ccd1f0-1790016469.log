@@ -1,0 +1,254 @@
+GUARD-TP 2/2 GUARD-DB 1/1
+GIT  M .agent/remember.md
+GIT ?? .agent_task_logs/
+GRADLE-NONE
+GAME-CLEAR
+QUEUE overflow=28858 dropped-task=28857 forced-dropped=0 normal-dropped=0 scan-completed=35
+SCAN | [209��2026 22:50:08.500] [THT-TreeGen/INFO] [/]: [THT-DEBUG] Region minecraft-overworld,-1,0 scan completed: 1024 chunks scanned in 61066ms
+SCAN | [209��2026 22:50:09.114] [THT-TreeGen/INFO] [/]: [THT-DEBUG] Region minecraft-overworld,0,0 scan completed: 1024 chunks scanned in 62037ms
+SCAN | [209��2026 22:50:09.144] [THT-TreeGen/INFO] [/]: [THT-DEBUG] Region minecraft-overworld,-1,-1 scan completed: 1024 chunks scanned in 61708ms
+SCAN | [209��2026 22:50:09.581] [THT-TreeGen/INFO] [/]: [THT-DEBUG] Region minecraft-overworld,0,-1 scan completed: 1024 chunks scanned in 62154ms
+SCAN | [209��2026 22:52:49.917] [THT-TreeGen/INFO] [/]: [THT-DEBUG] Region minecraft-overworld,-2,-1 scan completed: 1024 chunks scanned in 56029ms
+SCAN | [209��2026 22:52:51.471] [THT-TreeGen/INFO] [/]: [THT-DEBUG] Region minecraft-overworld,-2,0 scan completed: 1024 chunks scanned in 57583ms
+SCAN | [209��2026 22:59:55.619] [THT-TreeGen/INFO] [/]: [THT-DEBUG] Region minecraft-overworld,-1,1 scan completed: 1024 chunks scanned in 81302ms
+SCAN | [209��2026 22:59:57.384] [THT-TreeGen/INFO] [/]: [THT-DEBUG] Region minecraft-overworld,0,1 scan completed: 1024 chunks scanned in 83065ms
+SCAN | [209��2026 23:00:11.665] [THT-TreeGen/INFO] [/]: [THT-DEBUG] Region minecraft-overworld,-2,1 scan completed: 1024 chunks scanned in 78995ms
+SCAN | [209��2026 23:03:25.249] [THT-TreeGen/INFO] [/]: [THT-DEBUG] Region minecraft-overworld,1,-1 scan completed: 1024 chunks scanned in 118274ms
+SCAN | [209��2026 23:03:25.570] [THT-TreeGen/INFO] [/]: [THT-DEBUG] Region minecraft-overworld,1,0 scan completed: 1024 chunks scanned in 118604ms
+SCAN | [209��2026 23:03:28.026] [THT-TreeGen/INFO] [/]: [THT-DEBUG] Region minecraft-overworld,1,1 scan completed: 1024 chunks scanned in 121057ms
+SCAN | [209��2026 23:04:09.506] [THT-TreeGen/INFO] [/]: [THT-DEBUG] Region minecraft-overworld,-1,2 scan completed: 1024 chunks scanned in 123654ms
+SCAN | [209��2026 23:04:10.453] [THT-TreeGen/INFO] [/]: [THT-DEBUG] Region minecraft-overworld,1,2 scan completed: 1024 chunks scanned in 124607ms
+SCAN | [209��2026 23:04:10.538] [THT-TreeGen/INFO] [/]: [THT-DEBUG] Region minecraft-overworld,0,2 scan completed: 1024 chunks scanned in 124694ms
+SCAN | [209��2026 23:07:22.837] [THT-TreeGen/INFO] [/]: [THT-DEBUG] Region minecraft-overworld,2,0 scan completed: 1024 chunks scanned in 184055ms
+SCAN | [209��2026 23:07:23.199] [THT-TreeGen/INFO] [/]: [THT-DEBUG] Region minecraft-overworld,0,3 scan completed: 1024 chunks scanned in 187267ms
+SCAN | [209��2026 23:07:24.358] [THT-TreeGen/INFO] [/]: [THT-DEBUG] Region minecraft-overworld,1,3 scan completed: 1024 chunks scanned in 188390ms
+SCAN | [209��2026 23:07:28.162] [THT-TreeGen/INFO] [/]: [THT-DEBUG] Region minecraft-overworld,2,1 scan completed: 1024 chunks scanned in 191003ms
+SCAN | [209��2026 23:07:28.446] [THT-TreeGen/INFO] [/]: [THT-DEBUG] Region minecraft-overworld,2,2 scan completed: 1024 chunks scanned in 191345ms
+SCAN | [209��2026 23:07:28.573] [THT-TreeGen/INFO] [/]: [THT-DEBUG] Region minecraft-overworld,-1,3 scan completed: 1024 chunks scanned in 189860ms
+SCAN | [209��2026 23:07:29.157] [THT-TreeGen/INFO] [/]: [THT-DEBUG] Region minecraft-overworld,2,3 scan completed: 1024 chunks scanned in 192038ms
+SCAN | [209��2026 23:10:13.384] [THT-TreeGen/INFO] [/]: [THT-DEBUG] Region minecraft-overworld,-3,0 scan completed: 1024 chunks scanned in 98114ms
+SCAN | [209��2026 23:10:16.106] [THT-TreeGen/INFO] [/]: [THT-DEBUG] Region minecraft-overworld,-3,1 scan completed: 1024 chunks scanned in 100739ms
+SCAN | [209��2026 23:10:16.172] [THT-TreeGen/INFO] [/]: [THT-DEBUG] Region minecraft-overworld,-3,-1 scan completed: 1024 chunks scanned in 100913ms
+SCAN | [209��2026 23:24:16.500] [THT-TreeGen/INFO] [/]: [THT-DEBUG] Region minecraft-overworld,-1,-2 scan completed: 1024 chunks scanned in 96190ms
+SCAN | [209��2026 23:24:21.979] [THT-TreeGen/INFO] [/]: [THT-DEBUG] Region minecraft-overworld,-2,-2 scan completed: 1024 chunks scanned in 101666ms
+SCAN | [209��2026 23:24:24.290] [THT-TreeGen/INFO] [/]: [THT-DEBUG] Region minecraft-overworld,-3,-2 scan completed: 1024 chunks scanned in 101142ms
+SCAN | [209��2026 23:24:24.821] [THT-TreeGen/INFO] [/]: [THT-DEBUG] Region minecraft-overworld,0,-2 scan completed: 1024 chunks scanned in 98297ms
+SCAN | [209��2026 23:27:52.050] [THT-TreeGen/INFO] [/]: [THT-DEBUG] Region minecraft-overworld,1,-2 scan completed: 1024 chunks scanned in 87617ms
+SCAN | [209��2026 23:28:23.190] [THT-TreeGen/INFO] [/]: [THT-DEBUG] Region minecraft-overworld,-1,-3 scan completed: 1024 chunks scanned in 95063ms
+SCAN | [209��2026 23:28:24.801] [THT-TreeGen/INFO] [/]: [THT-DEBUG] Region minecraft-overworld,0,-3 scan completed: 1024 chunks scanned in 96651ms
+SCAN | [209��2026 23:28:25.570] [THT-TreeGen/INFO] [/]: [THT-DEBUG] Region minecraft-overworld,1,-3 scan completed: 1024 chunks scanned in 97462ms
+SCAN | [209��2026 23:29:47.520] [THT-TreeGen/INFO] [/]: [THT-DEBUG] Region minecraft-overworld,2,-2 scan completed: 1024 chunks scanned in 67643ms
+SCAN | [209��2026 23:29:47.741] [THT-TreeGen/INFO] [/]: [THT-DEBUG] Region minecraft-overworld,2,-1 scan completed: 1024 chunks scanned in 68164ms
+=== E:\MC\.minecraft\versions\TEST 1.20.1-Forge_47.4.10\config\config_world_gen.txt
+CFG | - rarity : Change how common of that tree. Lower means rarer. Only supported number between 0 and 100 (can be non-integer number).
+CFG | - min_distance : Change distance of trees in the same species. This is distance in block with Y position ignored. Can be any number, but higher number may slow down region pre-location time.
+CFG | - group_size : Spawn addition trees of the same species of it around the area. To use this, set min and max count of trees per group that upper than 1. For example, min 1 and max 5, will be [ 1 <> 5 ]. Be careful to use this, as it can affect scan time. This config also change the way other config options work. Rarity will be how common of the group. Min distance is between trees, not between groups. Waterside config will only detect once at spawn location of that group.
+CFG | rarity = 10
+CFG | min_distance = 5
+CFG | group_size = 5 <> 10
+CFG | rarity = 0.5
+CFG | min_distance = 5
+CFG | group_size = 5 <> 10
+CFG | rarity = 25
+CFG | min_distance = 5
+CFG | group_size = 50 <> 100
+CFG | rarity = 100
+CFG | min_distance = 5
+CFG | group_size = 10 <> 20
+CFG | rarity = 1
+CFG | min_distance = 40
+CFG | group_size = 1 <> 3
+CFG | rarity = 1
+CFG | min_distance = 40
+CFG | group_size = 10 <> 20
+CFG | rarity = 1
+CFG | min_distance = 20
+CFG | group_size = 3 <> 5
+CFG | rarity = 10
+CFG | min_distance = 5
+CFG | group_size = 10 <> 20
+CFG | rarity = 0.25
+CFG | min_distance = 10
+CFG | group_size = 50 <> 100
+CFG | rarity = 0.25
+CFG | min_distance = 10
+CFG | group_size = 50 <> 100
+CFG | rarity = 0.5
+CFG | min_distance = 50
+CFG | group_size = 1 <> 1
+CFG | rarity = 1
+CFG | min_distance = 40
+CFG | group_size = 1 <> 3
+CFG | rarity = 1
+CFG | min_distance = 40
+CFG | group_size = 10 <> 20
+CFG | rarity = 5
+CFG | min_distance = 1
+CFG | group_size = 1 <> 10
+CFG | rarity = 2
+CFG | min_distance = 3
+CFG | group_size = 1 <> 20
+CFG | rarity = 1
+CFG | min_distance = 10
+CFG | group_size = 1 <> 5
+CFG | rarity = 100
+CFG | min_distance = 5
+CFG | group_size = 10 <> 20
+CFG | rarity = 10
+CFG | min_distance = 5
+CFG | group_size = 5 <> 10
+CFG | rarity = 0.5
+CFG | min_distance = 5
+CFG | group_size = 5 <> 10
+CFG | rarity = 25
+CFG | min_distance = 5
+CFG | group_size = 50 <> 100
+CFG | rarity = 100
+CFG | min_distance = 5
+CFG | group_size = 10 <> 20
+CFG | rarity = 0.5
+CFG | min_distance = 25
+CFG | group_size = 1 <> 1
+CFG | rarity = 50
+CFG | min_distance = 20
+CFG | group_size = 1 <> 1
+CFG | rarity = 100
+CFG | min_distance = 20
+CFG | group_size = 1 <> 1
+CFG | rarity = 35
+CFG | min_distance = 25
+CFG | group_size = 1 <> 1
+CFG | rarity = 5
+CFG | min_distance = 50
+CFG | group_size = 1 <> 1
+CFG | rarity = 100
+CFG | min_distance = 10
+CFG | group_size = 1 <> 1
+CFG | rarity = 50
+CFG | min_distance = 40
+CFG | group_size = 1 <> 1
+CFG | rarity = 25
+CFG | min_distance = 40
+CFG | group_size = 1 <> 1
+CFG | rarity = 10
+CFG | min_distance = 50
+CFG | group_size = 1 <> 1
+CFG | rarity = 25
+CFG | min_distance = 50
+CFG | group_size = 1 <> 1
+CFG | rarity = 10
+CFG | min_distance = 40
+CFG | group_size = 1 <> 1
+CFG | rarity = 5
+CFG | min_distance = 50
+CFG | group_size = 1 <> 10
+CFG | rarity = 100
+CFG | min_distance = 20
+CFG | group_size = 1 <> 1
+CFG | rarity = 0.01
+CFG | min_distance = 200
+CFG | group_size = 1 <> 1
+CFG | rarity = 50
+CFG | min_distance = 40
+CFG | group_size = 1 <> 1
+CFG | rarity = 0.001
+CFG | min_distance = 500
+CFG | group_size = 1 <> 1
+CFG | rarity = 50
+CFG | min_distance = 25
+CFG | group_size = 1 <> 1
+CFG | rarity = 5
+CFG | min_distance = 500
+CFG | group_size = 1 <> 1
+CFG | rarity = 100
+CFG | min_distance = 20
+CFG | group_size = 1 <> 1
+CFG | rarity = 10
+CFG | min_distance = 0
+CFG | group_size = 1 <> 1
+CFG | rarity = 5
+CFG | min_distance = 0
+CFG | group_size = 1 <> 1
+CFG | rarity = 10
+CFG | min_distance = 0
+CFG | group_size = 1 <> 1
+CFG | rarity = 10
+CFG | min_distance = 0
+CFG | group_size = 1 <> 1
+CFG | rarity = 25
+CFG | min_distance = 0
+CFG | group_size = 1 <> 1
+CFG | rarity = 25
+CFG | min_distance = 0
+CFG | group_size = 1 <> 1
+CFG | rarity = 10
+CFG | min_distance = 5
+CFG | group_size = 10 <> 20
+CFG | rarity = 25
+CFG | min_distance = 50
+CFG | group_size = 1 <> 1
+CFG | rarity = 100
+CFG | min_distance = 20
+CFG | group_size = 1 <> 1
+CFG | rarity = 1
+CFG | min_distance = 100
+CFG | group_size = 1 <> 1
+CFG | rarity = 10
+CFG | min_distance = 20
+CFG | group_size = 1 <> 10
+CFG | rarity = 0.01
+CFG | min_distance = 200
+CFG | group_size = 1 <> 1
+CFG | rarity = 100
+CFG | min_distance = 10
+CFG | group_size = 3 <> 5
+CFG | rarity = 100
+CFG | min_distance = 15
+CFG | group_size = 1 <> 1
+CFG | rarity = 25
+CFG | min_distance = 30
+CFG | group_size = 1 <> 1
+CFG | rarity = 25
+CFG | min_distance = 30
+CFG | group_size = 1 <> 1
+CFG | rarity = 1
+CFG | min_distance = 500
+CFG | group_size = 1 <> 1
+CFG | rarity = 100
+CFG | min_distance = 0
+CFG | group_size = 1 <> 1
+CFG | rarity = 0.5
+CFG | min_distance = 30
+CFG | group_size = 50 <> 100
+CFG | rarity = 15
+CFG | min_distance = 30
+CFG | group_size = 1 <> 1
+CFG | rarity = 10
+CFG | min_distance = 0
+CFG | group_size = 1 <> 1
+CFG | rarity = 5
+CFG | min_distance = 50
+CFG | group_size = 1 <> 1
+CFG | rarity = 100
+CFG | min_distance = 30
+CFG | group_size = 1 <> 1
+CFG | rarity = 1
+CFG | min_distance = 200
+CFG | group_size = 1 <> 1
+CFG | rarity = 100
+CFG | min_distance = 30
+CFG | group_size = 1 <> 1
+CFG | rarity = 0.5
+CFG | min_distance = 30
+CFG | group_size = 50 <> 100
+CFG | rarity = 15
+CFG | min_distance = 30
+CFG | group_size = 1 <> 1
+THTCFG custom_packs
+THTCFG dev
+THTCFG config_world_gen.txt
+THTCFG config.txt
+THTCFG config.txt.crashfix.bak
+THTCFG config.txt.poison.bak
+THTCFG config.txt.v43polluted.bak
+THTCFG lmax-debuglog.json

@@ -1,0 +1,10 @@
+EDITS-ALREADY-PRESENT
+BUILD-START(offline, 硬超时600s)
+BLD | > Task :build
+BLD | 
+BLD | BUILD SUCCESSFUL in 15s
+BLD | 6 actionable tasks: 2 executed, 4 up-to-date
+BLD | Consider enabling configuration cache to speed up this build: https://docs.gradle.org/9.2.0/userguide/configuration_cache_enabling.html
+BLD | 
+BUILD-OK
+DEPLOYED tanshugetrees-1.8.0-20260922024807.jar
