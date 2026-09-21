@@ -50,3 +50,9 @@
 - 刀Q落地: 五处手术, jar 20260920214025(62975KB), MD5双验, commit c636a70+b81bef3
 - harness死信事故: exec被kill于未知阶段, 取证判明全链完整跑完(手术→build→部署→commit), 判据=commit指纹+jar mtime+手术痕迹计数
 - 待max: 烟测+进世界验证
+## 当前待办 (2026-09-22 晨)
+- [刀R] DeferredQueue溢出驱逐废除: 默认无界(max裁决), 实施清单见 刀R手术单_20260922.md 第六节;
+  关键陷阱=add溢出循环须先判max>0(否则max=0死循环清队列); 实例config.txt值4096→0必须显式改;
+  真干=max醒后: 改码+改config+build+部署+复测验收
+- [待裁决] C档 P0复兴(逐chunk事件驱动预扫描, 删region认领/wake风暴) — 无界落地后降级为可选优化
+- [背景] 调试仪表全开保持(max指令); 刀Q烟测全绿; 种子案结案(region骨架伪影, 与种子无关)
