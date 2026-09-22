@@ -323,7 +323,13 @@ public class EventCenter {
             (1.21.1)
             ### Nothing ###
             */
-            if (event.phase == TickEvent.Phase.START) return;
+            if (event.phase == TickEvent.Phase.START) {
+                // [LMax Fix V54 刀S] [长期记忆: 149] tick 前段计时: START 相位记时戳, END 相位 processTick 求值前取差
+                // = 本 tick 实时负载(滴灌自身在 END 之后才跑, t 天然不含 d) — 消除跨拍滞后的主部
+                // 1.21.1 移植注: 无 Phase 枚举, 本调用迁至 eventTickServer 方法头(时戳语义等价)
+                tannyjung.tanshugetrees_handcode.systems.world_gen.TreePlacer.DeferredQueue.onTickStart();
+                return;
+            }
 
             Core.currentServer = event.getServer();
             tannyjung.tanshugetrees_handcode.systems.world_gen.TreePlacer.DeferredQueue.processTick(event.getServer());

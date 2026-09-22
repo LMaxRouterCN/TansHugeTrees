@@ -63,6 +63,10 @@ public class TreePlacer {
         }
 
         private static final java.util.concurrent.ConcurrentLinkedQueue<DeferredTask> queue = new java.util.concurrent.ConcurrentLinkedQueue<>();
+        // [LMax Fix V54 刀S] [长期记忆: 149] O(1) 队列深度计数器(q 变量+仪表): ConcurrentLinkedQueue.size() 是 O(n) 遍历,
+        // AtomicInteger 全出口维护: 树线程 add/addForced increment, 主线程 poll decrement, evict 条件 decrement,
+        // retryList 回流 addAndGet. 漂移防护: 出口闭环 + 仪表侧 counter vs size() 双报(见 processTick, 键开才付 O(n)).
+        private static final java.util.concurrent.atomic.AtomicInteger depth = new java.util.concurrent.atomic.AtomicInteger();
 
         public static void add(String dimension, net.minecraft.resources.ResourceKey<net.minecraft.world.level.Level> dim_key, ChunkPos chunk_pos) { // [LMax Fix V40] 新增dim_key [长期记忆: 010]
             // [LMax Fix V7] 容量上限检查，防止无界队列导致 OOM
@@ -74,6 +78,7 @@ public class TreePlacer {
                 evictOldest();
             }
             queue.add(new DeferredTask(dimension, dim_key, chunk_pos)); // [LMax Fix V40]
+            depth.incrementAndGet(); // [LMax Fix V54 刀S] O(1) 深度计数
         }
 
         // [方向A重构] 新增：PendingBlocks 补写任务
@@ -84,6 +89,7 @@ public class TreePlacer {
                 evictOldest();
             }
             queue.add(new DeferredTask(dimension, dim_key, chunk_pos, target_chunk, true)); // [LMax Fix V40]
+            depth.incrementAndGet(); // [LMax Fix V54 刀S] O(1) 深度计数
         }
 
         // [LMax Fix V53 刀R] [长期记忆: 142] 语义变更: max_size=0(新默认)=无界, 本方法不再被触发(调用方短路守卫);
@@ -101,9 +107,14 @@ public class TreePlacer {
                 break;
             }
             if (oldest != null) {
-                queue.remove(oldest);
+                if (queue.remove(oldest)) {
+                    depth.decrementAndGet(); // [LMax Fix V54 刀S] remove 失败=任务已被并发消费, 计数归消费方
+                }
             } else {
                 oldest = queue.poll(); // 兜底：队列全 forced，只能丢绝对队头
+                if (oldest != null) {
+                    depth.decrementAndGet(); // [LMax Fix V54 刀S] O(1) 深度计数
+                }
             }
             if (oldest != null) {
                 // [LMax Fix V42] 溢出告警改走 log_queue_overflow 键控（旧 stderr 不受任何开关控制）
@@ -120,11 +131,16 @@ public class TreePlacer {
             // V43c 铁律: 主线程防卡须用时间片(恒定开销)而非任务数预算(量不可控: 单任务=整树生成+整chunk落块,
             // 重量无上界, 计数闸形同虚设). budget<=0=暂停消费(任务滞留队列). 计数上限保留为第二道保险.
             // 已知敞口: 预算检查在任务粒度, 单任务超支=该树自身生成成本(任务原子不切分; 切分=V44游标架构已废).
-            long budgetDeadline = System.nanoTime() + getBudgetMs() * 1_000_000L;
+            // [LMax Fix V54 刀S] [长期记忆: 149] 预算求值: static 直读 / expr 每 tick 边界一次求值(tick 内恒定),
+            // 求值非有限(NaN/Inf)或表达式未武装 → 回退 static 值. 语义兼容: 预算<=0 = 暂停消费(钳制权在表达式作者).
+            long drainStartNano = System.nanoTime(); // d 测量: 本 tick 滴灌实耗(供下一 tick 表达式变量)
+            long budgetMs = resolveBudgetMs();
+            long budgetDeadline = System.nanoTime() + budgetMs * 1_000_000L;
             while (System.nanoTime() < budgetDeadline
                     && processed < Handcode.Config.deferred_queue_process_per_tick
                     && (task = queue.poll()) != null) {
                 processed++;
+                depth.decrementAndGet(); // [LMax Fix V54 刀S] poll 成功计数(主线程消费点)
                 try {
                     // [LMax Fix V40] 修复维度串黑洞：任务现携带 ResourceKey<Level>（入队方取 level.dimension()），
                     // 不再从横杠化文件路径串（如 "minecraft-overworld"）反解析——parse 对无冒号串补默认命名空间，
@@ -240,10 +256,104 @@ public class TreePlacer {
                 }
             }
             queue.addAll(retryList);
+            if (!retryList.isEmpty()) {
+                depth.addAndGet(retryList.size()); // [LMax Fix V54 刀S] 回流批量计数(这些任务离开过 poll 路径)
+            }
+
+            // [LMax Fix V54 刀S] d 记录 + 队列深度仪表: lastDrainMs 供下一 tick 表达式; 仪表=预算耗尽且队列仍有
+            // 剩余时键控打点, counter 与 size() 双报兼漂移探测(仅键开时付一次 O(n) 遍历, 生产静默零成本).
+            // 漂移只报告不自愈: depth.set(slow) 会与树线程 increment 并发丢计数, 报告留人工复核.
+            lastDrainMs = (System.nanoTime() - drainStartNano) / 1_000_000L;
+            if (Core.log_queue_depth && !queue.isEmpty()) {
+                int fast = depth.get();
+                int slow = queue.size();
+                if (fast != slow) {
+                    System.err.println("[THT] DQ depth gauge drift: counter=" + fast + " actual=" + slow);
+                }
+                System.out.println("[THT-DEBUG] DQ depth=" + slow + " (budget " + budgetMs + "ms exhausted, t=" +
+                        ((System.nanoTime() - tickStartNano) / 1_000_000L) + "ms d=" + lastDrainMs + "ms mode=" +
+                        Handcode.Config.deferred_queue_budget_mode + ")");
+            }
         }
 
-        // [LMax Fix V46] 自适应预算钩子: 当前直读配置(默认40); 未来可接 MSPT 反馈(AIMD)而无需改消费循环
-        private static int getBudgetMs () {
+        // [LMax Fix V54 刀S] [长期记忆: 149] 预算求值器 — V46 自适应钩子的兑现式(原 getBudgetMs 直读单值整体替换,
+        // V46 注释吸收于此; 消费循环结构零改动). 设计: 策略(表达式)推至用户数据层, 机制(求值/回退/换装)留代码层.
+        // 变量表: t=本 tick 前段耗时ms(EventCenter START 时戳→END 求值时刻, 滴灌自身未跑不含 d, 消除跨拍滞后主部)
+        //         d=上一 tick 滴灌实耗ms(辅助变量, 供用户写阻尼/观测式)
+        //         q=队列深度(O(1) 计数器)
+        // 求值时机: 每 tick 一次(边界), tick 内恒定; 编译仅在表达式源变更时发生(一次性 O(len)).
+        // 线程模型: compile 于 config 加载/热重载线程(synchronized 互斥), eval 于主线程; Program 不可变,
+        //           volatile 换装原子无锁; evalVars 主线程独占复用(eval 零分配).
+        // 回退链: 编译失败 → 保留旧 Program(warn-once); 求值非有限 → 该 tick 用 budget_ms(warn-once); 双保险不炸主循环.
+        private static final String[] BUDGET_VARS = {"t", "d", "q"};
+        private static volatile tannyjung.tanshugetrees_core.ExprEngine.Program budgetProgram = null;
+        private static volatile String budgetExprSource = null; // 当前已编译表达式原文(变更检测)
+        private static final Object compileLock = new Object();
+        private static long tickStartNano;   // EventCenter START 相位写入(主线程独占)
+        private static long lastDrainMs = 0; // d: processTick 末尾写入(主线程独占)
+        private static final double[] evalVars = new double[3];
+        private static final java.util.concurrent.atomic.AtomicBoolean warnCompile =
+                new java.util.concurrent.atomic.AtomicBoolean(false);
+        private static final java.util.concurrent.atomic.AtomicBoolean warnEval =
+                new java.util.concurrent.atomic.AtomicBoolean(false);
+
+        // EventCenter eventTickServer START 相位调用(主线程): 记 tick 边界时戳(t 的分子)
+        public static void onTickStart () {
+            tickStartNano = System.nanoTime();
+        }
+
+        // 热重载聚合入口(WatchConfigReload 线程调用): 三键直写 + 表达式重编译; 编译失败保留旧 Program
+        public static void reloadBudget (String mode, int budgetMs, String expr) {
+            Handcode.Config.deferred_queue_budget_mode = mode;
+            Handcode.Config.deferred_queue_budget_ms = budgetMs;
+            Handcode.Config.deferred_queue_budget_expr = expr;
+            compileProgram(Handcode.Config.deferred_queue_budget_expr);
+        }
+
+        // 编译(幂等, 双检锁): 源码未变跳过; 失败 warn-once + 保留旧 Program
+        private static void compileProgram (String expr) {
+            if (expr == null || expr.equals(budgetExprSource)) return;
+            synchronized (compileLock) {
+                if (expr.equals(budgetExprSource)) return;
+                try {
+                    tannyjung.tanshugetrees_core.ExprEngine.Program program =
+                            tannyjung.tanshugetrees_core.ExprEngine.compile(expr, BUDGET_VARS);
+                    budgetProgram = program;      // volatile 原子换装(旧 Program 引用自然淘汰)
+                    budgetExprSource = expr;
+                    warnCompile.set(false);        // 新源码重新武装编译告警
+                    System.out.println("[LMax] budget expr armed: '" + expr + "'");
+                } catch (tannyjung.tanshugetrees_core.ExprEngine.SyntaxException e) {
+                    if (warnCompile.compareAndSet(false, true)) {
+                        System.err.println("[LMax] budget expr compile failed, keeping previous program: " + e.getMessage());
+                    }
+                }
+            }
+        }
+
+        // 每 tick 求值(processTick 开头, 主线程): static 模式直读(零行为变化); expr 模式求值+回退链
+        private static long resolveBudgetMs () {
+            if (!"expr".equals(Handcode.Config.deferred_queue_budget_mode)) {
+                return Handcode.Config.deferred_queue_budget_ms; // V46 原语义: static 值 / <=0 = 暂停消费
+            }
+            if (budgetProgram == null || !Handcode.Config.deferred_queue_budget_expr.equals(budgetExprSource)) {
+                compileProgram(Handcode.Config.deferred_queue_budget_expr); // 启动 lazy 编译 / 热更新
+            }
+            tannyjung.tanshugetrees_core.ExprEngine.Program program = budgetProgram;
+            if (program == null) {
+                return Handcode.Config.deferred_queue_budget_ms; // 表达式从未编译成功 → static 回退
+            }
+            double t = (System.nanoTime() - tickStartNano) / 1_000_000.0;
+            evalVars[0] = t;
+            evalVars[1] = (double) lastDrainMs;
+            evalVars[2] = (double) depth.get();
+            double v = program.eval(evalVars);
+            if (Double.isFinite(v)) {
+                return (long) v; // 负值/0 = 暂停消费(语义与 static 一致); 上限不钳制=策略权在表达式作者
+            }
+            if (warnEval.compareAndSet(false, true)) {
+                System.err.println("[LMax] budget expr non-finite (NaN/Inf), falling back to " +
+                        Handcode.Config.deferred_queue_budget_ms + "ms: '" + Handcode.Config.deferred_queue_budget_expr + "'");
+            }
             return Handcode.Config.deferred_queue_budget_ms;
         }
     }

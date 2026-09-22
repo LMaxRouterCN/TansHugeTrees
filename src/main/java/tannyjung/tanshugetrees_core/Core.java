@@ -93,6 +93,8 @@ public class Core {
         public static boolean log_event_center = false;    // 生物群系 feature 检查
         public static boolean log_world_gen_step = false;  // WorldGenStepBeforePlants
         public static boolean log_queue_overflow = false;  // DeferredQueue 溢出驱逐
+    // [LMax Fix V54 刀S] [长期记忆: 149] 队列深度仪表: 预算耗尽处打点(深度/t/d/mode, counter vs size() 双报兼漂移探测)
+    public static boolean log_queue_depth = false;  // DeferredQueue 深度仪表(预算耗尽打点)
 
     public static void start (IEventBus bus) {
 
@@ -116,6 +118,10 @@ public class Core {
         // [LMax] 读取调试日志开关
         loadDebugLogConfig();
 
+        // [LMax Fix V54 刀S] [长期记忆: 149] 预算三键热重载: WatchService 事件驱动监听 config.txt(零轮询),
+        // 只热应用 budget_mode/budget_ms/budget_expr 三键, 其余键改动需重启(边界清晰). 详见 WatchConfigReload.
+        WatchConfigReload.start();
+
     }
 
     // [LMax] 从 config/tanshugetrees/lmax-debuglog.json 读取调试日志开关
@@ -128,7 +134,7 @@ public class Core {
             if (file.exists() == false) {
                 // 首次运行：创建 config 目录与默认模板（全 false，生产环境静默）
                 file.getParentFile().mkdirs();
-                java.nio.file.Files.writeString(file.toPath(), "{\n  \"debug_log_print\": false,\n  \"log_deferred_queue\": false,\n  \"log_placer_start\": false,\n  \"log_place_calculate\": false,\n  \"log_pending_blocks\": false,\n  \"log_tree_location\": false,\n  \"log_event_center\": false,\n  \"log_world_gen_step\": false,\n  \"log_queue_overflow\": false,\n  \"watchdog_enabled\": false\n}\n");
+                java.nio.file.Files.writeString(file.toPath(), "{\n  \"debug_log_print\": false,\n  \"log_deferred_queue\": false,\n  \"log_placer_start\": false,\n  \"log_place_calculate\": false,\n  \"log_pending_blocks\": false,\n  \"log_tree_location\": false,\n  \"log_event_center\": false,\n  \"log_world_gen_step\": false,\n  \"log_queue_overflow\": false,\n  \"log_queue_depth\": false,\n  \"watchdog_enabled\": false\n}\n");
                 System.out.println("[LMax] lmax-debuglog.json not found, created default template (all false)");
                 return;
             }
@@ -145,6 +151,8 @@ public class Core {
             log_event_center    = debug_log || get.apply("log_event_center");
             log_world_gen_step  = debug_log || get.apply("log_world_gen_step");
             log_queue_overflow  = debug_log || get.apply("log_queue_overflow");
+            // [LMax Fix V54 刀S] [长期记忆: 149] 队列深度仪表键(缺键安全 false, 不回写用户文件)
+            log_queue_depth = debug_log || get.apply("log_queue_depth");
         watchdog_enabled = get.apply("watchdog_enabled"); // [LMax Fix V50.3 刀M] 看门狗开关解析（缺键安全 false，不回写用户文件）
 
         // [LMax Fix V50.3 刀M] [长期记忆: 113/114] 启动点随迁至此（json 读取后）——治旧时序坑：
@@ -153,7 +161,7 @@ public class Core {
         if (watchdog_enabled) {
             tannyjung.tanshugetrees_handcode.debug.Watchdog.start();
         }
-            System.out.println("[LMax] Debug log config loaded: master=" + debug_log + ", modules(on)=" + (log_deferred_queue?"deferred_queue,":"") + (log_placer_start?"placer_start,":"") + (log_place_calculate?"place_calculate,":"") + (log_pending_blocks?"pending_blocks,":"") + (log_tree_location?"tree_location,":"") + (log_event_center?"event_center,":"") + (log_world_gen_step?"world_gen_step,":"") + (log_queue_overflow?"queue_overflow":""));
+            System.out.println("[LMax] Debug log config loaded: master=" + debug_log + ", modules(on)=" + (log_deferred_queue?"deferred_queue,":"") + (log_placer_start?"placer_start,":"") + (log_place_calculate?"place_calculate,":"") + (log_pending_blocks?"pending_blocks,":"") + (log_tree_location?"tree_location,":"") + (log_event_center?"event_center,":"") + (log_world_gen_step?"world_gen_step,":"") + (log_queue_overflow?"queue_overflow,":"") + (log_queue_depth?"queue_depth":""));
         } catch (Exception e) {
             // 解析失败：全 false 兜底（含 debug_log 本身），不让坏配置炸启动
             debug_log = false;
