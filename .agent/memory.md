@@ -558,3 +558,7 @@ tag: E4, 字典, id分配, 竞态, 字典错位, 根因, 静默面, 自愈, 判�
 141 刀Q落地判例(2026-09-20 21:40): E4根治手术(记忆140修法甲+丁)全链落地。甲=CacheManager.getDictionary注册原子化: dictionary_lock字段+miss路径synchronized包裹+双重检查(等锁期间已被注册则跳过)+id分配"行数+1"改"max+1"(for内单遍统计, Long.parseLong+NumberFormatException防御历史脏数据行)+setNormal空串守卫(修#5: is_number=true查无short时""→""垃圾对入内存字典)。丁=Caches.getTreeShape读空不入缓存(原null补空数组无条件入档=毒缓存, 文件恢复也无法自愈)+warn日志"[THT] Tree shape data missing (skip cache, will retry)"(静默面变信号)+V16提前return补shape_locks.remove(原漏此步锁泄漏)。热路径(缓存命中)零改动零开销。部署: jar 20260920214025(62975KB) MD5双验mods唯一。残留挂账: CAV66 catch-return无shape_locks.remove(不可达防御路径, split/拼接不抛, 不值得为此动build)。验证协议(下次进世界): 新世界dictionary.txt无dup无gap+DD-REJECT-E4=0+tree shape missing warn仅首访文件级。commit c636a70
 tag: 刀Q, 部署, 验证协议, 字典, 竞态, 毒缓存, TansHugeTrees
 <!-- END:141 -->
+<!-- ID:142 -->
+刀R裁决定档(2026-09-22晨 max拍板): DeferredQueue溢出驱逐废除——默认无界队列, 有界保留为玩家选项(config键deferred_queue_max_size, 语义0=无界>0=上限); 价值序: 丢树 >> 吃内存; 队列增长=应有行为=玩家跑图过快的自然背压信号(告知减速), 非泄漏; 未来加聊天区警告(队列深度几何级数阈值+每档限频, GameUtils.Misc.sendChatMessage); 实施关键陷阱: TreePlacer.add/addForced溢出循环while(queue.size()>=max)在max=0时恒真→无限循环evictOldest→队列清空+线程挂死, 必须外层先判max>0, 两处调用点都改; 实例config.txt键已存在值4096, 代码缺省不生效必须显式改0; A档(65536)/B档(摘牌后移)均被无界取代作废(无驱逐=无孤儿), C档P0复兴降级可选架构优化待另裁; 残留理论路径: NORMAL retry_limit=400耗尽丢弃(本场0次)不动; 内存账: 本场28,857任务≈3-6MB
+tag: 刀R, DeferredQueue, 架构决策, max裁决, 队列溢出, 背压
+<!-- END:142 -->

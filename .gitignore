@@ -10,4 +10,5 @@
 
 .vscode/
 .agent_temp_files/
-.agent_trash/.agent_task_logs/
+.agent_trash/
+.agent_task_logs/

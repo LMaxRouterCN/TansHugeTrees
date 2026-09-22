@@ -193,7 +193,7 @@ public class Handcode {
         // [LMax Fix V7] 内存泄漏防护 — 缓存容量上限配置
         // [执行代号33] 根据审计报告调整默认值
         public static int memory_cache_max_entries = 4096; // DetailedDetection.memoryCache 最大条目数
-        public static int deferred_queue_max_size = 4096; // DeferredQueue 最大任务数 (原1000)
+        public static int deferred_queue_max_size = 0; // DeferredQueue 最大任务数 (原1000)
         public static int deferred_queue_retry_limit = 400; // DeferredQueue 最大重试次数 (原200)
         public static int deferred_queue_process_per_tick = 32; // DeferredQueue 每 tick 处理任务数 (原4)
 
@@ -408,7 +408,7 @@ public class Handcode {
                     memory_cache_max_entries = 4096
                     | Maximum number of entries in DetailedDetection memory cache. Older entries will be evicted when limit is reached.
 
-                    deferred_queue_max_size = 4096
+                    deferred_queue_max_size = 0
                     | Maximum number of pending tasks in deferred tree placement queue. Oldest tasks will be discarded when limit is reached.
 
                     deferred_queue_retry_limit = 400

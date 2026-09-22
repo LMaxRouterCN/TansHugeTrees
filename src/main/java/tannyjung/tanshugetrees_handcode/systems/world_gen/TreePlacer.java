@@ -68,7 +68,9 @@ public class TreePlacer {
             // [LMax Fix V7] 容量上限检查，防止无界队列导致 OOM
             // [LMax Fix V42] 溢出驱逐升级见 evictOldest：旧实现无条件 poll 队头，把跨 chunk 树的 forced
             // 方块载荷与空数据 churn 任务一起混杀（世界22 随机空白区域根因之一，实测 184393 次溢出驱逐）
-            while (queue.size() >= Handcode.Config.deferred_queue_max_size) {
+            // [LMax Fix V53 刀R] [长期记忆: 142] 有界守卫: max_size=0(新默认)=无界(短路恒false, 驱逐不触发); >0=有界玩家选项才驱逐。
+            // 陷阱防: 旧式 while(queue.size()>=max) 在 max=0 时恒真 -> add线程无限evictOldest -> 队列被清空+线程挂死。
+            while (Handcode.Config.deferred_queue_max_size > 0 && queue.size() >= Handcode.Config.deferred_queue_max_size) {
                 evictOldest();
             }
             queue.add(new DeferredTask(dimension, dim_key, chunk_pos)); // [LMax Fix V40]
@@ -76,12 +78,16 @@ public class TreePlacer {
 
         // [方向A重构] 新增：PendingBlocks 补写任务
         public static void addForced(String dimension, net.minecraft.resources.ResourceKey<net.minecraft.world.level.Level> dim_key, ChunkPos chunk_pos, ChunkPos target_chunk) { // [LMax Fix V40] 新增dim_key [长期记忆: 010]
-            while (queue.size() >= Handcode.Config.deferred_queue_max_size) {
+            // [LMax Fix V53 刀R] [长期记忆: 142] 有界守卫: max_size=0(新默认)=无界(短路恒false, 驱逐不触发); >0=有界玩家选项才驱逐。
+            // 陷阱防: 旧式 while(queue.size()>=max) 在 max=0 时恒真 -> add线程无限evictOldest -> 队列被清空+线程挂死。
+            while (Handcode.Config.deferred_queue_max_size > 0 && queue.size() >= Handcode.Config.deferred_queue_max_size) {
                 evictOldest();
             }
             queue.add(new DeferredTask(dimension, dim_key, chunk_pos, target_chunk, true)); // [LMax Fix V40]
         }
 
+        // [LMax Fix V53 刀R] [长期记忆: 142] 语义变更: max_size=0(新默认)=无界, 本方法不再被触发(调用方短路守卫);
+        // >0=有界玩家选项。设计立场: 丢树 >> 吃内存; 队列深度增长=跑图过快的自然背压信号(非泄漏), 提示玩家减速。
         // [LMax Fix V42] 溢出驱逐：优先丢最老的非 forced 任务，队列全是 forced 时才丢绝对队头。
         // forced 任务是跨 chunk 树的方块载荷，丢一个 = 一块区域永远缺树；非 forced 只是重跑 start 的重试，
         // 丢了会被 TreeLocation 的 region 完成事件唤醒机制补回。
