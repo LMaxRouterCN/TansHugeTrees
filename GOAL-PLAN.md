@@ -1,5 +1,5 @@
 # GOAL-PLAN — TansHugeTrees 大修战役 (LMax Fix V52)
-> 更新: 2026-09-20 22:10 | 阶段: 刀Q已部署待运行时验证 / 桌面清空
+> 更新: 2026-09-23 05:30 | 阶段: 刀R+刀S已落地(待运行时验收) / P0-R2手术单待批 / 刀S jar已build未部署
 > 判例库: .agent/memory.md (001-141) 本文件=作战地图; 上代快照: .agent/GOAL-PLAN_v50_snapshot.md + v51_snapshot.md
 
 ## 0. 项目身份
@@ -9,10 +9,10 @@
 - 部署红线: 游戏进程(命令行含minecraft|forge)运行中禁部署; gradle daemon放行
 - harness已知bug(2026-09-20判例): gradle类指令回执卡running(daemon继承管道句柄EOF不来)——执行完整但回执死信, max已去拷打作者(根修=退出码判定); 期间build类操作做好回执丢失预期, 靠取证判状态
 
-## 1. 状态快照 (2026-09-20 22:10)
-- HEAD: b81bef3
-- mods: tanshugetrees-1.8.0-20260920214025.jar (刀Q) MD5 593BA340701023E84D410569AF815207 双验, mods唯一
-- 现役日志: latest.log = 09-19 01:40 (刀Q零运行时)
+## 1. 状态快照 (2026-09-23 晨)
+- HEAD: 4b3f2c1 (链: 5ac08d5刀R → 338a54b刀S → 4b3f2c1手术单; build全绿43s; 本归位commit紧随其后)
+- mods: tanshugetrees-1.8.0-20260922221619.jar (刀R, 可玩基线); 刀S jar=20260923050732(64.5MB)已build未部署, 部署权在max
+- 现役日志: latest.log = 09-19 01:40 (刀Q/刀R零运行时)
 
 ## 2. 待办
 ### 2.1 max烟测(刀O+刀Q合并): 启动到主菜单退出即可
@@ -50,9 +50,13 @@
 - 刀Q落地: 五处手术, jar 20260920214025(62975KB), MD5双验, commit c636a70+b81bef3
 - harness死信事故: exec被kill于未知阶段, 取证判明全链完整跑完(手术→build→部署→commit), 判据=commit指纹+jar mtime+手术痕迹计数
 - 待max: 烟测+进世界验证
-## 当前待办 (2026-09-22 晨)
-- [刀R] DeferredQueue溢出驱逐废除: 默认无界(max裁决), 实施清单见 刀R手术单_20260922.md 第六节;
-  关键陷阱=add溢出循环须先判max>0(否则max=0死循环清队列); 实例config.txt值4096→0必须显式改;
-  真干=max醒后: 改码+改config+build+部署+复测验收
-- [待裁决] C档 P0复兴(逐chunk事件驱动预扫描, 删region认领/wake风暴) — 无界落地后降级为可选优化
+## 当前待办 (2026-09-23 晨)
+- [刀R] 已落地(commit 5ac08d5): 溢出驱逐默认无界(max_size=0)+短路守卫; 现役jar=刀R版
+- [刀S] 已落地(commit 338a54b, jar 20260923050732 未部署): budget_ms表达式化滴灌+O(1)队列深度计数器+深度仪表+预算三键热重载
+  验收三步: (1)部署进世界默认static零行为变化(冒烟即证); (2)config.txt改 deferred_queue_budget_mode = expr(保存即热生效, 日志budget hot-reloaded, 无需重启);
+  默认式 clamp(45-t,2,40), 变量 t=本tick前段ms / d=上tick滴灌ms / q=队列深度; (3)lmax-debuglog.json加 "log_queue_depth": true → 预算耗尽打点(双报兼漂移探测)
+- [P0-R2] 手术单待批(commit 4b3f2c1, 文件=P0-R2手术单.md): 预生成换脑(玩家中心窗口差分/expr半径/bitset台账/region记账回写免迁移/刀U1-U5); 签字后动刀; 侦察五项(getData读侧/bin幂等/触发链/池线程数/视距API)
+- [挂账] config格式革命; config双语化(前置=解码bug修复: Handcode读取器charset未侦察+旧文件迁移坑)
 - [背景] 调试仪表全开保持(max指令); 刀Q烟测全绿; 种子案结案(region骨架伪影, 与种子无关)
+- [判例·混合行尾] 本文件todo块(刀R立项轮追加)曾为LF-only行尾而其余CRLF: CRLF锚Contains必败(gp3两轮count=0真相, 非标点宽度); CRLF-only分裂把LF区折叠(52行假象+todo前缀匹配隐形); 修复=regex \r?\n双向分裂+区间切片+CRLF归一(本轮已全文归一)
+- [自主模式事故0伤] EventCenter路径凭印象写错(真身=core\game\, 非handcode\systems\)→假WROTE, 文件零接触; 判例: 路径永远grep动态定位
