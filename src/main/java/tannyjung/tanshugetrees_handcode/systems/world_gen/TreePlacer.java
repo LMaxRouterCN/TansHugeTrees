@@ -314,7 +314,6 @@ public class TreePlacer {
         private static void compileProgram (String expr) {
             if (expr == null || expr.equals(budgetExprSource)) return;
             synchronized (compileLock) {
-                if (expr.equals(budgetExprSource)) return;
                 try {
                     tannyjung.tanshugetrees_core.ExprEngine.Program program =
                             tannyjung.tanshugetrees_core.ExprEngine.compile(expr, BUDGET_VARS);
