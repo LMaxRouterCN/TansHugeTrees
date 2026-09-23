@@ -41,6 +41,27 @@ legacyForge {
     }
 }
 
+// [LMax Fix 刀U2b A3] [长期记忆: 174] 模板lint: ConfigClassic.repair把任何含" = "的行当配置项(不排除"|"注释行),
+// 注释行误写" = "会产生幽灵option -> options/defaults位置错位 -> IndexOOB(判例: 2026-09-24 crash 01:59/03:27两连崩).
+// 编译前扫描全部源码, 命中即拒build: 把事后取证变成事前拦截.
+tasks.register('lintConfigTemplates') {
+    group = 'verification'
+    description = 'Reject "|" comment lines containing " = " (ConfigClassic ghost-option contract) [LMax A3]'
+    doLast {
+        def violations = []
+        fileTree('src/main/java').include('**/*.java').each { f ->
+            f.eachLine('UTF-8') { line, no ->
+                if (line.trim().startsWith('|') && line.contains(' = ')) {
+                    violations.add("${f.name}:${no}: " + line.trim().substring(0, Math.min(100, line.trim().length())))
+                }
+            }
+        }
+        if (!violations.isEmpty()) {
+            throw new GradleException("[LMax lintConfigTemplates] ghost option line(s) found [long-term memory 174]:\n  " + violations.join("\n  "))
+        }
+    }
+}
+tasks.named('compileJava') { dependsOn 'lintConfigTemplates' }
 tasks.withType(JavaCompile).configureEach {
     options.encoding = 'UTF-8' // Use the UTF-8 charset for Java compilation
 }

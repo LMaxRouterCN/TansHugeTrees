@@ -435,22 +435,22 @@ public class Handcode {
                     | budget runs out, keeping tick time constant regardless of queue depth. Set to 0 to pause processing.
 
                     deferred_queue_budget_mode = expr
-                    | Budget control mode. "static" = use deferred_queue_budget_ms directly (classic behavior; explicit opt-out).
-                    | "expr" = evaluate deferred_queue_budget_expr once per tick at the tick boundary (default); compile failure
+                    | Budget control mode. "static": use deferred_queue_budget_ms directly (classic behavior; explicit opt-out).
+                    | "expr": evaluate deferred_queue_budget_expr once per tick at the tick boundary (default); compile failure
                     | or non-finite result falls back to deferred_queue_budget_ms. Hot-reloadable without server restart.
 
                     deferred_queue_budget_expr = clamp(45-t,2,40)
-                    | Expression evaluated each tick when mode is "expr". Variables: t = current tick elapsed ms
-                    | (measured before this drain runs), d = previous tick drain duration ms, q = deferred queue depth.
+                    | Expression evaluated each tick when mode is "expr". Variables: t: current tick elapsed ms
+                    | (measured before this drain runs), d: previous tick drain duration ms, q: deferred queue depth.
                     | Operators: + - * / % ( ), functions: min max clamp, plain decimal numbers, lowercase only.
                     | Example clamp(45-t,2,40): spend remaining headroom before a 45ms tick, floor 2ms, cap 40ms.
 
                     pregen_mode = region
-                    | Pregen engine mode. "region" = engine dormant (default, zero behavior change; U1 observer
-                    | logs keep flowing). "player_center" = observer diff drives region pre-generation tasks.
+                    | Pregen engine mode. "region": engine dormant (default, zero behavior change; U1 observer
+                    | logs keep flowing). "player_center": observer diff drives region pre-generation tasks.
 
                     pregen_radius_expr = v+8
-                    | Window radius expression for pregeneration. Variable: v = server view distance. Result is
+                    | Window radius expression for pregeneration. Variable: v: server view distance. Result is
                     | the full window radius in chunks (player center +/- radius). Invalid compile / non-finite /
                     | negative result falls back to v+8 (U1 constant semantics). Hot-reloadable.
 
