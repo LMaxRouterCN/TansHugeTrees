@@ -27,10 +27,15 @@ import java.util.concurrent.ConcurrentHashMap;
 public class TreeLocation {
 
     // [LMax Fix V9] 替换为 ConcurrentHashMap 解决 CME
-    private static final Map<ChunkPos, Map<BlockPos, String>> cache_write_tree_location = new java.util.concurrent.ConcurrentHashMap<>();
-    private static final Map<String, List<String>> cache_write_place = new java.util.concurrent.ConcurrentHashMap<>();
-    private static final Map<String, Map<ChunkPos, Map<BlockPos, String>>> cache_other_region = new java.util.concurrent.ConcurrentHashMap<>();
-    private static final Map<ChunkPos, Holder<Biome>> cache_biome = new java.util.concurrent.ConcurrentHashMap<>();
+    // [刀U2前置 无维度键修复] [长期记忆: 160] 四缓存外层嵌套 per-dimension 容器:
+    // 原键(cache_write_tree_location/cache_biome=裸ChunkPos; cache_write_place/cache_other_region=裸"rx,rz")
+    // 无维度身份, 同世界跨维度同坐标互偷; 磁盘 bin 按 dimension 目录隔离而内存不对称(跨世界有
+    // clearWorldState 兜底, 跨维度修复前无防线). 外层键=调用链既有 dimension 串, 调用方参数现成.
+    // clearWorldState 对外层 clear 语义不变(整树清空).
+    private static final Map<String, Map<ChunkPos, Map<BlockPos, String>>> cache_write_tree_location = new java.util.concurrent.ConcurrentHashMap<>();
+    private static final Map<String, Map<String, List<String>>> cache_write_place = new java.util.concurrent.ConcurrentHashMap<>();
+    private static final Map<String, Map<String, Map<ChunkPos, Map<BlockPos, String>>>> cache_other_region = new java.util.concurrent.ConcurrentHashMap<>();
+    private static final Map<String, Map<ChunkPos, Holder<Biome>>> cache_biome = new java.util.concurrent.ConcurrentHashMap<>();
 
 
 
@@ -69,17 +74,26 @@ public class TreeLocation {
 
         // 原子提取 tree_location 缓存
         Map<BlockPos, String> locSnapshot = new HashMap<>();
-        Iterator<Map.Entry<ChunkPos, Map<BlockPos, String>>> locIt = cache_write_tree_location.entrySet().iterator();
-        while (locIt.hasNext()) {
-            Map.Entry<ChunkPos, Map<BlockPos, String>> entry = locIt.next();
-            if ((entry.getKey().x >> 5) == regionX && (entry.getKey().z >> 5) == regionZ) {
-                locIt.remove(); // 先从外层 Map 移除，阻止新写入命中此条目
-                locSnapshot.putAll(entry.getValue()); // 再快照内层 Map，此时无其他线程可访问
+        // [刀U2前置 无维度键修复] [长期记忆: 160] per-dimension 提取: null=该维度无待冲缓存(跳过遍历)
+        Map<ChunkPos, Map<BlockPos, String>> loc_dim = cache_write_tree_location.get(dimension);
+        if (loc_dim != null) {
+            Iterator<Map.Entry<ChunkPos, Map<BlockPos, String>>> locIt = loc_dim.entrySet().iterator();
+            while (locIt.hasNext()) {
+                Map.Entry<ChunkPos, Map<BlockPos, String>> entry = locIt.next();
+                if ((entry.getKey().x >> 5) == regionX && (entry.getKey().z >> 5) == regionZ) {
+                    locIt.remove(); // 先从外层 Map 移除，阻止新写入命中此条目
+                    locSnapshot.putAll(entry.getValue()); // 再快照内层 Map，此时无其他线程可访问
+                }
             }
         }
 
         // 原子提取 place 缓存：remove 原子返回被移除的值
-        List<String> placeSnapshot = cache_write_place.remove(regionKey);
+        // [刀U2前置 无维度键修复] [长期记忆: 160] per-dimension 提取, remove 原子语义不变
+        List<String> placeSnapshot = null;
+        Map<String, List<String>> place_dim = cache_write_place.get(dimension);
+        if (place_dim != null) {
+            placeSnapshot = place_dim.remove(regionKey);
+        }
 
         // 两者都为空时跳过 I/O
         if (locSnapshot.isEmpty() && (placeSnapshot == null || placeSnapshot.isEmpty())) {
@@ -152,6 +166,7 @@ public class TreeLocation {
     // → 零树（世界55 实锤 E2=0）；其余五池同理携带旧世界坐标/生物群系/等待表语义。磁盘 bin 按
     // 存档路径隔离不受影响，仅清内存。EventCenter 不直接摸私有字段，经本类聚合入口（PlacementGate 先例推广）。
     public static void clearWorldState () {
+        // [刀U2前置][长期记忆:160] 四缓存已嵌套 per-dim 外层, 此处外层 clear 语义不变(整树清空)
         cache_write_tree_location.clear();
         cache_write_place.clear();
         cache_other_region.clear();
@@ -301,7 +316,7 @@ public class TreeLocation {
     private static void getData(LevelAccessor level_accessor, String dimension, ChunkPos chunk_pos, Map<String, Map<String, String>> data) {
         // [THT-DEBUG] 方法入口日志
         if (Core.log_tree_location) System.out.println("[THT-DEBUG] getData() ENTER - chunk: " + chunk_pos);
-        Holder<Biome> biome_center = getBiome(level_accessor, chunk_pos);
+        Holder<Biome> biome_center = getBiome(level_accessor, dimension, chunk_pos); // [刀U2前置][长期记忆:160] +dimension
         String biome_id = GameUtils.Environment.toID(biome_center);
         // [THT-DEBUG] 群系ID
         if (Core.log_tree_location) System.out.println("[THT-DEBUG] getData() - biome_id: " + biome_id);
@@ -360,7 +375,7 @@ public class TreeLocation {
                     if (config.get("spawn_type").equals("normal") == false) {
                         if (Handcode.Config.shoreline_detection == false) {
                             continue;
-                        } else if (testShoreline(level_accessor, new ChunkPos(center_posX >> 4, center_posZ >> 4)) == false) {
+                        } else if (testShoreline(level_accessor, dimension, new ChunkPos(center_posX >> 4, center_posZ >> 4)) == false) { // [刀U2前置][长期记忆:160] +dimension
                             continue;
                         }
                     }
@@ -397,7 +412,7 @@ public class TreeLocation {
 
                             // Biome
                             {
-                                biome_center = getBiome(level_accessor, new ChunkPos(center_posX >> 4, center_posZ >> 4));
+                                biome_center = getBiome(level_accessor, dimension, new ChunkPos(center_posX >> 4, center_posZ >> 4)); // [刀U2前置][长期记忆:160] +dimension
                                 if (GameUtils.Environment.test(biome_center, config_biome) == false) {
                                     continue;
                                 }
@@ -414,18 +429,18 @@ public class TreeLocation {
     // [执行代号22 - 任务 1.3] 提取 region 加载逻辑，实现原子化抽象
     // 原子操作：从磁盘加载并解析 region 文件，处理缓存淘汰
     // 由 ConcurrentHashMap.computeIfAbsent 调用，JVM 保证原子性
-    private static Map<ChunkPos, Map<BlockPos, String>> loadRegionFromDisk(String dimension, String regionKey) {
+    private static Map<ChunkPos, Map<BlockPos, String>> loadRegionFromDisk(String dimension, String regionKey, Map<String, Map<ChunkPos, Map<BlockPos, String>>> dim_cache) { // [刀U2前置][长期记忆:160] +dim_cache(淘汰改本维度内层, 全局→per-dim 口径)
         Map<ChunkPos, Map<BlockPos, String>> loadedData = new ConcurrentHashMap<>();
         
         // [执行代号22 - 任务 1.2] 安全的缓存淘汰：加载完成后同步执行
         // 避免在异步线程中迭代 keySet 导致 ConcurrentModificationException
-        if (cache_other_region.size() > Handcode.Config.cache_other_region_max) {
-            Iterator<String> evictIt = cache_other_region.keySet().iterator();
+        if (dim_cache.size() > Handcode.Config.cache_other_region_max) { // [刀U2前置][长期记忆:160] 淘汰口径 per-dim(实践单维度活跃=原语义; compute内改本表与既发货形态一致)
+            Iterator<String> evictIt = dim_cache.keySet().iterator();
             boolean evicted = false;
             while (evictIt.hasNext() && !evicted) {
                 String evictKey = evictIt.next();
                 if (!evictKey.equals(regionKey)) {
-                    cache_other_region.remove(evictKey);
+                    dim_cache.remove(evictKey);
                     evicted = true;
                 }
             }
@@ -448,14 +463,14 @@ public class TreeLocation {
         }
         return loadedData;
     }
-    private static Holder<Biome> getBiome(LevelAccessor level_accessor, ChunkPos chunk_pos) {
+    private static Holder<Biome> getBiome(LevelAccessor level_accessor, String dimension, ChunkPos chunk_pos) { // [刀U2前置][长期记忆:160] +dimension(cache_biome per-dim)
         // [LMax Fix V48] 连锁强载根治：改走 getUncachedNoiseBiome 纯函数路。[长期记忆: 085] V47 判读定案后的修复。
         // 旧路 GameUtils.Environment.getAt -> testChunkStatus(hasChunk 通过后裸 getChunk = 强制 FULL join)，
         // 12 线程洪峰期向 chunk 管线塞上百阻塞请求，主线程同队挨饿（20-28s 冻结，597 episodes/276s 总停摆）。
         // 等价性：chunk 存储的 noise biome 由同一 BiomeSource 公式写入，作者在 getAt 的 else 分支已视两路等价。
         // 采样点与旧实现严格一致：chunk 中心 (x*16+7, z*16+7)，Y=建筑高度上限（getBuildHeight 纯函数，只读 levelData）。
         // computeIfAbsent 顺修旧 containsKey+put 的 check-then-act 竞态（重复计算幂等无危害，但不再发生）。
-        return cache_biome.computeIfAbsent(chunk_pos, key -> {
+        return cache_biome.computeIfAbsent(dimension, k -> new java.util.concurrent.ConcurrentHashMap<>()).computeIfAbsent(chunk_pos, key -> { // [刀U2前置][长期记忆:160] per-dim 嵌套
             int quartX = ((chunk_pos.x * 16) + 7) >> 2;
             int quartZ = ((chunk_pos.z * 16) + 7) >> 2;
             int quartY = (GameUtils.Space.getBuildHeight(level_accessor, true)) >> 2;
@@ -490,14 +505,17 @@ public class TreeLocation {
                 // Get Data
                 {
                     scan_pos = new ChunkPos(center_chunk.x + scanX, center_chunk.z + scanZ);
-                    if (cache_write_tree_location.containsKey(scan_pos)) {
-                        data = cache_write_tree_location.get(scan_pos);
+                    // [刀U2前置 无维度键修复] [长期记忆: 160] 两级寻址: per-dim 容器 → 原键
+                    Map<ChunkPos, Map<BlockPos, String>> write_dim = cache_write_tree_location.get(dimension);
+                    if (write_dim != null && write_dim.containsKey(scan_pos)) {
+                        data = write_dim.get(scan_pos);
                     } else {
                         key = (scan_pos.x >> 5) + "," + (scan_pos.z >> 5);
                         // [执行代号22 - 任务 1.3] 原子化抽象：使用 computeIfAbsent 调用 loadRegionFromDisk
                         // JVM 保证 computeIfAbsent 的原子性，避免竞态条件
                         // 调用 loadRegionFromDisk 完成从磁盘加载、缓存淘汰、数据解析，保证每次只有一个线程执行
-                        regionMap = cache_other_region.computeIfAbsent(key, k -> loadRegionFromDisk(dimension, k));
+                        Map<String, Map<ChunkPos, Map<BlockPos, String>>> other_dim = cache_other_region.computeIfAbsent(dimension, k -> new java.util.concurrent.ConcurrentHashMap<>());
+                        regionMap = other_dim.computeIfAbsent(key, k -> loadRegionFromDisk(dimension, k, other_dim));
                         data = regionMap.getOrDefault(scan_pos, new HashMap<>());
                     }
 
@@ -557,14 +575,14 @@ public class TreeLocation {
         return true;
     }
 
-    private static boolean testShoreline(LevelAccessor level_accessor, ChunkPos center_chunk_pos) {
+    private static boolean testShoreline(LevelAccessor level_accessor, String dimension, ChunkPos center_chunk_pos) { // [刀U2前置][长期记忆:160] +dimension
         if (Handcode.Config.shoreline_detection == false) {
             return false;
         } else {
-            Holder<Biome> biome_side1 = getBiome(level_accessor, new ChunkPos(center_chunk_pos.x + 1, center_chunk_pos.z + 1));
-            Holder<Biome> biome_side2 = getBiome(level_accessor, new ChunkPos(center_chunk_pos.x + 1, center_chunk_pos.z - 1));
-            Holder<Biome> biome_side3 = getBiome(level_accessor, new ChunkPos(center_chunk_pos.x - 1, center_chunk_pos.z + 1));
-            Holder<Biome> biome_side4 = getBiome(level_accessor, new ChunkPos(center_chunk_pos.x - 1, center_chunk_pos.z - 1));
+            Holder<Biome> biome_side1 = getBiome(level_accessor, dimension, new ChunkPos(center_chunk_pos.x + 1, center_chunk_pos.z + 1)); // [刀U2前置] +dimension
+            Holder<Biome> biome_side2 = getBiome(level_accessor, dimension, new ChunkPos(center_chunk_pos.x + 1, center_chunk_pos.z - 1)); // [刀U2前置] +dimension
+            Holder<Biome> biome_side3 = getBiome(level_accessor, dimension, new ChunkPos(center_chunk_pos.x - 1, center_chunk_pos.z + 1)); // [刀U2前置] +dimension
+            Holder<Biome> biome_side4 = getBiome(level_accessor, dimension, new ChunkPos(center_chunk_pos.x - 1, center_chunk_pos.z - 1)); // [刀U2前置] +dimension
             boolean waterside_test1 = GameUtils.Environment.test(biome_side1, "#tanshugetrees:water_biomes");
             boolean waterside_test2 = GameUtils.Environment.test(biome_side2, "#tanshugetrees:water_biomes");
             boolean waterside_test3 = GameUtils.Environment.test(biome_side3, "#tanshugetrees:water_biomes");
@@ -687,7 +705,7 @@ public class TreeLocation {
                 // [执行代号22 - 任务 2.2 & 3.1] 废除 scanned_regions 判断，统一走内存缓冲，彻底解决老区域重启后不刷盘的问题
                 ChunkPos chunk_pos = new ChunkPos(centerX >> 4, centerZ >> 4);
                 BlockPos pos = new BlockPos(centerX, 0, centerZ);
-                cache_write_tree_location.computeIfAbsent(chunk_pos, create -> new java.util.concurrent.ConcurrentHashMap<>()).put(pos, dictId);
+                cache_write_tree_location.computeIfAbsent(dimension, k -> new java.util.concurrent.ConcurrentHashMap<>()).computeIfAbsent(chunk_pos, create -> new java.util.concurrent.ConcurrentHashMap<>()).put(pos, dictId); // [刀U2前置][长期记忆:160] per-dim 嵌套
 
                 // 触发异步刷盘，flushCachesAsync 内部会原子提取并清空缓存，无数据时直接跳过，不会造成 I/O 浪费
                 flushCachesAsync(dimension, regionX, regionZ);
@@ -716,7 +734,7 @@ public class TreeLocation {
                     for (int scanZ = from_chunkZ_test; scanZ <= to_chunkZ_test; scanZ++) {
                         String placeRegionKey = scanX + "," + scanZ;
                         // [执行代号22 - 任务 2.2 & 3.1] 统一走内存缓冲，解决老区域重启后不刷盘的问题
-                        cache_write_place.computeIfAbsent(placeRegionKey, create -> java.util.Collections.synchronizedList(new java.util.ArrayList<>())).addAll(write);
+                        cache_write_place.computeIfAbsent(dimension, k -> new java.util.concurrent.ConcurrentHashMap<>()).computeIfAbsent(placeRegionKey, create -> java.util.Collections.synchronizedList(new java.util.ArrayList<>())).addAll(write); // [刀U2前置][长期记忆:160] per-dim 嵌套
                         flushCachesAsync(dimension, scanX, scanZ);
                     }
                 }
