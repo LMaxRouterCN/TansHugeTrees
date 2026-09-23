@@ -63,3 +63,11 @@
 - [背景] 调试仪表全开保持(max指令); 刀Q烟测全绿; 种子案结案(region骨架伪影, 与种子无关)
 - [判例·混合行尾] 本文件todo块(刀R立项轮追加)曾为LF-only行尾而其余CRLF: CRLF锚Contains必败(gp3两轮count=0真相, 非标点宽度); CRLF-only分裂把LF区折叠(52行假象+todo前缀匹配隐形); 修复=regex \r?\n双向分裂+区间切片+CRLF归一(本轮已全文归一)
 - [自主模式事故0伤] EventCenter路径凭印象写错(真身=core\game\, 非handcode\systems\)→假WROTE, 文件零接触; 判例: 路径永远grep动态定位
+
+## 刀U2b 收档 (2026-09-24 03:5x) 幽灵option根除 [判例174]
+- 根因: ConfigClassic.repair把任何含" = "的行当配置项(不排除"|"注释行), 模板7处注释写" = "英语释义→86:79位置错位→Index79/79。两连崩(01:59/03:27)同一案: 二连=jar毒模板Generate回写config+repair每个世界启动都跑(EventCenter:102挂点)。
+- A1: Handcode.java 7行(438/439/443/444/449/450/453) " = "→": ", repo幽灵复验0, 行数/EOL/BOM字节保真。
+- A3: build.gradle新增lintConfigTemplates(compileJava dependsOn), "|"注释行含" = "即拒build, 事后取证→事前拦截。
+- 部署: tanshugetrees-1.8.0-20260924035014.jar(旧jar已删防双jar); 磁盘config手术79:79:0, pregen_mode=player_center按名保留。
+- 回档点: tag u2b-fix(b4bad0f)/tag pre-u2b-surgery(8ef076b); 护档D:\Documents\mcmod\tht_handcode_pre_u2b.bak。
+- 待办: max下次启动→直接创建新世界=真U2运行验收([U2]offer日志链+bin目录region文件)。若再崩取crash-reports即判(新坐标新案)。
