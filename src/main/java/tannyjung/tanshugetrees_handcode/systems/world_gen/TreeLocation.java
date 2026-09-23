@@ -165,6 +165,43 @@ public class TreeLocation {
     // 同 JVM 世界切换时各池 key 无存档身份——region_scan_claims TRUE 残留 = 新世界 region 判"已扫"
     // → 零树（世界55 实锤 E2=0）；其余五池同理携带旧世界坐标/生物群系/等待表语义。磁盘 bin 按
     // 存档路径隔离不受影响，仅清内存。EventCenter 不直接摸私有字段，经本类聚合入口（PlacementGate 先例推广）。
+    // [刀U2] [长期记忆: 167,168] 引擎计算入口: 复刻 run() 采样扫描(同种子同序同 region_scan_percent
+    // 骰子 = 共存双写同结果; region 完成 = 采样子集算完, 非全量——与旧链 claims TRUE 同语义口径)。
+    // §3.5=d: writeData 每树即冲(自动冲刷), 尾部一次兜底清残对齐 run() 尾部语义。
+    // 不碰 claims(旧链到达自行认领补算 = 共存安全网, U3 统一); 不置 TRUE; 不唤醒(U3)。
+    // 线程契约: THT-TreeGen 池线程(与旧链 run 同池, getData 链纯计算字面审计 100%)。
+    public static boolean pregenComputeRegion(LevelAccessor level_accessor, String dimension, int regionX, int regionZ) {
+        Map<String, Map<String, String>> data = ConfigDynamic.getData("world_gen");
+        if (data == null || data.isEmpty()) return false; // run() 同款空守卫
+        int posX = regionX * 32;
+        int posZ = regionZ * 32;
+        int scan_count = 0;
+        long scan_start = System.currentTimeMillis();
+        for (int scanX = 0; scanX < 32; scanX++) {
+            for (int scanZ = 0; scanZ < 32; scanZ++) {
+                ChunkPos chunk_pos_scan = new ChunkPos(posX + scanX, posZ + scanZ);
+                RandomSource random = RandomSource.create(level_accessor.getServer().overworld().getSeed() ^ ((chunk_pos_scan.x * 341873128712L) + (chunk_pos_scan.z * 132897987541L)));
+                if (random.nextDouble() < Handcode.Config.region_scan_percent * 0.01) {
+                    getData(level_accessor, dimension, chunk_pos_scan, data);
+                    scan_count++;
+                }
+            }
+        }
+        // 尾部兜底清残(对齐 run() 尾部; 常规数据已由 writeData 每树即冲落盘)
+        flushCachesAsync(dimension, regionX, regionZ);
+        if (Core.log_tree_location) {
+            System.out.println("[THT-DEBUG] [U2] pregenComputeRegion: " + dimension + "," + regionX + "," + regionZ
+                + " scanned=" + scan_count + " in " + (System.currentTimeMillis() - scan_start) + "ms");
+        }
+        return true;
+    }
+
+    // [刀U2] claims 只读查询口: 引擎 offer 快标记用(旧链本会话已扫完的 region 免算, 翻模式不重算已扫区)。
+    // fullRegionKey = "<dim>,<regionX>,<regionZ>", 与 run() 236 行拼法严格同构。
+    public static boolean isRegionScanComplete(String fullRegionKey) {
+        return region_scan_claims.get(fullRegionKey) == Boolean.TRUE;
+    }
+
     public static void clearWorldState () {
         // [刀U2前置][长期记忆:160] 四缓存已嵌套 per-dim 外层, 此处外层 clear 语义不变(整树清空)
         cache_write_tree_location.clear();

@@ -27,7 +27,9 @@ import tannyjung.tanshugetrees_core.Core;
 import tannyjung.tanshugetrees_core.game.GameUtils;
 
 import java.util.BitSet;
+import java.util.HashSet;
 import java.util.Map;
+import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
 
@@ -46,8 +48,7 @@ public class PregenObserver {
     // 持 ServerLevel 引用不构成跨世界泄漏: 世界切换由 AboutToStart 全清兜底(刀K 先例推广)。
     private static final Map<UUID, Trace> player_traces = new ConcurrentHashMap<>();
 
-    // 窗口视距外圈数: U1 固定默认式 v+8 的常数项; U2 起由 pregen_radius_expr 表达式接管(手术单 §3.2, 一引擎两张表)
-    private static final int RADIUS_MARGIN = 8;
+    // [刀U2] RADIUS_MARGIN 退役: 常数语义迁入 PregenEngine.resolveRadius 回退缺省(v+8), 单一事实源
 
     private static final class Trace {
         final ServerLevel level; final int chunkX; final int chunkZ;
@@ -59,6 +60,8 @@ public class PregenObserver {
         // [刀K 世界55 防线推广] 同 JVM 世界切换: 观察台账 + 玩家 trace 全清(观察者自有生命周期, 零接线)
         observed_ledger.clear();
         player_traces.clear();
+        // [刀U2] [长期记忆: 167] 引擎同步清场: epoch++(straggler 免疫)/清台账队列/in_flight 清零(改判, 见 PregenEngine 类头)
+        PregenEngine.reset();
     }
 
     @SubscribeEvent
@@ -76,16 +79,18 @@ public class PregenObserver {
             if (last != null && last.level == level && last.chunkX == chunk_x && last.chunkZ == chunk_z) continue;
 
             // 慢路径(仅 chunk/维度变化瞬间): 半径与维度串仅在此时求值, 稳态零字符串分配
-            int radius = level.getServer().getPlayerList().getViewDistance() + RADIUS_MARGIN;
+            // [刀U2] 表达式接管常数(缺省 v+8 = U1 原语义; 主线程串行调用)
+            int radius = PregenEngine.resolveRadius(level);
             String dimension = GameUtils.Space.getDimensionID(level).replace(":", "-");
             player_traces.put(player.getUUID(), new Trace(level, chunk_x, chunk_z));
-            diffWindow(dimension, chunk_x, chunk_z, radius);
+            // [刀U2] +level: 差分产物接进计算(U1 注释承诺的 U2 接线点)
+            diffWindow(level, dimension, chunk_x, chunk_z, radius);
         }
     }
 
     // ===== 窗口差分: Chebyshev 方形窗口(玩家中心 ±R chunk)逐 chunk 查台账, 未观察过 = 增量 =====
     // regionKey/BitSet 双重缓存: 同 region 内 1024 chunk 复用同一 key 串与位图(每差分 ≤ ~9 次串拼接)
-    private static void diffWindow (String dimension, int center_x, int center_z, int radius) {
+    private static void diffWindow (ServerLevel level, String dimension, int center_x, int center_z, int radius) { // [刀U2] +level
         long time_start = System.nanoTime();
         Map<String, BitSet> dim_ledger = observed_ledger.computeIfAbsent(dimension, k -> new ConcurrentHashMap<>());
         int count_new = 0;
@@ -94,6 +99,8 @@ public class PregenObserver {
         int last_region_z = Integer.MIN_VALUE;
         String region_key = null;
         BitSet region_bits = null;
+        // [刀U2] 本窗口出现新 chunk 的 region(差分产物, 慢路径一次性收集)
+        Set<String> fresh_regions = new HashSet<>();
         for (int x = center_x - radius; x <= center_x + radius; x++) {
             for (int z = center_z - radius; z <= center_z + radius; z++) {
                 count_window++;
@@ -109,6 +116,7 @@ public class PregenObserver {
                 if (!region_bits.get(bit)) {
                     region_bits.set(bit);
                     count_new++;
+                    fresh_regions.add(region_key); // [刀U2] 新 chunk → 所在 region 记入差分产物
                 }
             }
         }
@@ -116,9 +124,14 @@ public class PregenObserver {
         if (Core.log_tree_location) {
             System.out.println("[THT-DEBUG] [U1] window diff: dim=" + dimension
                 + " center=(" + center_x + "," + center_z + ") R=" + radius
-                + " (v+" + RADIUS_MARGIN + ") +" + count_new + " new / " + count_window
+                + " (expr) +" + count_new + " new / " + count_window // [刀U2] radius 来自 pregen_radius_expr
                 + " window | ledger regions=" + dim_ledger.size()
                 + " in " + ((System.nanoTime() - time_start) / 1000) + "us");
+        }
+        // [刀U2] [长期记忆: 167] 差分产物接进计算: 本窗口出现新 chunk 的 region 提交引擎
+        // (mode 门在引擎内, 缺省休眠零行为; 慢路径一次性, 稳态零分配不变)
+        if (!fresh_regions.isEmpty()) {
+            PregenEngine.offer(dimension, level, fresh_regions);
         }
     }
 }

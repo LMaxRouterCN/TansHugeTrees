@@ -192,7 +192,7 @@ public class EventCenter {
         // 任务属于正在死去的旧世界，丢弃即正确语义；新世界由复活后的池接管，无任务损失。
         private static boolean tree_gen_rejected_logged = false;
 
-        private static void submitTreeGen (Runnable task) {
+        public static void submitTreeGen (Runnable task) { // [刀U2] private→public: PregenEngine 跨包提交复用守卫(拒绝吞掉/关服窗口防崩) [长期记忆: 167]
             try {
                 TREE_GEN_EXECUTOR.submit(task);
             } catch (java.util.concurrent.RejectedExecutionException e) {

@@ -212,6 +212,14 @@ public class Handcode {
         public static int pending_blocks_max_chunks = 1024; // [LMax Fix V43] 激活原有死配置 [长期记忆: 016]
         // [LMax Fix V43] 挂起任务表上限（防御性兜底：正常玩家视距内挂起量级仅数百）
         public static int deferred_queue_suspended_max = 65536;
+        // [刀U2] [长期记忆: 167] 预生成引擎三键:
+        // mode: "region"=缺省(引擎休眠零行为, U1 观察日志照跑) / "player_center"=观察者差分驱动预生成;
+        // radius_expr: 窗口半径表达式, 变量 v=服务器视距, 结果=完整半径(缺省 v+8=U1 原语义);
+        // max_inflight: 软背压并发 region 任务上限(池 12 线程, 留余量给旧链)。
+        // volatile: WatchConfigReload 热重载线程写 / 主线程+池线程读(mode/radius 热切换免重启)。
+        public static volatile String pregen_mode = "region";
+        public static volatile String pregen_radius_expr = "v+8";
+        public static int pregen_max_inflight = 8;
 
         // [LMax Fix V42] Test Exist Chunk 守卫开关（默认关=废除）[长期记忆: 014]
         // 守卫原逻辑：writeData 写入前扫描 ±4 chunk 的 features 状态，任一命中即整棵丢树。
@@ -437,6 +445,20 @@ public class Handcode {
                     | Operators: + - * / % ( ), functions: min max clamp, plain decimal numbers, lowercase only.
                     | Example clamp(45-t,2,40): spend remaining headroom before a 45ms tick, floor 2ms, cap 40ms.
 
+                    pregen_mode = region
+                    | Pregen engine mode. "region" = engine dormant (default, zero behavior change; U1 observer
+                    | logs keep flowing). "player_center" = observer diff drives region pre-generation tasks.
+
+                    pregen_radius_expr = v+8
+                    | Window radius expression for pregeneration. Variable: v = server view distance. Result is
+                    | the full window radius in chunks (player center +/- radius). Invalid compile / non-finite /
+                    | negative result falls back to v+8 (U1 constant semantics). Hot-reloadable.
+
+                    pregen_max_inflight = 8
+                    | Soft backpressure: max concurrent pregen region tasks submitted to the tree pool. Pool has
+                    | 12 threads; leftover capacity serves the legacy chain. Check-then-act allows brief overshoot
+                    | (harmless: oversubscription only recomputes, never drops).
+
                       chunk_status_guard = false
                       | [LMax V42] Skip writing tree data when any chunk in the +-4 range has already passed the "features" stage. Default false (guard removed): the guard discarded whole trees near spawn and behind fast travel. Enable only for debugging.
 
@@ -574,6 +596,10 @@ public class Handcode {
             // [LMax Fix V42] 守卫开关：parseBoolean 对缺失键安全返回 false（旧配置文件无需手动迁移）
             chunk_status_guard = Boolean.parseBoolean(data.get("chunk_status_guard"));
             bin_convert_futures_max_entries = Integer.parseInt(data.get("bin_convert_futures_max_entries"));
+            // [刀U2] 预生成三键解析: 旧配置缺键 → 缺省值(零行为变化, getOrDefault 兜底无需迁移)
+            pregen_mode = data.getOrDefault("pregen_mode", "region").trim();
+            pregen_radius_expr = data.getOrDefault("pregen_radius_expr", "v+8");
+            pregen_max_inflight = Integer.parseInt(data.getOrDefault("pregen_max_inflight", "8"));
         
 
           
