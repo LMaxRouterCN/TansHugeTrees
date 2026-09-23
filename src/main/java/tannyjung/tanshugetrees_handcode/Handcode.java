@@ -200,11 +200,11 @@ public class Handcode {
         // [LMax Fix V46] 主线程消费时间片(ms/tick) [长期记忆: 018]: DeferredQueue.processTick 按 nanoTime 预算消费,
         // 恒定开销防 TPS 暴跌(时间片优于任务数预算: 单个任务=整树生成+整chunk落块, 重量无上界). 0 = 暂停消费.
         public static volatile int deferred_queue_budget_ms = 40;
-        // [LMax Fix V54 刀S] [长期记忆: 149] 预算表达式化: mode=static 直读 budget_ms(V46 原语义, 默认零行为变化);
+        // [LMax Fix V54 刀S] [长期记忆: 149] 预算表达式化: mode=static 直读 budget_ms(V46 原语义; 刀S补: 缺省翻expr, static=显式退出);
         // mode=expr 每 tick 边界求值 budget_expr(变量 t=本tick前段耗时ms / d=上tick滴灌实耗ms / q=队列深度),
         // 求值失败回退 budget_ms. 求值器=TreePlacer.DeferredQueue.resolveBudgetMs, 语法=ExprEngine(四则+min/max/clamp).
         // volatile: 热重载线程(WatchConfigReload)写 / 主线程读.
-        public static volatile String deferred_queue_budget_mode = "static";
+        public static volatile String deferred_queue_budget_mode = "expr"; // [刀S补 2026-09-23 max][长期记忆:149] 缺省翻expr; 显式static回V46
         public static volatile String deferred_queue_budget_expr = "clamp(45-t,2,40)";
         public static int bin_convert_futures_max_entries = 256; // bin_convert_futures 最大条目数 (原64)
 
@@ -426,9 +426,9 @@ public class Handcode {
                     | Time budget in milliseconds for deferred tree placement per tick. Main thread consumes tasks until
                     | budget runs out, keeping tick time constant regardless of queue depth. Set to 0 to pause processing.
 
-                    deferred_queue_budget_mode = static
-                    | Budget control mode. "static" = use deferred_queue_budget_ms directly (default, classic behavior).
-                    | "expr" = evaluate deferred_queue_budget_expr once per tick at the tick boundary; compile failure
+                    deferred_queue_budget_mode = expr
+                    | Budget control mode. "static" = use deferred_queue_budget_ms directly (classic behavior; explicit opt-out).
+                    | "expr" = evaluate deferred_queue_budget_expr once per tick at the tick boundary (default); compile failure
                     | or non-finite result falls back to deferred_queue_budget_ms. Hot-reloadable without server restart.
 
                     deferred_queue_budget_expr = clamp(45-t,2,40)
@@ -568,7 +568,7 @@ public class Handcode {
             // [LMax Fix V46] 时间片预算解析: getOrDefault 兜底旧配置缺键(默认40); <=0 视为暂停消费
             deferred_queue_budget_ms = Integer.parseInt(data.getOrDefault("deferred_queue_budget_ms", "40"));
             // [LMax Fix V54 刀S] [长期记忆: 149] 预算模式/表达式解析: 旧配置缺键 → static + 默认式(零行为变化)
-            deferred_queue_budget_mode = data.getOrDefault("deferred_queue_budget_mode", "static").trim();
+            deferred_queue_budget_mode = data.getOrDefault("deferred_queue_budget_mode", "expr").trim();
             deferred_queue_budget_expr = data.getOrDefault("deferred_queue_budget_expr", "clamp(45-t,2,40)");
         deferred_queue_suspended_max = Integer.parseInt(data.get("deferred_queue_suspended_max")); // [LMax Fix V43]
             // [LMax Fix V42] 守卫开关：parseBoolean 对缺失键安全返回 false（旧配置文件无需手动迁移）

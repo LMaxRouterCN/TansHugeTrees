@@ -52,8 +52,8 @@
 - 待max: 烟测+进世界验证
 ## 当前待办 (2026-09-23 晨)
 - [刀R] 已落地(commit 5ac08d5): 溢出驱逐默认无界(max_size=0)+短路守卫; 现役jar=刀R版
-- [刀S] 已落地(commit 338a54b, jar 20260923050732 未部署): budget_ms表达式化滴灌+O(1)队列深度计数器+深度仪表+预算三键热重载
-  验收三步: (1)部署进世界默认static零行为变化(冒烟即证); (2)config.txt改 deferred_queue_budget_mode = expr(保存即热生效, 日志budget hot-reloaded, 无需重启);
+- [刀S] 已落地(commit 338a54b, jar 20260923050732 未部署): budget_ms表达式化滴灌+O(1)队列深度计数器+深度仪表+预算三键热重载; 刀S补(23晚): 缺省mode翻expr(max裁决)+compileProgram死行清除
+  验收三步: (1)部署进世界默认即expr(启动日志见budget expr armed; 显式static=V46对照); (2)热切回static验证: config.txt改 deferred_queue_budget_mode = static(保存即热生效, 日志budget hot-reloaded, 无需重启);
   默认式 clamp(45-t,2,40), 变量 t=本tick前段ms / d=上tick滴灌ms / q=队列深度; (3)lmax-debuglog.json加 "log_queue_depth": true → 预算耗尽打点(双报兼漂移探测)
 - [P0-R2] 手术单待批(commit 4b3f2c1, 文件=P0-R2手术单.md): 预生成换脑(玩家中心窗口差分/expr半径/bitset台账/region记账回写免迁移/刀U1-U5); 签字后动刀; 侦察五项(getData读侧/bin幂等/触发链/池线程数/视距API)
 - [挂账] config格式革命; config双语化(前置=解码bug修复: Handcode读取器charset未侦察+旧文件迁移坑)
