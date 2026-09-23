@@ -1,5 +1,5 @@
 # GOAL-PLAN — TansHugeTrees 大修战役 (LMax Fix V52)
-> 更新: 2026-09-24 00:11 | 阶段: 刀U1+无维度键修复已落地 / P0-R2施工中(§3.5=d每树即冲+勘误两处, 下一刀U2计算接线) / 刀S jar=20260923225539 未部署
+> 更新: 2026-09-24 01:00 | 阶段: 刀U1+无维度键修复+刀U2已落地 / P0-R2引擎就绪(缺省休眠, 翻player_center激活; 下一步U3=claims统一+U4=试验收看数) / 最新jar未部署
 > 判例库: .agent/memory.md (001-141) 本文件=作战地图; 上代快照: .agent/GOAL-PLAN_v50_snapshot.md + v51_snapshot.md
 
 ## 0. 项目身份
@@ -58,6 +58,7 @@
 - [P0-R2] 手术单已批(23晚max令:干P0-R2; commit 4b3f2c1, 文件=P0-R2手术单.md): 预生成换脑(玩家中心窗口差分/expr半径/bitset台账/region记账回写免迁移/刀U1-U5); 签字后动刀; 侦察五项(getData读侧/bin幂等/触发链/池线程数/视距API)
 - [刀U1] 已落地(commit e655bd4): PregenObserver.java 新文件, 纯增量零接线: LevelTick.END玩家chunk防抖(稳态零分配)+Chebyshev窗口差分(R=v+8)+observed台账(与U2 computed刻意分离防预谎)+AboutToStart自清; 挂点偏差PlayerTick→LevelTickEvent(已报备); 日志键=log_tree_location; 下一刀U2计算接线
 - [无维度键修复] 已落地(刀U2前置, 24凌晨max令顺手修): TreeLocation四缓存per-dimension嵌套(跨维度投毒根治, 单文件封闭, 同维度行为字节级等同, commit 48337b6); 手术单勘误存档: §1.4"整region丢失"实为丢claims状态(每树即冲已部分落盘)/§3.5"a=对齐现状"失准(现状=每树即冲)→§3.5裁决d=继承每树即冲, U2冲刷零新代码
+- [刀U2] 已落地(24凌晨, commit f1d1371): PregenEngine新文件(mode门缺省region=休眠/claims-TRUE快标记/computed台账/软背压8双站点pump/epoch跨世界免疫/reset清in_flight改判-drop泄漏饿死重于负漂移) + pregenComputeRegion(复刻run采样骰子+尾部兜底flush) + Observer接线(fresh_regions→offer/resolveRadius/AboutToStart reset/RADIUS_MARGIN退役) + submitTreeGen public化 + Handcode三键; 运行时验收=翻pregen_mode=player_center+开log_tree_location看[U2]日志; 旧链在途跨世界写穿洞(既有行为)报备待max裁决
 - [挂账] config格式革命; config双语化(前置=解码bug修复: Handcode读取器charset未侦察+旧文件迁移坑)
 - [背景] 调试仪表全开保持(max指令); 刀Q烟测全绿; 种子案结案(region骨架伪影, 与种子无关)
 - [判例·混合行尾] 本文件todo块(刀R立项轮追加)曾为LF-only行尾而其余CRLF: CRLF锚Contains必败(gp3两轮count=0真相, 非标点宽度); CRLF-only分裂把LF区折叠(52行假象+todo前缀匹配隐形); 修复=regex \r?\n双向分裂+区间切片+CRLF归一(本轮已全文归一)
