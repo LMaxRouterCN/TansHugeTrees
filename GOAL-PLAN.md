@@ -1,5 +1,5 @@
 # GOAL-PLAN — TansHugeTrees 大修战役 (LMax Fix V52)
-> 更新: 2026-09-23 05:30 | 阶段: 刀R+刀S已落地(待运行时验收) / P0-R2手术单待批 / 刀S jar已build未部署
+> 更新: 2026-09-23 23:20 | 阶段: 刀U1观察者已落地(纯增量零接线) / P0-R2施工中(侦察全定案, 下一刀U2计算接线) / 刀S jar=20260923225539 未部署(缺省expr)
 > 判例库: .agent/memory.md (001-141) 本文件=作战地图; 上代快照: .agent/GOAL-PLAN_v50_snapshot.md + v51_snapshot.md
 
 ## 0. 项目身份
@@ -55,7 +55,8 @@
 - [刀S] 已落地(commit 338a54b, jar 20260923050732 未部署): budget_ms表达式化滴灌+O(1)队列深度计数器+深度仪表+预算三键热重载; 刀S补(23晚): 缺省mode翻expr(max裁决)+compileProgram死行清除
   验收三步: (1)部署进世界默认即expr(启动日志见budget expr armed; 显式static=V46对照); (2)热切回static验证: config.txt改 deferred_queue_budget_mode = static(保存即热生效, 日志budget hot-reloaded, 无需重启);
   默认式 clamp(45-t,2,40), 变量 t=本tick前段ms / d=上tick滴灌ms / q=队列深度; (3)lmax-debuglog.json加 "log_queue_depth": true → 预算耗尽打点(双报兼漂移探测)
-- [P0-R2] 手术单待批(commit 4b3f2c1, 文件=P0-R2手术单.md): 预生成换脑(玩家中心窗口差分/expr半径/bitset台账/region记账回写免迁移/刀U1-U5); 签字后动刀; 侦察五项(getData读侧/bin幂等/触发链/池线程数/视距API)
+- [P0-R2] 手术单已批(23晚max令:干P0-R2; commit 4b3f2c1, 文件=P0-R2手术单.md): 预生成换脑(玩家中心窗口差分/expr半径/bitset台账/region记账回写免迁移/刀U1-U5); 签字后动刀; 侦察五项(getData读侧/bin幂等/触发链/池线程数/视距API)
+- [刀U1] 已落地(commit e655bd4): PregenObserver.java 新文件, 纯增量零接线: LevelTick.END玩家chunk防抖(稳态零分配)+Chebyshev窗口差分(R=v+8)+observed台账(与U2 computed刻意分离防预谎)+AboutToStart自清; 挂点偏差PlayerTick→LevelTickEvent(已报备); 日志键=log_tree_location; 下一刀U2计算接线
 - [挂账] config格式革命; config双语化(前置=解码bug修复: Handcode读取器charset未侦察+旧文件迁移坑)
 - [背景] 调试仪表全开保持(max指令); 刀Q烟测全绿; 种子案结案(region骨架伪影, 与种子无关)
 - [判例·混合行尾] 本文件todo块(刀R立项轮追加)曾为LF-only行尾而其余CRLF: CRLF锚Contains必败(gp3两轮count=0真相, 非标点宽度); CRLF-only分裂把LF区折叠(52行假象+todo前缀匹配隐形); 修复=regex \r?\n双向分裂+区间切片+CRLF归一(本轮已全文归一)
