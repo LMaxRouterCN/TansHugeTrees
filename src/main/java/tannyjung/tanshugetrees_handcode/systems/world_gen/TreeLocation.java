@@ -156,7 +156,7 @@ public class TreeLocation {
         if (set == null) {
             return;
         }
-        for (int round = 0; round < 8; round++) { // 熔断上限: 活锁防护
+        for (int round = 0; round < 64; round++) { // [刀Y][长期记忆:180] 熔断上限 8→64: 并发波(16 region 任务 × 跨区足迹)脏键约 30, 8 轮不够覆盖; 64 次冲刷各 ms 级, 活锁防护保留
             String key = null;
             for (String k : set) { // 弱一致取一个
                 key = k;
@@ -166,7 +166,10 @@ public class TreeLocation {
                 return; // 空 = 收工
             }
             if (!set.remove(key)) {
-                continue; // 摘牌失败 = 并发接管, 复查
+                round--; // [刀Y] [长期记忆: 180] 摘牌失败不再烧轮(惊群修复): 8 池线程尾部同时抓共享脏集同一首元素,
+                         // 仅 1 个 remove 成功, 旧代码 7 个失败者各烧一轮 → 有效吞吐塌缩 1/8, 本区键饿死幸存熔断。
+                         // 失败必因他线程已摘此键(全局进展), 下轮迭代重抓新头必出新进展, 无死循环。
+                continue;
             }
             String[] parts = key.split(",");
             flushCachesAsync(dimension, Integer.parseInt(parts[0]), Integer.parseInt(parts[1]));
@@ -252,6 +255,11 @@ public class TreeLocation {
         // drainDirty 同步落盘 → claims TRUE(读侧终态判定/offer 快标记) → wakeOnRegionComplete(等待者闹钟)。
         // V42 不变量保持: drain 在前, TRUE 严格蕴含落盘。失败/异常不置 TRUE = 安全网语义(观察者重差分再 offer)。
         drainDirty(dimension);
+        // [刀Y] [长期记忆: 180] 本区直冲硬保证(世界68空白区根因修复): drainDirty 多线程惊群下可饿死本区脏键
+        // (世界68 r.-1,-1: claims TRUE 于 02:36:01, bin 02:40:52 才落盘, 迟到 4分51秒) → 被 wake 的 chunk 读空盘
+        // + 3x3 全 TRUE → V42 终审判决误杀全区 1064 chunk = 空白正方形。此处显式同步冲刷恢复不变量:
+        // TRUE 严格蕴含本区在盘。幂等(已冲则快照空无操作)。跨区足迹残余竞态(秒级窗口)呈报max今日不展开。
+        flushCachesAsync(dimension, regionX, regionZ);
         region_scan_claims.put(dimension + "," + regionX + "," + regionZ, Boolean.TRUE);
         wakeOnRegionComplete(dimension, regionX, regionZ, level_accessor);
         if (Core.log_tree_location) {
@@ -400,6 +408,9 @@ public class TreeLocation {
         // 此处统一落盘(含跨 region 足迹写的邻 region 标记); V42 不变量保持 = drain 同步在前,
         // TRUE 严格在后蕴含「数据已落盘」
         drainDirty(dimension);
+        // [刀Y] [长期记忆: 180] 本区直冲硬保证: 熔断是尽力而为, TRUE 必须严格蕴含落盘 —— 与 pregenComputeRegion
+        // 尾修复统一, 双链不变量同口径。幂等: drain 已冲过则写缓存快照为空, 无操作。
+        flushCachesAsync(dimension, regionX, regionZ);
         region_scan_claims.put(regionKey, Boolean.TRUE); // [LMax Fix V42] 移至同步落盘之后（原在 flush 之前，存在"TRUE但数据在途"窗口）
             // [LMax Fix V42] 事件唤醒：本 region 扫描完成 → 唤醒等待集中 3×3 邻域含本 region 的空数据 chunk
             // 重跑一次。必须在 flushCachesAsync 之后（数据先落盘失效，唤醒的 start() 才能读到最新）。[长期记忆: 014]

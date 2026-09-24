@@ -41,3 +41,17 @@ jar 20260925005623 -> E:\MC\.minecraft\versions\TEST 1.20.1-Forge_47.4.10\mods
 实例路径修正判例: 旧记忆 E:\MC.minecraft 系抄丢'\.'段 -> 真实 E:\MC\.minecraft\ (129号已覆盖)
 待验收: 阶段1零配置=世界66回放33k树+新世界冷启动计时(刀V: 259s/region->秒级)
         阶段2=config改pregen_mode=player_center->U2接管+pregen_task_priority三值
+
+## 2026-09-25 06:xx 刀Y 空白区根因修复(世界68验收翻案收口)
+案: 空白正方形(r.-1,-1等区零树)+轴向长条; 速度半场刀V已结案(秒级启动+跑图提速)
+根因: drainDirty惊群+熔断饿死宿主区脏键 -> 刀W-2尾claims TRUE早于落盘(铁证-1,-1: TRUE 02:36:01 / bin 02:40:52 = 4m51s)
+  -> 被wake的chunk读空盘+3x3全TRUE -> V42 TERMINAL误杀整region(-1,-1 x1064 chunk处决)
+  惊群机理: 8池线程尾并发drain同抓CHM迭代首元素, 摘牌失败continue烧轮->吞吐1/8; 并发波~30脏键 vs 8轮熔断
+刀Y: 1)宿主尾双点(run+pregenComputeRegion) drainDirty后claims前 显式flushCachesAsync本区直冲(幂等)
+  2)摘牌失败round--不烧轮 3)熔断8->64 | 判例180
+密度判读: 68=正确执行(0,0区4490树); 66=双扫时代虚高(31438记录)+异种子非严格A/B; 想更密=multiply_rarity旋钮
+世界68自愈: claims/TERMINAL纯内存态, 刀Y jar重启->re-offer重算(确定性同树)正确落盘->空区补齐
+build: 受控32s(offline+no-daemon; 前次撞3600s exec墙) | jar: tanshugetrees-1.8.0-20260925060503.jar | FINAL-COUNT=1
+部署勘误: 归档路径凭记忆猜错一次(D:\mcmod\mod-jar-backups不存在->Move失败但ARCHIVED打印无条件=假绿)
+  实际归档目录: D:\Documents\mcmod\mod-jar-backups (035014/05623两代.disabled可逆)
+晨验收: 1)世界68回放-空区自愈 2)新世界冷启动 3)读latest.log THT行定量
