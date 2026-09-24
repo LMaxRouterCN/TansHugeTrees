@@ -220,6 +220,10 @@ public class Handcode {
         public static volatile String pregen_mode = "region";
         public static volatile String pregen_radius_expr = "v+8";
         public static int pregen_max_inflight = 8;
+        // [刀X] [长期记忆: 178] 任务优先级: fifo = 缺省(先入队先算) / nearest = 距玩家最近先(鞘翅撞树
+        // 风险最大: 高速飞行时面前突然长树) / farthest = 最远先(最安全: 玩家到达时早已就绪)。
+        // volatile: WatchConfigReload 热重载线程写 / 池线程读。
+        public static volatile String pregen_task_priority = "fifo";
 
         // [LMax Fix V42] Test Exist Chunk 守卫开关（默认关=废除）[长期记忆: 014]
         // 守卫原逻辑：writeData 写入前扫描 ±4 chunk 的 features 状态，任一命中即整棵丢树。
@@ -459,6 +463,13 @@ public class Handcode {
                     | 12 threads; leftover capacity serves the legacy chain. Check-then-act allows brief overshoot
                     | (harmless: oversubscription only recomputes, never drops).
 
+                    pregen_task_priority = fifo
+                    | Pregen region task priority. "fifo": first-offered first-computed (default).
+                    | "nearest": regions closest to the player computed first. ELYTRA WARNING: trees may
+                    | pop up right in front of a fast-flying player (crash risk) - use with care.
+                    | "farthest": farthest first (safest for elytra: trees ready before player arrives).
+                    | Invalid values fall back to fifo at runtime. Hot-reloadable.
+
                       chunk_status_guard = false
                       | [LMax V42] Skip writing tree data when any chunk in the +-4 range has already passed the "features" stage. Default false (guard removed): the guard discarded whole trees near spawn and behind fast travel. Enable only for debugging.
 
@@ -600,6 +611,8 @@ public class Handcode {
             pregen_mode = data.getOrDefault("pregen_mode", "region").trim();
             pregen_radius_expr = data.getOrDefault("pregen_radius_expr", "v+8");
             pregen_max_inflight = Integer.parseInt(data.getOrDefault("pregen_max_inflight", "8"));
+            // [刀X] [长期记忆: 178] 任务优先级: 缺键 fifo 零迁移; 非法值运行时退化 fifo(PregenEngine.nextTask)
+            pregen_task_priority = data.getOrDefault("pregen_task_priority", "fifo").trim();
         
 
           

@@ -17,6 +17,7 @@ package tannyjung.tanshugetrees_handcode.systems.world_gen;
 // 内存预算: computed 128B/region, 百万 chunk 级探索 < 2MB(与 observed 同量级, 手术单 §3.3)。
 
 import net.minecraft.server.level.ServerLevel;
+import net.minecraft.server.level.ServerPlayer;
 import tannyjung.tanshugetrees_core.Core;
 import tannyjung.tanshugetrees_core.ExprEngine;
 import tannyjung.tanshugetrees_core.game.EventCenter;
@@ -54,10 +55,25 @@ public class PregenEngine {
     private static final double[] radius_eval_vars = new double[1];
     private static final AtomicBoolean radius_warned = new AtomicBoolean();
 
+    // [刀X] [长期记忆: 178] 玩家坐标快照组(offer 主线程写 / nextTask 池线程读): 三 volatile 非原子,
+    // 极端交错仅排序启发式受害无正确性影响; dim null = 无快照(极值模式退化 fifo)。
+    private static volatile String snapshot_dim = null;
+    private static volatile int snapshot_px = 0;
+    private static volatile int snapshot_pz = 0;
+
     // ===== 入口: Observer 慢路径(主线程)调用, 差分产物 = 本窗口出现新 chunk 的 region 全键集 =====
     public static void offer (String dimension, ServerLevel level, Collection<String> fullRegionKeys) {
         // mode 门: 缺省 "region" = 引擎休眠(零行为变化, U1 观察日志照打; 热重载翻 player_center 即激活)
         if (!"player_center".equals(Handcode.Config.pregen_mode)) return;
+        // [刀X] [长期记忆: 178] 玩家坐标快照(offer 主线程串行写): 首位玩家 = 单人语义; 空列表不更新
+        // (保留旧快照, 比退化更平滑)。池线程 nextTask 读(三 volatile 非原子组, 极端交错仅排序
+        // 启发式受害, 无正确性影响)。
+        if (!level.players().isEmpty()) {
+            ServerPlayer p = level.players().get(0);
+            snapshot_dim = dimension;
+            snapshot_px = p.blockPosition().getX();
+            snapshot_pz = p.blockPosition().getZ();
+        }
         Map<String, BitSet> dim_computed = computed_ledger.computeIfAbsent(dimension, k -> new ConcurrentHashMap<>());
         for (String regionKey : fullRegionKeys) {
             if (dim_computed.containsKey(regionKey)) continue; // 引擎已算过
@@ -91,12 +107,55 @@ public class PregenEngine {
     // ===== 泵: 双站点(offer 尾=主线程 / 任务 finally=池线程)接力, 零定时器零轮询 =====
     private static void pump () {
         // 软背压: check-then-act 非原子, 双站点并发下容忍瞬时超发(池吸收, 超发只多算不多丢)
+        // [刀X] [长期记忆: 178] 出队改 nextTask(策略外壳化: fifo 原语义 / 极值模式见 nextTask 注释)
         RegionTask task;
-        while (in_flight.get() < Handcode.Config.pregen_max_inflight && (task = pending.poll()) != null) {
+        while (in_flight.get() < Handcode.Config.pregen_max_inflight && (task = nextTask()) != null) {
             pending_regions.remove(task.regionKey); // 出队即解除去重登记(失败后可重新 offer)
             in_flight.incrementAndGet();
             EventCenter.Server.submitTreeGen(task); // 守卫复用: 拒绝吞/关服窗口防崩 [长期记忆: 167]
         }
+    }
+
+    // [刀X] [长期记忆: 178] 出队策略(计算与调度解耦: 策略全在本外壳, 计算核心零改动):
+    // fifo = poll 原语义(缺省); nearest/farthest = CLQ 弱一致遍历选极值 + 原子 remove(失败 = 并发
+    // 先取, 本拍空手由双站点接力重泵收敛, 无饿死); 非法值/无快照一律退化 fifo。
+    // 维度外任务两种极值模式均排尾(玩家不在场, 先做零收益; 不饿死: 无同维度任务时照常出队);
+    // 平局保先见者 = CLQ 插入序 = FIFO 次序。
+    private static RegionTask nextTask () {
+        String mode = Handcode.Config.pregen_task_priority;
+        if (!"nearest".equals(mode) && !"farthest".equals(mode)) {
+            return pending.poll(); // fifo / 非法值: 原语义
+        }
+        String dim = snapshot_dim;
+        if (dim == null) {
+            return pending.poll(); // 无快照退化 fifo(极值无基准)
+        }
+        boolean nearest = "nearest".equals(mode);
+        long px = snapshot_px, pz = snapshot_pz;
+        RegionTask best = null;
+        long best_score = 0;
+        for (RegionTask t : pending) { // CLQ 弱一致遍历: 漏看的新任务由下轮双站点接力
+            long score = distanceScore(t, dim, px, pz, nearest);
+            if (best == null || (nearest ? score < best_score : score > best_score)) {
+                best = t;
+                best_score = score; // 严格不等: 平局保先见者
+            }
+        }
+        if (best == null) {
+            return null;
+        }
+        return pending.remove(best) ? best : null; // 原子摘牌; 失败 = 并发先取, 本拍空手
+    }
+
+    // [刀X] [长期记忆: 178] region 中心(rx*512+256, 512 块/region)到玩家的平方距离(单调等价免 sqrt)。
+    // 维度外: 值域外打分排尾 —— nearest 给 MAX_VALUE(永不最小), farthest 给 MIN_VALUE(永不最大)。
+    private static long distanceScore (RegionTask t, String dim, long px, long pz, boolean nearest) {
+        if (!t.dimension.equals(dim)) {
+            return nearest ? Long.MAX_VALUE : Long.MIN_VALUE;
+        }
+        long dx = (t.regionX * 512L + 256L) - px;
+        long dz = (t.regionZ * 512L + 256L) - pz;
+        return dx * dx + dz * dz;
     }
 
     // ===== region 全 1024 bit 一把置(调度粒度记账) =====

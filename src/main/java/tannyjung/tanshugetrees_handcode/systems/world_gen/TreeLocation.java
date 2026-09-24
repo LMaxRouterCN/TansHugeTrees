@@ -53,6 +53,15 @@ public class TreeLocation {
     // （全项目仅"声明+remove"两处引用，从未put加锁，remove恒空转，连同注释一并移除）
     private static final Map<String, Boolean> region_scan_claims = new java.util.concurrent.ConcurrentHashMap<>();
 
+    // [刀V] [长期记忆: 176] 脏 region 台账: dimension → ("rx,rz" 集合)。writeData 每树 put 缓存后
+    // 标脏(先写后标铁律: JMM 保证任何摘牌者的 flush 必见标脏时已在缓存的数据), 由宿主任务尾部
+    // drainDirty 统一冲刷 —— 每树即冲 33k 次文件开关/region(冷启动 259s 主犯) → 每 region 数次。
+    private static final java.util.concurrent.ConcurrentHashMap<String, java.util.Set<String>> dirty_regions = new java.util.concurrent.ConcurrentHashMap<>();
+
+    // [刀V-2] [长期记忆: 176] path_storage → 过滤后 .bin 文件数组缓存(会话内目录不变量: custom_packs
+    // 解包于世界装载期; clearWorldState 清场兜底重解包/改名场景)。
+    private static final java.util.concurrent.ConcurrentHashMap<String, File[]> list_files_cache = new java.util.concurrent.ConcurrentHashMap<>();
+
     // [LMax Fix V13] 使用 AtomicInteger 保证多线程下 UI 状态的原子更新
     public static final java.util.concurrent.atomic.AtomicInteger world_gen_overlay_animation = new java.util.concurrent.atomic.AtomicInteger(0);
     public static final java.util.concurrent.atomic.AtomicInteger world_gen_overlay_bar = new java.util.concurrent.atomic.AtomicInteger(0);
@@ -130,6 +139,57 @@ public class TreeLocation {
         }
     }
 
+    // [刀V] [长期记忆: 176] 标脏(put-then-mark 铁律的 mark 半边): writeData 写完两级缓存后调用,
+    // 宿主任务(run/pregenComputeRegion)尾部 drainDirty 收走。Set.add 幂等, 并发重复标脏无副作用。
+    private static void markDirty (String dimension, int regionX, int regionZ) {
+        dirty_regions.computeIfAbsent(dimension, k -> java.util.concurrent.ConcurrentHashMap.newKeySet())
+                .add(regionX + "," + regionZ);
+    }
+
+    // [刀V] [长期记忆: 176] 摘牌-冲刷-复查循环(宿主任务尾部调用)。摘牌 remove 原子(失败 = 并发任务已
+    // 接管, 跳过); 同步 flushCachesAsync 落盘; 复查 = 收摘牌竞态窗口内的新标记。8 轮熔断 = 活锁防护
+    // (残余标记由其宿主尾 drain 兜底, 熔断只延后不丢数据)。
+    // 范围 = 全维度脏集: 跨 region 超大树足迹写邻 region 缓存, 只冲宿主自己 region = 邻 region 数据
+    // 坐死缓存(其任务已结束再无人触碰) = 树永久丢 —— 故必须全维度。
+    private static void drainDirty (String dimension) {
+        java.util.Set<String> set = dirty_regions.get(dimension);
+        if (set == null) {
+            return;
+        }
+        for (int round = 0; round < 8; round++) { // 熔断上限: 活锁防护
+            String key = null;
+            for (String k : set) { // 弱一致取一个
+                key = k;
+                break;
+            }
+            if (key == null) {
+                return; // 空 = 收工
+            }
+            if (!set.remove(key)) {
+                continue; // 摘牌失败 = 并发接管, 复查
+            }
+            String[] parts = key.split(",");
+            flushCachesAsync(dimension, Integer.parseInt(parts[0]), Integer.parseInt(parts[1]));
+        }
+    }
+
+    // [刀V-2] [长期记忆: 176] 目录列举 + V16 过滤(缓存值工厂): null = 目录不存在(CHM 语义: mapping
+    // 返回 null 不建立映射 → 保留重探, 对齐旧 listFiles==null); 空数组照常缓存。
+    // [LMax Fix V16] 过滤掉目录和非 .bin 文件，防止随机选中 "storage" 等子目录导致字典污染和路径错误(注释随逻辑搬家)。
+    private static File[] filterBinFiles (File dir) {
+        File[] allFiles = dir.listFiles();
+        if (allFiles == null) {
+            return null;
+        }
+        java.util.List<File> binFiles = new java.util.ArrayList<>();
+        for (File f : allFiles) {
+            if (f.isFile() && f.getName().endsWith(".bin")) {
+                binFiles.add(f);
+            }
+        }
+        return binFiles.toArray(new File[0]);
+    }
+
     public static void start(LevelAccessor level_accessor, String dimension, ChunkPos chunk_pos) {
         Map<String, Map<String, String>> data = ConfigDynamic.getData("world_gen");
         if (Core.log_tree_location) System.out.println("[THT-DEBUG] TreeLocation.start() called. Data empty: " + data.isEmpty() + ", Data size: " + data.size());
@@ -167,8 +227,8 @@ public class TreeLocation {
     // 存档路径隔离不受影响，仅清内存。EventCenter 不直接摸私有字段，经本类聚合入口（PlacementGate 先例推广）。
     // [刀U2] [长期记忆: 167,168] 引擎计算入口: 复刻 run() 采样扫描(同种子同序同 region_scan_percent
     // 骰子 = 共存双写同结果; region 完成 = 采样子集算完, 非全量——与旧链 claims TRUE 同语义口径)。
-    // §3.5=d: writeData 每树即冲(自动冲刷), 尾部一次兜底清残对齐 run() 尾部语义。
-    // 不碰 claims(旧链到达自行认领补算 = 共存安全网, U3 统一); 不置 TRUE; 不唤醒(U3)。
+    // [刀V/W-2 终稿修订] writeData 标脏(每树即冲退役), 尾部 drainDirty 统一落盘对齐 run() 尾部;
+    // 尾部置 claims TRUE + 唤醒(player_center 下 legacy 已禁, 三断线由本尾部接管, 详方法尾注释)。
     // 线程契约: THT-TreeGen 池线程(与旧链 run 同池, getData 链纯计算字面审计 100%)。
     public static boolean pregenComputeRegion(LevelAccessor level_accessor, String dimension, int regionX, int regionZ) {
         Map<String, Map<String, String>> data = ConfigDynamic.getData("world_gen");
@@ -187,8 +247,13 @@ public class TreeLocation {
                 }
             }
         }
-        // 尾部兜底清残(对齐 run() 尾部; 常规数据已由 writeData 每树即冲落盘)
-        flushCachesAsync(dimension, regionX, regionZ);
+        // [刀V] [长期记忆: 176] 尾部兜底清残改 drainDirty(全维度: writeData 本会话只标脏, 含跨 region 足迹)
+        // [刀W-2] [长期记忆: 177] 三断线桥接(原仅 legacy 尾部供血, player_center 下 legacy 已禁由本尾部接管):
+        // drainDirty 同步落盘 → claims TRUE(读侧终态判定/offer 快标记) → wakeOnRegionComplete(等待者闹钟)。
+        // V42 不变量保持: drain 在前, TRUE 严格蕴含落盘。失败/异常不置 TRUE = 安全网语义(观察者重差分再 offer)。
+        drainDirty(dimension);
+        region_scan_claims.put(dimension + "," + regionX + "," + regionZ, Boolean.TRUE);
+        wakeOnRegionComplete(dimension, regionX, regionZ, level_accessor);
         if (Core.log_tree_location) {
             System.out.println("[THT-DEBUG] [U2] pregenComputeRegion: " + dimension + "," + regionX + "," + regionZ
                 + " scanned=" + scan_count + " in " + (System.currentTimeMillis() - scan_start) + "ms");
@@ -210,6 +275,9 @@ public class TreeLocation {
         cache_biome.clear();
         region_scan_claims.clear();
         pendingEmptyChunks.clear();
+        // [刀V/刀V-2] [长期记忆: 176] 脏台账与目录列举缓存随世界切换清场(重解包/改名兜底, 跨世界不泄漏)
+        dirty_regions.clear();
+        list_files_cache.clear();
     }
 
     // [LMax Fix V42] 终态判定：chunk 的 3×3 邻 region 全部扫描完成（TRUE）仍无数据 → 覆盖本 chunk 的
@@ -271,6 +339,13 @@ public class TreeLocation {
         int regionX = chunk_pos.x >> 5;
         int regionZ = chunk_pos.z >> 5;
         String regionKey = dimension + "," + regionX + "," + regionZ;
+        // [刀W] [长期记忆: 177] player_center 模式下 legacy 让路: 认领前退出, U2 引擎独占计算
+        // (消灭双扫: 世界66实测 5 region 双算 ≈40% 算力浪费)。region 模式缺省零行为变化(U2 休眠,
+        // 本链是唯一计算链)。[region 模式退场预备] 默认翻 player_center 后本门改无条件 return
+        // → legacy 链可物理删除。
+        if ("player_center".equals(Handcode.Config.pregen_mode)) {
+            return;
+        }
         
         // [LMax Fix V38] Region三态原子认领：putIfAbsent返回null=抢到扫描权，返回FALSE=别人在扫(跳过)，返回TRUE=扫描完成(跳过)
         // [长期记忆: 004] 先A后B的A1：600×冗余扫描→1×，被跳chunk由DeferredQueue 400tick重试兜底
@@ -321,7 +396,10 @@ public class TreeLocation {
             // [长期记忆: 004] 先A后B决策的A1：region原子认领消除600×冗余
             // [LMax Fix V42] 顺序修正：先同步落盘再置 TRUE（V26 起 flushCachesAsync 已是同步写盘）。
             // claims=TRUE 从此严格蕴含「数据已落盘且解析缓存已失效」，终态判定与事件唤醒共享此不变量。
-            flushCachesAsync(dimension, regionX, regionZ);
+        // [刀V] [长期记忆: 176] run 尾部改 drainDirty(全维度脏集): 扫描期间 writeData 只标脏,
+        // 此处统一落盘(含跨 region 足迹写的邻 region 标记); V42 不变量保持 = drain 同步在前,
+        // TRUE 严格在后蕴含「数据已落盘」
+        drainDirty(dimension);
         region_scan_claims.put(regionKey, Boolean.TRUE); // [LMax Fix V42] 移至同步落盘之后（原在 flush 之前，存在"TRUE但数据在途"窗口）
             // [LMax Fix V42] 事件唤醒：本 region 扫描完成 → 唤醒等待集中 3×3 邻域含本 region 的空数据 chunk
             // 重跑一次。必须在 flushCachesAsync 之后（数据先落盘失效，唤醒的 start() 才能读到最新）。[长期记忆: 014]
@@ -634,21 +712,14 @@ public class TreeLocation {
 
         // Random Select File
         {
-            File[] allFiles = chosen.listFiles();
-            if (allFiles == null) {
+            // [刀V-2] [长期记忆: 176] 目录列举缓存: 每树一次 listFiles → 会话内零次(computeIfAbsent;
+            // 映射返回 null = 目录不存在 → CHM 不登记保留重探, 对齐旧 allFiles==null 早退行为)。
+            // V16 防字典污染过滤搬进 filterBinFiles(注释随逻辑走); 空数组照常缓存短路。
+            final File dir = chosen; // [刀V-2] lambda 捕获别名: chosen 下方将重赋值(非 effectively final 禁直接捕获)
+            File[] list = list_files_cache.computeIfAbsent(path_storage, k -> filterBinFiles(dir));
+            if (list == null || list.length == 0) {
                 return;
             }
-            // [LMax Fix V16] 过滤掉目录和非 .bin 文件，防止随机选中 "storage" 等子目录导致字典污染和路径错误
-            java.util.List<File> binFiles = new java.util.ArrayList<>();
-            for (File f : allFiles) {
-                if (f.isFile() && f.getName().endsWith(".bin")) {
-                    binFiles.add(f);
-                }
-            }
-            if (binFiles.isEmpty()) {
-                return;
-            }
-            File[] list = binFiles.toArray(new File[0]);
 
             RandomSource random = RandomSource.create(level_accessor.getServer().overworld().getSeed() ^ ((centerX * 341873128712L) + (centerZ * 132897987541L)));
             chosen = new File(chosen.getPath() + "/" + list[random.nextInt(list.length)].getName());
@@ -744,8 +815,10 @@ public class TreeLocation {
                 BlockPos pos = new BlockPos(centerX, 0, centerZ);
                 cache_write_tree_location.computeIfAbsent(dimension, k -> new java.util.concurrent.ConcurrentHashMap<>()).computeIfAbsent(chunk_pos, create -> new java.util.concurrent.ConcurrentHashMap<>()).put(pos, dictId); // [刀U2前置][长期记忆:160] per-dim 嵌套
 
-                // 触发异步刷盘，flushCachesAsync 内部会原子提取并清空缓存，无数据时直接跳过，不会造成 I/O 浪费
-                flushCachesAsync(dimension, regionX, regionZ);
+                // [刀V] [长期记忆: 176] 每树即冲退役 → 标脏: 上方 put 先写缓存, 此处后标脏
+                // (put-then-mark 铁律), 由宿主任务尾部 drainDirty 统一冲刷(33k 次文件开关/region
+                // → 每 region 数次, 冷启动 259s → 秒级)
+                markDirty(dimension, regionX, regionZ);
             }
 
             // Write Place
@@ -772,7 +845,9 @@ public class TreeLocation {
                         String placeRegionKey = scanX + "," + scanZ;
                         // [执行代号22 - 任务 2.2 & 3.1] 统一走内存缓冲，解决老区域重启后不刷盘的问题
                         cache_write_place.computeIfAbsent(dimension, k -> new java.util.concurrent.ConcurrentHashMap<>()).computeIfAbsent(placeRegionKey, create -> java.util.Collections.synchronizedList(new java.util.ArrayList<>())).addAll(write); // [刀U2前置][长期记忆:160] per-dim 嵌套
-                        flushCachesAsync(dimension, scanX, scanZ);
+                        // [刀V] [长期记忆: 176] 每树即冲退役 → 标脏(put-then-mark: 上方 put 先写缓存,
+                        // 此处后标脏, JMM 保证任何摘牌者的 flush 必见数据), 宿主任务尾 drainDirty 统一收走
+                        markDirty(dimension, scanX, scanZ);
                     }
                 }
         
