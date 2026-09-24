@@ -712,3 +712,7 @@ tag: 刀X, 优先级, pregen_task_priority, nextTask, 鞘翅, 调度, 玩家快�
 判例: PowerShell Select-String 的 -Pattern 参数位写裸表达式 [regex]::Escape(k)必炸"Apositionalparametercannotbefound"(参数解析拆token),同款坑两次(24晚E/F段+25凌晨B/C段);正确姿势=−Pattern只用引号字符串或括号包裹表达式(−Pattern([regex]::Escape(k) 必炸"A positional parameter cannot be found"(参数解析拆token), 同款坑两次(24晚E/F段+25凌晨B/C段); 正确姿势=-Pattern 只用引号字符串或括号包裹表达式(-Pattern ([regex]::Escape(k)必炸"Apositionalparametercannotbefound"(参数解析拆token),同款坑两次(24晚E/F段+25凌晨B/C段);正确姿势=−Pattern只用引号字符串或括号包裹表达式(−Pattern([regex]::Escape(k))); 另: Select-String @().Count=匹配行数, Python str.count=字符级次数, 两口径不同勿混(树全灭案HC计数假警报源)
 tag: PowerShell, Select-String, 脚本判例, 计数偏差
 <!-- END:179 -->
+<!-- ID:180 -->
+V55刀Y判例(判例180): drainDirty为共享CHM弱一致集合, 8池线程宿主尾并发调用时迭代序同构→全抓同一首元素, 摘牌失败continue烧轮→有效吞吐塌缩1/8; 并发波(16region任务×跨区足迹≈30脏键) vs 8轮熔断→宿主自己region的键可幸存自己的drain→刀W-2尾置claims TRUE+wake时数据未落盘(V42不变量"TRUE严格蕴含落盘"破)→被wake的chunk读空盘+3x3全TRUE→TERMINAL终态误杀整region(世界68 r.-1.-1: TRUE 02:36:01/bin落盘02:40:52迟到4m51s/TERM x1064=空白正方形; 同批轴对齐长条=长条空白)。修复(刀Y)=宿主尾双点(run+pregenComputeRegion)drainDirty后claims前显式flushCachesAsync本区直冲(幂等)+摘牌失败round–不烧轮+熔断8→64。铁律: 台账终态语义必须由构造保证(构造性落盘)而非尽力而为; 共享CHM迭代序同构=惊群放大器。附: 密度66vs68=66双扫虚高(31438记录)+异种子, 68为正确值(4490); pending_regions出队即除名=drop自愈韧性设计非bug(重复计算代价); 世界68空区自愈=claims/TERMINAL纯内存态, 重启re-offer重算确定性同树
+tag: 判例, drainDirty, 惊群, 熔断, TRUE蕴含落盘, 刀Y, V42, 空白区, 世界68, 构造性保证, 密度
+<!-- END:180 -->
