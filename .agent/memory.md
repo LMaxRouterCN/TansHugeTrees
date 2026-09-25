@@ -764,3 +764,7 @@ tag: 防假绿协议, jar验证, 编译验证, 刀T, 判例, 部署
 exec异常吞stdout判例(25深夜): PokerAgent exec环境在脚本throw中止时疑似丢弃已积累的stdout输出(R;throw结构回执仍只见异常),上轮MODS−DIR−MISSING与本轮versions−ABORT两轮回执均无前置R; throw结构回执仍只见异常), 上轮MODS-DIR-MISSING与本轮versions-ABORT两轮回执均无前置R;throw结构回执仍只见异常),上轮MODS−DIR−MISSING与本轮versions−ABORT两轮回执均无前置R; 判例: ①abort路径不可依赖$R前置echo传递证据 ②取证型脚本必须纯输出无throw(结果数组直接结尾输出), 异常防御改为状态标记+条件跳过 ③确需中止的场景拆两轮: 先取证输出轮, 判读后再动作轮
 tag: exec, 回执安全, 判例, 诊断方法论
 <!-- END:192 -->
+<!-- ID:193 -->
+实例坐标逐层坍缩判例(25深夜): 失准形态=mods缺(depth3)→versions缺(depth2)→游戏目录本体缺(depth1)逐层坍缩; 判读纪律=逐层坍缩立即怀疑用户最大尺度重组(清场/迁移/换启动器)而非转录漂移; 侦察四件套=①根目录全量列举(警惕Select -First截断, 前30≠全部)②游戏签名探测(config+logs同层=游戏目录本体; '!前缀’置顶命名=用户手工整理痕迹, 高嫌疑)③Recent .lnk解析(WScript.Shell CreateShortcut .TargetPath=用户最近操作目标硬证据)④运行中java/launcher进程CommandLine; 部署纪律=连续≥3次坐标失败后, 动态发现目标须精确签名匹配(实例名+config+logs)或用户确认才可部署; 刀S先例=落地commit与部署解耦, 代码归档不等部署坐标
+tag: 实例路径, 坐标坍缩, 侦察方法论, 部署, 判例
+<!-- END:193 -->

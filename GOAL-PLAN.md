@@ -81,3 +81,4 @@
 - 部署: 待实例坐标(原E:\MC.minecraft整体消失含versions层级, 逐层坍缩mods→versions→本体=max重组实锤; 侦察中; 刀S先例=落地commit先行, 部署后补commit)
 - 验收协议: (1)PARALLEL PASS计数主导+off-thread requeue趋零 (2)FORCED PASSED吞吐/DQ深度 (3)E码直方图回归(E2基线22566) (4)空白视觉复测 (5)异常清点RejectedExecution/CME/NPE (6)可选A/B: config翻false回刀I对照 (7)风险监控: FORCED洪峰dq_budget滴灌限流吸收/stale ready-set退刀I兜底/落叶双消费原子互斥
 - 待办: max确认实例坐标→部署+补commit→开实例跑验收数据
+- 刀T部署补录(26晨): E:\MC\.minecraft\versions\TEST 1.20.1-Forge_47.4.10\mods MD5双验通过, 待max开实例跑验收数据
