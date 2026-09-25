@@ -1,6 +1,7 @@
 package tannyjung.tanshugetrees_core.outside;
 
 import java.io.*;
+import java.nio.charset.StandardCharsets;
 import java.nio.ByteBuffer;
 import java.nio.ByteOrder;
 import java.nio.file.Files;
@@ -163,7 +164,7 @@ public class FileManager {
 
 		try {
 
-			Writer writer = new FileWriter(file, append);
+			Writer writer = new OutputStreamWriter(new FileOutputStream(file, append), StandardCharsets.UTF_8); // [U4] FileWriter用平台默认字符集(中文Win=GBK), 与readTXT的UTF-8不对称=中文config乱码根因
 			BufferedWriter buffered_writer = new BufferedWriter(writer);
 
 			buffered_writer.write(write);
@@ -192,7 +193,12 @@ public class FileManager {
 
 			try {
 
-				return Files.readAllLines(file.toPath()).toArray(new String[0]);
+				List<String> lines_u4 = Files.readAllLines(file.toPath(), StandardCharsets.UTF_8); // [U4] 显式UTF-8: 契约锁死不随平台漂移
+				// [U4] BOM归一: 剥首行U+FEFF(用户编辑器可能写入BOM), 防键名/首值被污染
+				if (lines_u4.isEmpty() == false && lines_u4.get(0).startsWith(String.valueOf((char) 0xFEFF)) == true) {
+				    lines_u4.set(0, lines_u4.get(0).substring(1));
+				}
+				return lines_u4.toArray(new String[0]);
 
 			} catch (Exception exception) {
 

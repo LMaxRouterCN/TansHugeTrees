@@ -784,3 +784,7 @@ tag: 测试环境, 实例路径, MC, TansHugeTrees
 harness记忆系统三缺陷判例(26晨): 1覆盖路径静默失败(185两次覆盖回执均报成功, 跨4轮search全返回旧值; 同批新增条目与remember均正常落地=覆盖与新增写入路径分流, 覆盖坏); 2内容毒字符截断(195正文内嵌全角方括号code标记字面量, search返回恰在该处截断, 与刀T行合并假绿同构=传输层标记污染; 铁律: 记忆正文禁含全角方括号字符); 3remember偶发丢失孤例(R3回执成功但下轮注入未见, 未决被覆盖); 附认领: 我方轮B轮C两次判读假阴性(轮B注入明明显示R1全文却判其丢失, 轮C把R2正常即时生效误读为丢失后复活并构建异步慢提交模型, 两模型均收回)——判读结论自身也需跨轮写后读复验, 与编译防假绿三件套同构; agent_server.py不在工作目录, 帮助文档项目根目录指路失效; 195残体留档作证据, 修正版即本条
 tag: harness, 写入丢失, 覆盖, 截断, 判例, 回执安全
 <!-- END:197 -->
+<!-- ID:198 -->
+判例·BOM注入重演(2026-09-26): PS [IO.File]::WriteAllText(path, str, [Text.Encoding]::UTF8) 会写BOM前导(EF BB BF)——Encoding.UTF8静态属性=发射型UTF8Encoding; javac报非法字符\ufeff构建死. U3手术PregenEngine.java中招(原仓库文件全无BOM). 铁律: 文件手术写盘必须New-Object System.Text.UTF8Encoding($false)或[IO.File]::WriteAllBytes裸字节; 写后复验除内容断言外必须查首3字节无BOM. ReadAllText会静默剥离BOM所以读侧复验探不到写侧注入——读写不对称是本判例的隐身机制. 与既有BOM判例合并记档
+tag: 工具bug，BOM判例，写入验证，编码，教训
+<!-- END:198 -->

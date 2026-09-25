@@ -26,7 +26,7 @@ public class ConfigClassic {
 
                 for (String scan : FileManager.readTXT(path)) {
 
-                    if (scan.contains(" = ") == true) {
+                    if (scan.startsWith("|") == false && scan.contains(" = ") == true) { // [U4] 判例174运行时守卫: 注释行不再被吸作配置项(与Generate段既有守卫同构)
 
                         split = scan.split(" = ");
                         options.add(split[0]);
@@ -176,7 +176,7 @@ public class ConfigClassic {
 
                     if (scan.isEmpty() == false) {
 
-                        if (scan.contains(" = ") == true) {
+                        if (scan.startsWith("|") == false && scan.contains(" = ") == true) { // [U4] 判例174运行时守卫: 注释行不再被吸作配置项(与Generate段既有守卫同构)
 
                             index = scan.indexOf(" = ");
                             data.put(scan.substring(0, index), scan.substring(index + 3));
