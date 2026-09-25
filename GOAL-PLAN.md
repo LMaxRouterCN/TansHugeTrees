@@ -71,3 +71,13 @@
 - 部署: tanshugetrees-1.8.0-20260924035014.jar(旧jar已删防双jar); 磁盘config手术79:79:0, pregen_mode=player_center按名保留。
 - 回档点: tag u2b-fix(b4bad0f)/tag pre-u2b-surgery(8ef076b); 护档D:\Documents\mcmod\tht_handcode_pre_u2b.bak。
 - 待办: max下次启动→直接创建新世界=真U2运行验收([U2]offer日志链+bin目录region文件)。若再崩取crash-reports即判(新坐标新案)。
+
+## 刀T 收档 (2026-09-25 深夜) 并行放置根治小空白欠账 [判例186-192]
+- 案: 小空白=欠账非丢失(生产~11任务/s/12线程 vs 主线程滴灌~6任务/s, 刀I跨线程盲区把off-thread 100%转投DQ单车道); D案判死(自然重放闭环完整: 首访闭包活着+盘无applied标记+TP579幂等), C案刀T继承开工
+- 手术 13处3文件: ReadyChunks公有嵌套类(CHM dim→就绪集, Load写[LevelChunk过滤+FULL防御]/Unload摘/clear联动) + gate off-thread分支(开关+parseFootprint+coversFootprint查表全就绪→PARALLEL PASS放行executor本线程, 缺→刀I原DQ兜底) + gate Server干跑体上移parseFootprint共享helper(duplicate+rewind契约) + start尾段线程分流(off-thread禁直调place防刀N永动机, footprint∪{primary}逐chunk addForced; Server保持V20原语义) + processTick FORCED增LeafLitterGeneration主线程消费 + LeafLitter get→remove原子取走(双消费方互斥) + EC Load markReady/新eventChunkUnloaded摘表 + Handcode三件套(字段placement_gate_parallel_offthread=true/模板/解析getOrDefault)
+- 契约: off-thread落块全走Tile.set异步分支→DeferredBlocks缓存→FORCED主线程setBlock(2)冲刷(刀N零破坏); getHeightWorldGen未加载自动降级getBaseHeight纯噪声(刀F复活通道焊死)
+- 事故三修: ①行合并假绿(多行数组$ind+表达式形态被传输层压单行→//开头注释吞噬整块→javac无错可报; 铁律=尾逗号纯字面量+occ/行计数分离检测) ②lint ghost(模板描述行内嵌=被键模式正则命中; 修复=冒号, 判例174门首次实战拦截) ③class嵌套类取证目标(Handcode$Config/EventCenter$Server非外层class); 防假绿协议=lint门+同exec顺序编译+class/jar原子验证+mtime新鲜度
+- 编译真绿: 13/13标记全True+mtime统一22:37:27+调用方常量parseFootprint@TreePlacer.class(假绿态精确互补证据); jar工件级9/9(ENTRY5/5+GREP4/4, tanshugetrees-1.8.0-20260925224407.jar 64514324B)
+- 部署: 待实例坐标(原E:\MC.minecraft整体消失含versions层级, 逐层坍缩mods→versions→本体=max重组实锤; 侦察中; 刀S先例=落地commit先行, 部署后补commit)
+- 验收协议: (1)PARALLEL PASS计数主导+off-thread requeue趋零 (2)FORCED PASSED吞吐/DQ深度 (3)E码直方图回归(E2基线22566) (4)空白视觉复测 (5)异常清点RejectedExecution/CME/NPE (6)可选A/B: config翻false回刀I对照 (7)风险监控: FORCED洪峰dq_budget滴灌限流吸收/stale ready-set退刀I兜底/落叶双消费原子互斥
+- 待办: max确认实例坐标→部署+补commit→开实例跑验收数据

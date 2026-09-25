@@ -201,6 +201,10 @@ public class TreePlacer {
                             if (Core.log_deferred_queue) System.out.println("[THT-DEBUG] processTick FORCED PASSED: source=" + task.chunk_pos + " target=" + task.target_chunk);
                             // [LMax Fix V50.4 刀N] 主线程落块原生发增量包（setBlock(2)），resyncChunk 退役后返回值无消费者
                             PendingBlocks.placeForced(targetLevel, task.target_chunk);
+                            // [LMax Fix V55 刀T] FORCED 冲刷增落叶层：off-thread start 押后的 LeafLitter 缓存在此主线程消费
+                            // （LeafLitter.create 写入器未验证异步语义，Server 线程消费消风险；place 原子 take 后缓存空 =
+                            // 零操作幂等，与 Server-thread start 尾段原位消费的双消费方由 remove 原子性互斥）。
+                            LeafLitterGeneration.place(targetLevel, targetLevel, targetLevel.getChunkSource().getGenerator(), task.target_chunk);
                         }
                     } else {
                         // 旧版逻辑：重新调 start
@@ -358,6 +362,54 @@ public class TreePlacer {
     }
 
 
+    // [LMax Fix V55 刀T] [长期记忆: 186] 跨线程就绪表：刀I"非 Server 线程 getChunkNow 读 visibleChunkMap
+    // 不可靠"（12帧盲区判例）的正解。ChunkEvent.Load 在 Server 线程（事件分发方）权威写入，CHM 线性
+    // 一致 = 任意线程零盲区读；Unload 摘表防卸载后假阳性命中（假阳性 = off-thread 强载 join/读侧竞态
+    // = 刀F 病灶复活通道，此表焊死它）。消费方：PlacementGate.gate off-thread 分支查表放行并行放置。
+    // 维护点：Load(markReady，proto 过滤+FULL 防御) / Unload(markUnloaded) / PlacementGate.clear 联动
+    // 清场。正确性向安全侧倾斜：摘表竞态导致的 miss 只退化为刀I 兜底，不损失。
+    public static class ReadyChunks {
+
+        // dimension（横杠串，与 Data/waiting 同格式）→ 已就绪 chunk 集合（CHM keySet，线性一致）
+        private static final java.util.concurrent.ConcurrentHashMap<String, java.util.Set<ChunkPos>> ready
+                = new java.util.concurrent.ConcurrentHashMap<>();
+
+        // Load 事件写入（Server 线程权威）：instanceof LevelChunk 过滤 proto 期提前 Load（wake 判例同款），
+        // FULL 状态防御复检（可见 map 只收 FULL，与 gate 探测语义严格一致 = 双保险）
+        public static void markReady (String dimension, ChunkPos chunk_pos, net.minecraft.world.level.chunk.ChunkAccess chunk) {
+            if (chunk instanceof net.minecraft.world.level.chunk.LevelChunk == false) {
+                return;
+            }
+            if (((net.minecraft.world.level.chunk.LevelChunk) chunk).getHighestGeneratedStatus().isOrAfter(net.minecraft.world.level.chunk.ChunkStatus.FULL) == false) {
+                return;
+            }
+            ready.computeIfAbsent(dimension, k -> java.util.concurrent.ConcurrentHashMap.newKeySet()).add(chunk_pos);
+        }
+
+        // Unload 事件摘表：已卸载 chunk 查表必 miss → off-thread 走刀I 兜底（正确性向安全侧倾斜）
+        public static void markUnloaded (String dimension, ChunkPos chunk_pos) {
+            java.util.Set<ChunkPos> set = ready.get(dimension);
+            if (set != null) {
+                set.remove(chunk_pos);
+            }
+        }
+
+        // 足迹覆盖检查：off-thread gate 查表入口。containsAll 逐项 O(1) CHM 读，零管线访问零调度
+        public static boolean coversFootprint (String dimension, java.util.Set<ChunkPos> footprint) {
+            java.util.Set<ChunkPos> set = ready.get(dimension);
+            if (set == null) {
+                return false;
+            }
+            return set.containsAll(footprint);
+        }
+
+        // 世界切换清场（PlacementGate.clear 联动调用；AboutToStart/ServerStarted 双点全覆盖）
+        public static void clear () {
+            ready.clear();
+        }
+
+    }
+
     // [LMax Fix V50 刀F] [长期记忆: 095] 放置就绪门 + Load 事件唤醒链（读侧强载洪峰根治，终审手术）
     // 病理（V49 终审定案）：TXTFunction run 分支与放置路径对邻域 chunk 无门裸读——getBlockState 等 Level
     // 便捷方法内部 getChunk(FULL,load=true) 强载 join——12 条 TreeGen 线程持续灌区块管线 → 主线程 35s 级
@@ -385,6 +437,7 @@ public class TreePlacer {
         public static void clear () {
             waiting.clear();
             reverse.clear();
+            ReadyChunks.clear(); // [LMax Fix V55 刀T] 就绪表联动清场（世界切换，刀K 同族：旧世界就绪集不得泄漏进新世界查表）
         }
 
         // gate：true = 放行（足迹全就绪 / 门禁用 / 数据异常 fail-open）；false = 已登记等待，调用方直接返回
@@ -407,6 +460,19 @@ public class TreePlacer {
             return true; // 理论外路径（无 Server 上下文）：fail-open 交原路径兜底
         }
         if (Thread.currentThread().getName().equals("Server thread") == false) {
+            // [LMax Fix V55 刀T] [长期记忆: 186] off-thread 并行放行：ReadyChunks 查表（Load 事件 Server 线程权威写入，
+            // CHM 线性一致 = 刀I"非 Server 线程 getChunkNow 读 visibleChunkMap 不可靠"的正解——无可见性赌局）。
+            // 足迹全就绪 → 本 executor 线程直接放行放置（方块经 Tile.set 异步分支入 DeferredBlocks，start 尾段
+            // FORCED 冲刷主线程 setBlock(2) 落块，刀N 契约零破坏）；有缺/开关关 → 落下方原刀I 转投 DQ 兜底
+            // （Server 线程权威复查，正确性零损失，行为退化为刀I）。
+            if (Handcode.Config.placement_gate_parallel_offthread == true) {
+                java.util.HashSet<ChunkPos> footprint_pf = parseFootprint(data);
+                if (footprint_pf != null && footprint_pf.isEmpty() == false
+                        && ReadyChunks.coversFootprint(dimension, footprint_pf) == true) {
+                    if (Core.log_placer_start) System.out.println("[THT-DEBUG] PlacementGate PARALLEL PASS: chunk " + chunk_pos + " footprint=" + footprint_pf.size() + " (thread=" + Thread.currentThread().getName() + ")");
+                    return true;
+                }
+            }
             // self= 为本线程对 primary 自身的探针现场：已加载却探为 null = 跨线程盲区活体证据
             boolean self_seen = level_server.getChunkSource().getChunkNow(chunk_pos.x, chunk_pos.z) != null;
             if (Core.log_placer_start) System.out.println("[THT-DEBUG] PlacementGate off-thread requeue: chunk " + chunk_pos + " self=" + self_seen + " (thread=" + Thread.currentThread().getName() + ")");
@@ -415,29 +481,9 @@ public class TreePlacer {
         }
 
             // 干跑解析：duplicate 共享内容独立游标，不消费 start() 的正式 buffer
-            java.util.HashSet<ChunkPos> footprint = new java.util.HashSet<>();
-            {
-                ByteBuffer probe = data.duplicate();
-                while (probe.remaining() > 0) {
-                    if (probe.remaining() < 28) break; // 残帧防御（正式解析自会按既有语义异常返回 0）
-                    probe.getShort(); // id（干跑无需字典解析）
-                    probe.getShort(); // chosen
-                    probe.getInt(); // centerX
-                    probe.getInt(); // centerZ
-                    int from_chunkX = probe.getInt();
-                    int from_chunkZ = probe.getInt();
-                    int to_chunkX = probe.getInt();
-                    int to_chunkZ = probe.getInt();
-                    // 病态防御：跨度超 64 chunk（1024 格）必为损坏记录 → fail-open 交原路径兜底
-                    if (from_chunkX > to_chunkX || from_chunkZ > to_chunkZ || (to_chunkX - from_chunkX) > 64 || (to_chunkZ - from_chunkZ) > 64) {
-                        return true;
-                    }
-                    for (int x = from_chunkX; x <= to_chunkX; x++) {
-                        for (int z = from_chunkZ; z <= to_chunkZ; z++) {
-                            footprint.add(new ChunkPos(x, z));
-                        }
-                    }
-                }
+            java.util.HashSet<ChunkPos> footprint = parseFootprint(data); // [LMax Fix V55 刀T] 内联干跑体上移为共享 helper（语义零漂移，原行内注释随体迁移见 parseFootprint）
+            if (footprint == null) {
+                return true; // 病态防御（原内联同语义）：from>to 或跨度>64 chunk 必为损坏记录 → fail-open 交原路径兜底
             }
             if (footprint.isEmpty() == true) {
                 return true; // 零足迹（异常数据形态）→ 放行由原路径兜底
@@ -499,6 +545,39 @@ public class TreePlacer {
 
             if (Core.log_placer_start) System.out.println("[THT-DEBUG] PlacementGate wait: chunk " + chunk_pos + " missing " + missing_set.size() + "/" + footprint.size() + " footprint chunks (dim=" + dimension + ")");
             return false;
+        }
+
+        // [LMax Fix V55 刀T] 足迹解析提纯（原 gate 内联干跑体上移，语义零漂移）：28 字节/帧的 from/to 矩形
+        // 并集 = 树数据精确足迹。三消费方：gate Server 路径（就绪探测）/ gate off-thread 并行放行（ReadyChunks
+        // 查表）/ start 异步尾段（冲刷调度 scope）。返回 null = 病态帧（from>to 或跨度>64 chunk，调用方
+        // fail-open 兜底）；空 set = 零足迹（残帧/异常形态）。rewind 契约：start 尾段调用时正式 buffer 已被
+        // 放置循环消费（position==limit），duplicate 只复制游标不重置——显式 rewind 才能重放解析；gate 路径
+        // 调用时 position 本为 0，rewind 为无害 no-op。
+        private static java.util.HashSet<ChunkPos> parseFootprint (ByteBuffer data) {
+            java.util.HashSet<ChunkPos> footprint = new java.util.HashSet<>();
+            ByteBuffer probe = data.duplicate();
+            probe.rewind(); // [LMax Fix V55 刀T] 跨两种调用时点的游标归一（见上 rewind 契约）
+            while (probe.remaining() > 0) {
+                if (probe.remaining() < 28) break; // 残帧防御（正式解析自会按既有语义异常返回 0）
+                probe.getShort(); // id（干跑无需字典解析）
+                probe.getShort(); // chosen
+                probe.getInt(); // centerX
+                probe.getInt(); // centerZ
+                int from_chunkX = probe.getInt();
+                int from_chunkZ = probe.getInt();
+                int to_chunkX = probe.getInt();
+                int to_chunkZ = probe.getInt();
+                // 病态防御：跨度超 64 chunk（1024 格）必为损坏记录 → 调用方 fail-open 交原路径兜底
+                if (from_chunkX > to_chunkX || from_chunkZ > to_chunkZ || (to_chunkX - from_chunkX) > 64 || (to_chunkZ - from_chunkZ) > 64) {
+                    return null;
+                }
+                for (int x = from_chunkX; x <= to_chunkX; x++) {
+                    for (int z = from_chunkZ; z <= to_chunkZ; z++) {
+                        footprint.add(new ChunkPos(x, z));
+                    }
+                }
+            }
+            return footprint;
         }
 
         // wake：ChunkEvent.Load 事件入口（EventCenter 接线）。纯内存 map 操作微秒级，无磁盘/管线访问。
@@ -653,11 +732,30 @@ public class TreePlacer {
             DetailedDetection.test(level_accessor, level_server, chunk_generator, dimension, chunk_pos, from_chunkX, from_chunkZ, to_chunkX, to_chunkZ, id, chosen, centerX, centerZ);
         }
 
-        // [LMax Fix V20] 解除主线程封印：让 PendingBlocks 回归异步线程直接写入
-        // 彻底解决主线程被海量方块写入卡死，导致区块发包延迟和 TPS 归零的问题
-        PendingBlocks.place(level_accessor, chunk_pos);
-
-        LeafLitterGeneration.place(level_accessor, level_server, chunk_generator, chunk_pos);
+        // [LMax Fix V55 刀T] [长期记忆: 186] 尾段线程分流：off-thread（刀T 并行放行路径）直调本 place =
+        // take→Tile.set（异步分支）→add 回 DeferredBlocks 永动机（刀N 注释自述死环，空数据分支同款防御
+        // 先例）；LeafLitter.create 写入器线程语义未验证，一并押后 FORCED 主线程消费。Server 线程保持 V20
+        // 原语义（processTick NORMAL 路径，历史行为零漂移）。理论外 level_server==null 镜像空数据分支判例：
+        // 无 DQ 上下文，保留原语义（缓存滞留等重载冲刷，现实零流量）。
+        if (Thread.currentThread().getName().equals("Server thread") == true || level_server == null) {
+            // [LMax Fix V20] 解除主线程封印：让 PendingBlocks 回归异步线程直接写入
+            // 彻底解决主线程被海量方块写入卡死，导致区块发包延迟和 TPS 归零的问题
+            PendingBlocks.place(level_accessor, chunk_pos);
+            LeafLitterGeneration.place(level_accessor, level_server, chunk_generator, chunk_pos);
+        } else {
+            // [LMax Fix V55 刀T] 异步尾段：方块已在放置循环经 Tile.set 异步分支全量入 DeferredBlocks 缓存；
+            // 此处对 footprint∪{primary} 逐 chunk 入 FORCED 冲刷任务（processTick 主线程就绪复查 + setBlock(2)
+            // 落块 = 刀N 契约闭环）。邻 chunk 已加载时不再有 Load 事件（不调度 = 冲刷链断，A3 回型甜甜圈同构），
+            // 必须主动扫投；chunk 未就绪则 FORCED 复查拦截，缓存留存下次冲刷零丢失。
+            java.util.HashSet<ChunkPos> flush_scope = PlacementGate.parseFootprint(data);
+            if (flush_scope == null) {
+                flush_scope = new java.util.HashSet<>(); // 病态帧：gate 已 fail-open 放行，尾段退化为仅 primary（下方 add 兜底）
+            }
+            flush_scope.add(chunk_pos);
+            for (ChunkPos fp : flush_scope) {
+                DeferredQueue.addForced(dimension, level_server.dimension(), fp, fp);
+            }
+        }
 
         // [LMax Debug] 追踪 TreePlacer 完成时间
         long placer_time = System.currentTimeMillis() - placer_start;
@@ -2231,7 +2329,8 @@ public class TreePlacer {
 
             {
 
-                Map<BlockPos, BlockState> data = cache_locations.get(chunk_pos);
+                // [LMax Fix V55 刀T] get+remove 双步改 remove 原子取走（DeferredBlocks.take 同构）：刀T 后 place 存在                 // 双消费方（Server-thread start 尾段 / processTick FORCED 冲刷），get→处理→remove 窗口内另一消费方                 // 并发进入 = 同一落叶集双放置。前置 remove 原子互斥，后到者取 null 零操作退出。
+                Map<BlockPos, BlockState> data = cache_locations.remove(chunk_pos);
 
                 if (data == null) {
 
@@ -2253,7 +2352,7 @@ public class TreePlacer {
 
                 }
 
-                cache_locations.remove(chunk_pos);
+                // [LMax Fix V55 刀T] 原尾部 remove 行退役：place 入口已改原子取走（下方 get→remove 前置），双消费方互斥
 
             }
 

@@ -732,3 +732,35 @@ tag: 刀Z, 断言网, 编译验证, 触点搜索, 搜索边界, 教训
 刀Z结案(2026-09-25): legacy region扫描链连根拔除, 运行验收绿(世界正常+游戏正常退出)。战史=三道防线各拦一刀: ①断言网拦逻辑错(PE锚「共存安全网」2命中=未读区段重复锚, 解法=双条件锚+strict计数) ②编译器拦结构错(EventCenter.java:236 core包悬挂引用TreeLocation.start, 触点搜索三轮只圈handcode包=整树盲区; 判例182: 触点搜索必须整棵src树, 单包递归=画错圈) ③运行验收拦症状(让路门return零症状≠无害; 判例183: 运行验收不能替代编译验证, 悬挂引用可零症状潜伏)。产出: 净删152行(64+/216-)=连根拔除物理证据, 5号案778B, jar 20260925183228服役, git锚092ff64。部署链判例: mods终验重列不信任mv/copy回执; git -F文件防中文乱码; .gitignore backup_v*/通配隔离本地手术备份。回滚链已封存: 060503归档.disabled+git reset 092ff64^
 tag: 刀Z, 刀Z结案, 三道防线, 断言网, 编译验证, 触点搜索, 判例182, 判例183, 部署, TansHugeTrees
 <!-- END:184 -->
+<!-- ID:185 -->
+游戏测试实例路径=E:\MC.minecraft\versions\TEST 1.20.1-Forge_47.4.10 (version隔离实例, 自带config与logs; 路径含空格须引号包裹; E盘depth3搜tanshugetrees零命中因=config在更深层级非灵异)
+tag: 测试环境, 实例路径, MC, TansHugeTrees
+<!-- END:185 -->
+<!-- ID:186 -->
+小空白案终审定谳+刀T立项(25晚): D(欠账落盘)死刑定谳=自然重放闭环坐实: AboutToStart清全静态态(EC93-95)→fresh session每chunk首访Load→5s DelayedWork→submitTreeGen→start()重跑(EC231-237闭包活着, 刀Z只退役region扫描未动start提交链); 树数据盘上持久(每树即冲)+盘上无placed标记+RandomSource坐标播种确定性(TP579幂等自供)→重访=免费重建全部会话内蒸发凭证; 三债型(DQ积压/waiting孤儿/PendingBlocks半树)全被整树重放覆盖; 欠账=延迟非丢失(空白=在途邮件). 修正旧定性: "会话结束丢快递单"说法作废, Load事件免费重发. 裁决=跳D直接C=刀T(V55): ReadyChunks CHM跨线程可靠就绪表(Load-Server权威FULL校验add/Unload remove/世界清场clear)替代刀I的"off-thread一律转投DQ", gate查表全就绪→executor并行放置+每树重验(残余窗口单树ms级, 最坏单线程join池吸收, 刀F风暴需12线持续灌不回归), 有缺→原DQ路径兜底; 异步落块走DeferredBlocks+FORCED冲刷保持刀N主线程setBlock契约; 收益=计算出主线程只付commit, 回填速率xN
+tag: 自然重放, PlacementGate, 刀T, ReadyChunks, 欠账, 架构决策, 根因, 判例, 并行放置
+<!-- END:186 -->
+<!-- ID:187 -->
+刀T落刀双事故判例(25晚): ①锚点子串双命中: Find-Unique用Contains, 模板行’chunk_status_guard = false’是字段声明行’…chunk_status_guard = false;'的子串→hits=2 throw→手术中止; 铁律: 锚点优先Find-Exact(Trim全等)或needle带分号/上下文差异化, config模板行与字段声明行天然子串同形是高危形态; ②同消息多【cmd】块乱序执行: 手术exec与编译exec批在同消息, 回执顺序≠执行顺序, gradle编译了手术前源码=假绿BUILD SUCCESSFUL(判据: 若javac见过新引用而依赖字段未落盘必cannot find symbol); 铁律: 依赖链命令(手术→编译→部署)必须分轮单发; ③throw前已顺序写盘TP+EC(文件副作用不回滚), 后续段write未达=pristine; 恢复协议=标记物普查+class文件字节取证(nested类文件TreePlacer$ReadyChunks.class存在性=编译见过新代码的硬证据, 常量池ASCII用Latin-1字节保真可grep)+条件补刀(前置状态全验后才写)
+tag: 刀T, 锚点事故, 假绿, 批处理纪律, 判例, 编译验证
+<!-- END:187 -->
+<!-- ID:188 -->
+刀T假绿案判例(25晚): 事故链=多行数组以ind+′表达式′换行分隔形态写入exec代码块→传输层把块内换行变空格→PowerShell数组坍缩为单元素(多行内容挤一物理行)→该行以//开头→javac视整块为注释→所有新引用物理消失→编译零错误=假绿;检出手段=occurrence正则计数vsReadAllLines行计数分离(occ=5行=1即合并),class常量池grep与源码标记交叉验证;传输保真铁律=多行数组用尾逗号+纯字符串字面量(缩进硬编码进字符串),实证ind+'表达式'换行分隔形态写入exec代码块→传输层把块内换行变空格→PowerShell数组坍缩为单元素(多行内容挤一物理行)→该行以//开头→javac视整块为注释→所有新引用物理消失→编译零错误=假绿; 检出手段=occurrence正则计数vs ReadAllLines行计数分离(occ=5行=1即合并), class常量池grep与源码标记交叉验证; 传输保真铁律=多行数组用尾逗号+纯字符串字面量(缩进硬编码进字符串), 实证ind+′表达式′换行分隔形态写入exec代码块→传输层把块内换行变空格→PowerShell数组坍缩为单元素(多行内容挤一物理行)→该行以//开头→javac视整块为注释→所有新引用物理消失→编译零错误=假绿;检出手段=occurrence正则计数vsReadAllLines行计数分离(occ=5行=1即合并),class常量池grep与源码标记交叉验证;传输保真铁律=多行数组用尾逗号+纯字符串字面量(缩进硬编码进字符串),实证pf/rc/rc/rc/ib保真/blk/blk/blk/bb等6块全合并; 修复=模板整体替换(锚Contains定位合并行+mustContain内容完整性校验防截断+splice插入); 副判例=EventCenter.class缺新方法但源码健康=编译exec与写盘读写竞态, class证据必须与源码状态交叉才能定罪; 铁律重申=手术→编译→部署分轮单发, 依赖链绝不批处理
+tag: 假绿, 行合并, 传输保真, 刀T, 判例, 编译验证, 批处理纪律
+<!-- END:188 -->
+<!-- ID:189 -->
+class取证嵌套类目标判例(25晚): class常量池grep必须打对嵌套类文件: Handcode.Config字段→HandcodeConfig.class(非Handcode.class),EventCenter.Server事件处理器→EventCenterConfig.class(非Handcode.class), EventCenter.Server事件处理器→EventCenterConfig.class(非Handcode.class),EventCenter.Server事件处理器→EventCenterServer.class(非EventCenter.class); 打错目标产生[旧串]=False的null结果, 上轮由此虚构"编译写盘读写竞态"假说(已收回: mtime源21:50:56<class21:52:33本证编译在后); 防假绿工程协议=编译与class标记验证放同一exec脚本顺序执行(多cmd块有乱序风险), 真绿判据=GRADLE-EXIT=0+BUILD SUCCESSFUL+新特征串全True+阳性对照旧串全True; 阳性对照False=目标打错或UP-TO-DATE陈旧(mtime裁决)
+tag: class取证, 嵌套类, 假绿, 编译验证, 判例, 防假绿协议
+<!-- END:189 -->
+<!-- ID:190 -->
+lint ghost判例补遗(25晚): lintConfigTemplates的ghost option检测会扫描模板描述行内的内嵌’word = word’模式(非仅键行), 描述行写’false = legacy xxx’会被当新键报ghost(键’false’无data.get解析); 铁律=模板描述行内禁止任何’ = '(用冒号/箭头), 既有先例Default false (guard removed):全无等号; 修复=单行.Replace字符串操作(非数组插入, 传输安全形态); 该lint门建于判例174(刀G族), 本轮首次拦截真事故: 配套防假绿协议=lint+javac+class原子验证同exec顺序执行, 报错行号指向描述行时先查内嵌等号
+tag: lint, ghost, 模板规范, 判例174, 刀T, 防假绿
+<!-- END:190 -->
+<!-- ID:191 -->
+部署工件级防假绿判例(25晚): 编译验证必须延伸到部署工件: build/classes绿≠jar绿(zip重打包); jar验证协议=PowerShell Add-Type System.IO.Compression.FileSystem→ZipFile.OpenRead→Entries精确FullName匹配(嵌套类用’/‘分隔+’′命名如TreePlacer'命名如TreePlacer′命名如TreePlacerReadyChunks.class)→StreamReader ASCII读entry字节Contains常量→jar mtime与脚本起始Get-Date比较防陈旧jar冒充; 真绿三件套=lintConfigTemplates门+gradle与验证同exec脚本顺序执行+class/jar原子验证; 三事故(行合并注释吞噬假绿/lint ghost拦截/嵌套类class目标打错)后全链路实战闭环
+tag: 防假绿协议, jar验证, 编译验证, 刀T, 判例, 部署
+<!-- END:191 -->
+<!-- ID:192 -->
+exec异常吞stdout判例(25深夜): PokerAgent exec环境在脚本throw中止时疑似丢弃已积累的stdout输出(R;throw结构回执仍只见异常),上轮MODS−DIR−MISSING与本轮versions−ABORT两轮回执均无前置R; throw结构回执仍只见异常), 上轮MODS-DIR-MISSING与本轮versions-ABORT两轮回执均无前置R;throw结构回执仍只见异常),上轮MODS−DIR−MISSING与本轮versions−ABORT两轮回执均无前置R; 判例: ①abort路径不可依赖$R前置echo传递证据 ②取证型脚本必须纯输出无throw(结果数组直接结尾输出), 异常防御改为状态标记+条件跳过 ③确需中止的场景拆两轮: 先取证输出轮, 判读后再动作轮
+tag: exec, 回执安全, 判例, 诊断方法论
+<!-- END:192 -->

@@ -236,6 +236,13 @@ public class Handcode {
         public static boolean placement_gate_enabled = true;
         // 等待表容量护栏：满 = fail-open 放行（单 chunk 单次 join 有界，风暴形态不回归；详见 PlacementGate 类头）
         public static int placement_gate_max_waiting = 4096;
+
+        // [LMax Fix V55 刀T] [长期记忆: 186] off-thread 并行放置（默认开）：ReadyChunks 跨线程就绪表（Load 事件
+        // Server 线程权威写入）替代刀I 的"非 Server 线程一律转投 DQ"。足迹全就绪 → executor 线程直接并行放置
+        // （方块经 Tile.set 异步分支入 DeferredBlocks，FORCED 冲刷主线程 setBlock(2) 落块，刀N 契约零破坏）；
+        // 有缺 → 原刀I 兜底转投。根治：生产 ~11 任务/s（12 线）vs 主线程滴灌 ~6 任务/s 的执行缺口（小空白案
+        // 终审：欠账=延迟非丢失，此刀把还账速率提到线程数级）。false = 一键回刀I 行为（A/B 对照诊断，免回档）。
+        public static boolean placement_gate_parallel_offthread = true;
         
 
           
@@ -467,6 +474,9 @@ public class Handcode {
                       chunk_status_guard = false
                       | [LMax V42] Skip writing tree data when any chunk in the +-4 range has already passed the "features" stage. Default false (guard removed): the guard discarded whole trees near spawn and behind fast travel. Enable only for debugging.
 
+                      placement_gate_parallel_offthread = true
+                      | [LMax V55] Off-thread (executor) parallel placement when the whole tree footprint is confirmed ready via the Load-event ready-set. Blocks still land on the main thread through the FORCED flush (knife-N contract intact). false: legacy knife-I behavior: every off-thread task requeued into the single main-thread drip queue (root cause of the small-blank-patch backlog).
+
                     bin_convert_futures_max_entries = 256
                     | Maximum number of region futures cached in memory for binary data conversion.
         
@@ -600,6 +610,8 @@ public class Handcode {
         deferred_queue_suspended_max = Integer.parseInt(data.get("deferred_queue_suspended_max")); // [LMax Fix V43]
             // [LMax Fix V42] 守卫开关：parseBoolean 对缺失键安全返回 false（旧配置文件无需手动迁移）
             chunk_status_guard = Boolean.parseBoolean(data.get("chunk_status_guard"));
+            // [LMax Fix V55 刀T] off-thread 并行开关：getOrDefault 缺省 "true"（旧配置零迁移；默认开 = 刀T 生效）
+            placement_gate_parallel_offthread = Boolean.parseBoolean(data.getOrDefault("placement_gate_parallel_offthread", "true"));
             bin_convert_futures_max_entries = Integer.parseInt(data.get("bin_convert_futures_max_entries"));
             // [刀U2] 预生成键解析: 旧配置缺键 → 缺省值(零行为变化, getOrDefault 兜底无需迁移)
             pregen_radius_expr = data.getOrDefault("pregen_radius_expr", "v+8");

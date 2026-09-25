@@ -220,6 +220,9 @@ public class EventCenter {
             // 被唤醒（纯内存 map 操作，微秒级，无磁盘/管线访问）。置于 DelayedWork 提交之前：唤醒链与
             // 5 秒延迟链相互独立，互不依赖。
             tannyjung.tanshugetrees_handcode.systems.world_gen.TreePlacer.PlacementGate.wake(level_server, chunk_pos);
+            // [LMax Fix V55 刀T] [长期记忆: 186] ReadyChunks 写入：Load 事件 Server 线程权威（事件分发方）；proto 过滤
+            // 与 FULL 防御在 markReady 内部。off-thread gate 查此表 = 刀I 跨线程盲区的正解。
+            tannyjung.tanshugetrees_handcode.systems.world_gen.TreePlacer.ReadyChunks.markReady(dimension, chunk_pos, event.getChunk());
 
             // [LMax Fix V37] 延迟 100 Tick (5 秒) 后在后台线程执行种树！
             // 5 秒后区块加载风暴结束，异步读取绝对不会死锁，且绝不阻塞世界生成！
@@ -250,6 +253,18 @@ public class EventCenter {
                     } catch (Exception e) { e.printStackTrace(); }
                 });
             });
+        }
+
+        @SubscribeEvent
+        public static void eventChunkUnloaded (ChunkEvent.Unload event) {
+            // [LMax Fix V55 刀T] [长期记忆: 186] ReadyChunks 摘表：卸载后查表命中 = off-thread 假阳性（强载 join/
+            // 读侧竞态 = 刀F 病灶复活通道）。摘表后 miss → 刀I 兜底，正确性向安全侧倾斜。isClientSide 防御
+            // 与 Load 同款（V34 判例：客户端事件绝不进 Server 逻辑）。
+            if (event.getLevel().isClientSide()) return;
+
+            net.minecraft.server.level.ServerLevel level_server = (net.minecraft.server.level.ServerLevel) event.getLevel();
+            String dimension = GameUtils.Space.getDimensionID(level_server).replace(":", "-");
+            tannyjung.tanshugetrees_handcode.systems.world_gen.TreePlacer.ReadyChunks.markUnloaded(dimension, event.getChunk().getPos());
         }
 
         // [LMax Fix V50 刀F] [长期记忆: 095] PlacementGate 唤醒重提交入口：镜像 eventChunkLoaded 的提交闭包
