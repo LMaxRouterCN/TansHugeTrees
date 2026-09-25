@@ -14,7 +14,7 @@ package tannyjung.tanshugetrees_handcode.systems.world_gen;
 //   drop 泄漏(永久瘫) > 负漂移(瞬时超发), 故 reset 清零。[原判决③据此翻转]
 // 线程契约: offer=主线程(Observer 慢路径, chunk/维度变化瞬间); RegionTask.run=池线程; 台账全
 //   ConcurrentHashMap; 软背压 check-then-act 非原子容忍瞬时超发(池 12 线程吸收, 超发只多算不多丢)。
-// 内存预算: computed 128B/region, 百万 chunk 级探索 < 2MB(与 observed 同量级, 手术单 §3.3)。
+// 内存预算: claims 每 region 一 entry(CHM Boolean), 百万 chunk 级探索远低于 2MB(与 observed 同量级, 手术单 §3.3; U3 统一后无独立引擎台账)。
 
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.server.level.ServerPlayer;
@@ -22,7 +22,6 @@ import tannyjung.tanshugetrees_core.Core;
 import tannyjung.tanshugetrees_core.ExprEngine;
 import tannyjung.tanshugetrees_core.game.EventCenter;
 import tannyjung.tanshugetrees_handcode.Handcode;
-import java.util.BitSet;
 import java.util.Collection;
 import java.util.Map;
 import java.util.Queue;
@@ -33,12 +32,11 @@ import java.util.concurrent.atomic.AtomicInteger;
 
 public class PregenEngine {
 
-    // ===== computed 台账: dimension → (regionKey → 1024-bit) =====
-    // regionKey 与 TreeLocation/Observer 严格同构: "<dim>,<regionX>,<regionZ>";
-    // bit = (chunkX&31)<<5 | (chunkZ&31)。语义 = "该 region 已由引擎算完"(调度粒度: 不再 offer;
-    // 非 1024 chunk 全有数据——那是 region_scan_percent 采样骰子的事, 与旧链 claims TRUE 同语义口径)。
-    // 与 Observer.observed 刻意分离(防预谎: U1 观察过 ≠ U2 算过)。
-    private static final Map<String, Map<String, BitSet>> computed_ledger = new ConcurrentHashMap<>();
+    // [U3] [长期记忆: 163] 引擎侧计算台账退役: 调度去重统一至 TreeLocation.region_scan_claims
+    // (region 级布尔, 语义 = "该 region 已由引擎算完", 写点唯一 = pregenComputeRegion 尾部;
+    // 非 1024 chunk 全有数据——那是 region_scan_percent 采样骰子的事, 同旧语义口径;
+    // regionKey 同构 "<dim>,<regionX>,<regionZ>" 契约不变)。与 Observer.observed 的防预谎
+    // 分离保持不变(observed = 观察过, claims = 算完, 仍两本)。双账本+抄写桥冗余根除。
 
     // ===== 待算队列 + region 去重(offer 入队登记, pump 取出移除; 失败/丢弃后可重新 offer) =====
     private static final Queue<RegionTask> pending = new ConcurrentLinkedQueue<>();
@@ -72,14 +70,10 @@ public class PregenEngine {
             snapshot_px = p.blockPosition().getX();
             snapshot_pz = p.blockPosition().getZ();
         }
-        Map<String, BitSet> dim_computed = computed_ledger.computeIfAbsent(dimension, k -> new ConcurrentHashMap<>());
         for (String regionKey : fullRegionKeys) {
-            if (dim_computed.containsKey(regionKey)) continue; // 引擎已算过
-            // claims-TRUE 快标记: 引擎本会话已算完的 region 直接记账免算(防在途完成重复入队)
-            if (TreeLocation.isRegionScanComplete(regionKey)) {
-                dim_computed.put(regionKey, allBits());
-                continue;
-            }
+            // [U3] [长期记忆: 163] 去重账本统一至 TreeLocation.region_scan_claims(claims TRUE =
+            // 本会话已算完, 写点唯一 = pregenComputeRegion 尾部): 已算过免入队, 抄写桥退役。
+            if (TreeLocation.isRegionScanComplete(regionKey)) continue; // 引擎已算过
             // pending 去重: putIfAbsent 返回非 null = 已在队列(跳过)
             if (pending_regions.putIfAbsent(regionKey, Boolean.TRUE) != null) continue;
             String[] parts = regionKey.split(","); // "<dim>,<rx>,<rz>", dim 含 - 不含 , → split 安全
@@ -98,7 +92,8 @@ public class PregenEngine {
         epoch.incrementAndGet(); // straggler 丢弃令牌(在途任务开工前验, 不投毒新存档)
         pending.clear();
         pending_regions.clear();
-        computed_ledger.clear();
+        // [U3] [长期记忆: 163] 引擎台账清场退役: claims(统一后唯一账本)的跨世界清场走
+        // EventCenter.AboutToStart → TreeLocation.clearWorldState, 本处不再有独立台账。
         in_flight.set(0); // [改判] drop 泄漏饿死 > 负漂移瞬时超发, 理由见类头注释
     }
 
@@ -156,13 +151,6 @@ public class PregenEngine {
         return dx * dx + dz * dz;
     }
 
-    // ===== region 全 1024 bit 一把置(调度粒度记账) =====
-    private static BitSet allBits () {
-        BitSet bits = new BitSet(1024);
-        bits.set(0, 1024);
-        return bits;
-    }
-
     // ===== 窗口半径求值: Observer 慢路径(主线程串行)调用 =====
     public static int resolveRadius (ServerLevel level) {
         int view_distance = level.getServer().getPlayerList().getViewDistance();
@@ -203,12 +191,10 @@ public class PregenEngine {
                 // epoch 验证: 世界切换 reset 已 epoch++, 旧任务直接丢弃(持旧 level 引用一并废弃)
                 if (born_epoch != epoch.get()) return;
                 try {
-                    boolean ok = TreeLocation.pregenComputeRegion(level, dimension, regionX, regionZ);
-                    if (ok) {
-                        computed_ledger.computeIfAbsent(dimension, k -> new ConcurrentHashMap<>())
-                                .put(regionKey, allBits());
-                    }
-                    // 失败/异常: 不标记 computed → 观察者差分 re-offer 补算(刀Z后唯一恢复路径)
+                    // [U3] [长期记忆: 163] pregenComputeRegion 尾部已置 claims TRUE(唯一事实源),
+                    // 引擎侧重复记账退役。
+                    TreeLocation.pregenComputeRegion(level, dimension, regionX, regionZ);
+                    // 失败/异常: 不置 claims TRUE(写点仅在 pregenComputeRegion 尾部, 早退/异常路径不置) → 观察者差分 re-offer 补算(刀Z后唯一恢复路径)
                 } catch (Throwable t) {
                     Core.logger.error("[THT][U2] pregen task failed (region NOT marked, observer diff re-offer will recompute): " + regionKey, t);
                 }
