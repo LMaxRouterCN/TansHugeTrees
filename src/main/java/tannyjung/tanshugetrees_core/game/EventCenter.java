@@ -233,7 +233,7 @@ public class EventCenter {
                         // [LMax Fix V38] contains+add两步非原子(check-then-act竞态)→add()原子check-and-add
                         // Set.add()返回true=新增成功(本次处理)，false=已存在(跳过)，彻底消除窗口
                         if (processed_chunks.add(chunk_pos)) {
-                            tannyjung.tanshugetrees_handcode.systems.world_gen.TreeLocation.start(level_server, dimension, chunk_pos);
+                            // [刀Z] legacy 扫描入口已退役(引擎为唯一计算链): chunk load 不再触发 region 扫描, processed_chunks 现仅守护放置幂等
                             tannyjung.tanshugetrees_handcode.systems.world_gen.TreePlacer.start(level_server, level_server, generator, dimension, chunk_pos);
 
                         }

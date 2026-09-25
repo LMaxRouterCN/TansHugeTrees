@@ -12,3 +12,5 @@
 .agent_temp_files/
 .agent_trash/
 .agent_task_logs/
+# [LMax knife Z] local surgery backup dirs excluded
+backup_v*/

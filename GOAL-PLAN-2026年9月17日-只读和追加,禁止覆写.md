@@ -55,3 +55,39 @@ build: 受控32s(offline+no-daemon; 前次撞3600s exec墙) | jar: tanshugetrees
 部署勘误: 归档路径凭记忆猜错一次(D:\mcmod\mod-jar-backups不存在->Move失败但ARCHIVED打印无条件=假绿)
   实际归档目录: D:\Documents\mcmod\mod-jar-backups (035014/05623两代.disabled可逆)
 晨验收: 1)世界68回放-空区自愈 2)新世界冷启动 3)读latest.log THT行定量
+
+## 待办·4号案: 结构周围树空白(搁置, 优先级让位legacy退场)
+现象: 要塞范围地面不长树, 过渡生硬, 空白呈chunk级正方形(判定粒度出卖形状)
+二假说: A.THT主动避让(结构检测跳树, 方向正确粒度粗) / B.地表误杀(要塞入口改造地表->ground检测失败)
+取证半途: DetailedDetection.test全文未读; 前次结构API搜索是非递归(只扫顶层Handcode.java, systems/全漏), 'ground_block=none'孤证不算数
+修复光谱: 不动(现状,功能对美观打折) / footprint求交(正方形->结构实形+树半径, 中等) / 衰减带(最美最贵)
+触发: max想修时喊一声, 从DetailedDetection.test读起(注意实际路径在systems/world_gen/); 判据=检测在计算侧还是放置侧, 是否依赖chunk加载
+
+## 待办·5号案: 树生成状态指示器(max 25提出, 刀Z保留资产)
+需求: 加载屏/游戏内进度条或转圈指示灯, 显示: 树在队列(深度)/扫描中/树入队/树出队/树放置/及更多
+刀Z保留资产(勿误删): world_gen_icon 键(总开关, 建址=Overlays.eventInGame World Gen Icon 块墓碑);
+  TreeLocation.world_gen_overlay_details_biome/_tree 活字段(getData 每次扫描写, 现成'扫描中'数据源);
+  纹理 overlay_region_gen.png(4帧)+overlay_region_gen_bar.png(16段进度条)
+设计备忘: 旧20tick自排程动画loop已随刀Z火化; 新实现=渲染帧直读原子计数(DeferredQueue深度/
+  PregenEngine pending+in_flight+computed/TreePlacer放置计数), 渲染帧读取非轮询链
+触发: max想搞时喊一声
+
+---
+
+## 刀Z战报 (2026-09-25) — legacy region 扫描链连根拔除
+
+**裁决**: A pregen_mode 连根删 / B world_gen_icon 保留 (max 裁决不变)
+**范围**: 五文件手术 (TreeLocation/Overlays/PregenEngine/WorldGen/Handcode) + EventCenter(core包) 补刀
+
+### 战史 — 三道防线各拦一刀
+1. **手术 32/32 全绿**: TL/HC/PE/WG/OV 五组断言步骤全过 + VERIFY-OK + 5号案落盘 778B
+2. **断言网拦首刀**: PE-HEADER 锚「共存安全网」2命中 (类头PE8 + catch注释PE213, 未读区段盲区) → 自动还原 git → 重刀修正 (双条件锚 + strict计数 + VERIFY追加player_center) → 32/32
+3. **编译器拦 build 红**: EventCenter.java:236 (core包) 悬挂引用 TreeLocation.start — 触点搜索三轮只圈 handcode 包, core 包整树盲区 (判例182/183) → 刀c: 236行替换墓碑注释 (processed_chunks 仅守护放置幂等) + TL114/115 stale注释翻新 → 全src五模式 grep CLEAN → build 绿 21s
+
+### 判例沉淀
+- 触点搜索必须覆盖整棵 src 树 (两包全量); 单包递归 = 画错圈
+- 运行验收不能替代编译验证 (让路门短路令悬挂引用零症状)
+
+### 部署
+- jar 20260925183228 服役 (mods THT=1); 060503 归档 .disabled
+- .gitignore 增 backup_v*/ (本地手术备份目录隔离)

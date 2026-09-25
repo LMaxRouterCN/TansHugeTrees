@@ -3,12 +3,12 @@ package tannyjung.tanshugetrees_handcode.systems.world_gen;
 // [LMax Fix V55 刀U2] P0-R2 预生成引擎: 玩家中心差分 → region 粒度计算任务(调度) [长期记忆: 167,168,169]
 // 手术单: P0-R2手术单.md §3.4 —— Observer 差分产物接进计算, 任务粒度=region, 计算复用
 //   TreeLocation.pregenComputeRegion(getData 链纯计算已字面审计 100%)。
-// 职责边界(计算与调度解耦): 本类只做调度 —— mode 门/claims 快标记/computed 台账/去重入队/软背压/epoch。
+// 职责边界(计算与调度解耦): 本类只做调度 —— claims 快标记(mode 门刀Z退役)/computed 台账/去重入队/软背压/epoch。
 //   零计算逻辑(计算全在 pregenComputeRegion), 零 I/O(冲刷=§3.5=d 每树即冲自动继承, 引擎无冲刷代码)。
-// 共存安全网(手术单 §4): player_center 试验期旧踩踏链不关 —— 引擎任务失败=不标记 computed=
-//   旧链 ChunkEvent.Load 到达时自然补算; 重叠双写=采样骰子同种子确定性+bin 读侧 map 去重; 最坏退化成现状。
+// [刀Z] legacy 旧链已物理退场, 本引擎为唯一计算链。任务失败=不标记 computed —— 观察者后续差分
+//   (玩家移动/窗口变化)自然 re-offer 补算; 无兜底链。采样骰子种子确定性保留(重叠双写场景已消失)。
 // 生命周期: Observer AboutToStart → reset(epoch++/清台账与队列/in_flight 清零); straggler 任务开工前验
-//   epoch 丢弃(跨世界投毒免疫——旧链在途写穿洞的引擎侧防线; 旧链洞为既有行为已报备待裁决)。
+//   epoch 丢弃(跨世界投毒免疫——仅防引擎自身在途任务; 旧链在途写穿洞已随刀Z退场消失)。
 // in_flight 清零改判: 关服窗口 submitTreeGen 拒绝时吞任务(drop 无 finally)=计数器永久虚高=重启后引擎
 //   永久饿死; 反向代价 straggler finally 递减产生负值——计数器仅用于 <max 上限比较, 负值无害(多跑不多丢)。
 //   drop 泄漏(永久瘫) > 负漂移(瞬时超发), 故 reset 清零。[原判决③据此翻转]
@@ -63,8 +63,6 @@ public class PregenEngine {
 
     // ===== 入口: Observer 慢路径(主线程)调用, 差分产物 = 本窗口出现新 chunk 的 region 全键集 =====
     public static void offer (String dimension, ServerLevel level, Collection<String> fullRegionKeys) {
-        // mode 门: 缺省 "region" = 引擎休眠(零行为变化, U1 观察日志照打; 热重载翻 player_center 即激活)
-        if (!"player_center".equals(Handcode.Config.pregen_mode)) return;
         // [刀X] [长期记忆: 178] 玩家坐标快照(offer 主线程串行写): 首位玩家 = 单人语义; 空列表不更新
         // (保留旧快照, 比退化更平滑)。池线程 nextTask 读(三 volatile 非原子组, 极端交错仅排序
         // 启发式受害, 无正确性影响)。
@@ -77,7 +75,7 @@ public class PregenEngine {
         Map<String, BitSet> dim_computed = computed_ledger.computeIfAbsent(dimension, k -> new ConcurrentHashMap<>());
         for (String regionKey : fullRegionKeys) {
             if (dim_computed.containsKey(regionKey)) continue; // 引擎已算过
-            // claims-TRUE 快标记: 旧链本会话已扫完的 region 直接记账免算(翻模式不重算已扫区)
+            // claims-TRUE 快标记: 引擎本会话已算完的 region 直接记账免算(防在途完成重复入队)
             if (TreeLocation.isRegionScanComplete(regionKey)) {
                 dim_computed.put(regionKey, allBits());
                 continue;
@@ -210,9 +208,9 @@ public class PregenEngine {
                         computed_ledger.computeIfAbsent(dimension, k -> new ConcurrentHashMap<>())
                                 .put(regionKey, allBits());
                     }
-                    // 失败/异常: 不标记 computed = 共存安全网, 旧链到达自然补算
+                    // 失败/异常: 不标记 computed → 观察者差分 re-offer 补算(刀Z后唯一恢复路径)
                 } catch (Throwable t) {
-                    Core.logger.error("[THT][U2] pregen task failed (region NOT marked, legacy chain will recompute): " + regionKey, t);
+                    Core.logger.error("[THT][U2] pregen task failed (region NOT marked, observer diff re-offer will recompute): " + regionKey, t);
                 }
             } finally {
                 in_flight.decrementAndGet();

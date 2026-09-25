@@ -63,8 +63,6 @@ public class TreeLocation {
     private static final java.util.concurrent.ConcurrentHashMap<String, File[]> list_files_cache = new java.util.concurrent.ConcurrentHashMap<>();
 
     // [LMax Fix V13] 使用 AtomicInteger 保证多线程下 UI 状态的原子更新
-    public static final java.util.concurrent.atomic.AtomicInteger world_gen_overlay_animation = new java.util.concurrent.atomic.AtomicInteger(0);
-    public static final java.util.concurrent.atomic.AtomicInteger world_gen_overlay_bar = new java.util.concurrent.atomic.AtomicInteger(0);
     public static volatile String world_gen_overlay_details_biome = "";
     public static volatile String world_gen_overlay_details_tree = "";
 
@@ -113,8 +111,8 @@ public class TreeLocation {
         final List<String> finalPlaceSnapshot = placeSnapshot;
 
         // [LMax Fix V26] I/O 同步化：降维打击彻底消灭数据竞态
-        // TreeLocation.run 已经在 THT-TreeGen 异步线程池中执行，完全不需要再提交给 io_executor。
-        // 直接在当前线程同步写盘，确保 TreeLocation.run 返回时，硬盘数据 100% 写入完毕，
+        // region 计算链(pregenComputeRegion)已经在 THT-TreeGen 异步线程池中执行，完全不需要再提交给 io_executor。
+        // 直接在当前线程同步写盘，确保 计算链返回时，硬盘数据 100% 写入完毕，
         // 后续的 TreePlacer.start 绝对能读到完整数据，彻底消灭"出生点无树"和"区域空白"！
         try {
             if (!finalLocSnapshot.isEmpty()) {
@@ -193,19 +191,6 @@ public class TreeLocation {
         return binFiles.toArray(new File[0]);
     }
 
-    public static void start(LevelAccessor level_accessor, String dimension, ChunkPos chunk_pos) {
-        Map<String, Map<String, String>> data = ConfigDynamic.getData("world_gen");
-        if (Core.log_tree_location) System.out.println("[THT-DEBUG] TreeLocation.start() called. Data empty: " + data.isEmpty() + ", Data size: " + data.size());
-        // 修复：data 为空时显式记录警告日志，而非静默跳过
-        if (data.isEmpty()) {
-            Core.logger.warn("[THT-DEBUG] TreeLocation.start() - config_world_gen data is empty! Tree generation will be skipped.");
-            return;
-        }
-        TreeLocation.run(level_accessor, dimension, chunk_pos, data);
-}
-        
-
-          
     // [LMax Fix V42] churn 斩杀：空数据 chunk 等待集 [长期记忆: 014]
     // TreePlacer.start() 读不到树数据时登记于此，不再无限重入 DeferredQueue
     // （旧实现单日 646156 次 EARLY RETURN 空转，队列永久满载 4096/4096，挤压真实任务）。
@@ -228,10 +213,10 @@ public class TreeLocation {
     // 同 JVM 世界切换时各池 key 无存档身份——region_scan_claims TRUE 残留 = 新世界 region 判"已扫"
     // → 零树（世界55 实锤 E2=0）；其余五池同理携带旧世界坐标/生物群系/等待表语义。磁盘 bin 按
     // 存档路径隔离不受影响，仅清内存。EventCenter 不直接摸私有字段，经本类聚合入口（PlacementGate 先例推广）。
-    // [刀U2] [长期记忆: 167,168] 引擎计算入口: 复刻 run() 采样扫描(同种子同序同 region_scan_percent
-    // 骰子 = 共存双写同结果; region 完成 = 采样子集算完, 非全量——与旧链 claims TRUE 同语义口径)。
+    // [刀U2] [长期记忆: 167,168] 引擎计算入口: region 采样扫描(刀Z后唯一计算入口)(同种子同序同 region_scan_percent
+    // 骰子 = 种子确定性同结果; region 完成 = 采样子集算完, 非全量——即本尾部 claims TRUE 的写入语义)。
     // [刀V/W-2 终稿修订] writeData 标脏(每树即冲退役), 尾部 drainDirty 统一落盘对齐 run() 尾部;
-    // 尾部置 claims TRUE + 唤醒(player_center 下 legacy 已禁, 三断线由本尾部接管, 详方法尾注释)。
+    // 尾部置 claims TRUE + 唤醒(legacy 已物理退场(刀Z), 三断线由本尾部唯一供血, 详方法尾注释)。
     // 线程契约: THT-TreeGen 池线程(与旧链 run 同池, getData 链纯计算字面审计 100%)。
     public static boolean pregenComputeRegion(LevelAccessor level_accessor, String dimension, int regionX, int regionZ) {
         Map<String, Map<String, String>> data = ConfigDynamic.getData("world_gen");
@@ -251,7 +236,7 @@ public class TreeLocation {
             }
         }
         // [刀V] [长期记忆: 176] 尾部兜底清残改 drainDirty(全维度: writeData 本会话只标脏, 含跨 region 足迹)
-        // [刀W-2] [长期记忆: 177] 三断线桥接(原仅 legacy 尾部供血, player_center 下 legacy 已禁由本尾部接管):
+        // [刀W-2] [长期记忆: 177] 三断线桥接(原仅 legacy 尾部供血, legacy 已物理退场(刀Z), 本尾部唯一供血):
         // drainDirty 同步落盘 → claims TRUE(读侧终态判定/offer 快标记) → wakeOnRegionComplete(等待者闹钟)。
         // V42 不变量保持: drain 在前, TRUE 严格蕴含落盘。失败/异常不置 TRUE = 安全网语义(观察者重差分再 offer)。
         drainDirty(dimension);
@@ -269,8 +254,8 @@ public class TreeLocation {
         return true;
     }
 
-    // [刀U2] claims 只读查询口: 引擎 offer 快标记用(旧链本会话已扫完的 region 免算, 翻模式不重算已扫区)。
-    // fullRegionKey = "<dim>,<regionX>,<regionZ>", 与 run() 236 行拼法严格同构。
+    // [刀U2] claims 只读查询口: 引擎 offer 快标记用(本会话已算完的 region 免重复入队, 在途完成竞态护栏)。
+    // fullRegionKey = "<dim>,<regionX>,<regionZ>", 与 pregenComputeRegion 尾部 put 拼法严格同构(旧 run 已刀Z退役)。
     public static boolean isRegionScanComplete(String fullRegionKey) {
         return region_scan_claims.get(fullRegionKey) == Boolean.TRUE;
     }
@@ -319,8 +304,8 @@ public class TreeLocation {
         }
         if (woke == null) return;
         for (ChunkPos p : woke) {
-            // [LMax Fix V42] instanceof 收窄：run() 的 level_accessor 运行时实为 ServerLevel
-            // （eventChunkLoaded 传入），但参数类型 LevelAccessor 接口没有 dimension()。
+            // [LMax Fix V42] instanceof 收窄：引擎链(RegionTask→pregenComputeRegion)的 level_accessor 运行时实为 ServerLevel
+            // （PregenEngine RegionTask 传入），但参数类型 LevelAccessor 接口没有 dimension()。
             // 仅 Server 上下文执行唤醒；理论外的非 Server 上下文保留等待（与 region 未扫描同语义，不丢正确性）
             if (level_accessor instanceof net.minecraft.server.level.ServerLevel sl_wake) {
                 set.remove(p);
@@ -330,114 +315,6 @@ public class TreeLocation {
         }
     }
 
-
-    public static void run(LevelAccessor level_accessor, String dimension, ChunkPos chunk_pos, Map<String, Map<String, String>> data) {
-        // 修复：添加详细日志，追踪大树生成流程
-        if (Core.log_tree_location) System.out.println("[THT-DEBUG] TreeLocation.run() started - dimension: " + dimension + ", chunk: " + chunk_pos);
-        
-        // 检查传入数据是否为空
-        if (data == null || data.isEmpty()) {
-            Core.logger.warn("[THT-DEBUG] TreeLocation.run() - data parameter is null or empty! This may be why trees don't generate.");
-            if (Core.log_tree_location) System.out.println("[THT-DEBUG] TreeLocation.run() - data is null or empty, returning early");
-            return;
-        } else {
-            if (Core.log_tree_location) System.out.println("[THT-DEBUG] TreeLocation.run() - data size: " + data.size() + " entries");
-        }
-        
-        int regionX = chunk_pos.x >> 5;
-        int regionZ = chunk_pos.z >> 5;
-        String regionKey = dimension + "," + regionX + "," + regionZ;
-        // [刀W] [长期记忆: 177] player_center 模式下 legacy 让路: 认领前退出, U2 引擎独占计算
-        // (消灭双扫: 世界66实测 5 region 双算 ≈40% 算力浪费)。region 模式缺省零行为变化(U2 休眠,
-        // 本链是唯一计算链)。[region 模式退场预备] 默认翻 player_center 后本门改无条件 return
-        // → legacy 链可物理删除。
-        if ("player_center".equals(Handcode.Config.pregen_mode)) {
-            return;
-        }
-        
-        // [LMax Fix V38] Region三态原子认领：putIfAbsent返回null=抢到扫描权，返回FALSE=别人在扫(跳过)，返回TRUE=扫描完成(跳过)
-        // [长期记忆: 004] 先A后B的A1：600×冗余扫描→1×，被跳chunk由DeferredQueue 400tick重试兜底
-        Boolean claim = region_scan_claims.putIfAbsent(regionKey, Boolean.FALSE);
-        if (claim != null) {
-            return; // FALSE=扫描中 TRUE=已完成 都跳过
-        }
-
-        // [LMax Fix] 不再用文件存在就跳过扫描。chunk 数据会被 Data.clearChunk() 清掉，
-        // 但 region 文件还在，导致下次启动扫描被跳过、树全部消失。
-        // [LMax Fix V38] 改用 region_scan_claims 三态内存缓存（JVM 重启自动清空）防止同 session 重复扫描。
-        // [THT-DEBUG] 诊断扫描循环执行情况
-        if (Core.log_tree_location) System.out.println("[THT-DEBUG] TreeLocation.run() - Starting region scan for: " + regionKey);
-        if (Core.log_tree_location) System.out.println("[THT-DEBUG] TreeLocation.run() - Scan loop begins, region_scan_percent: " + Handcode.Config.region_scan_percent);
-
-        // [LMax Fix V38] try-finally 兜底：扫描中途抛异常时回滚认领（remove FALSE），
-        // 否则 region 永远卡 FALSE、后续所有 chunk（含 DeferredQueue 重试）永久跳过，该 region 树全部消失
-        try {
-            // Scanning
-            {
-                int posX = regionX * 32;
-                int posZ = regionZ * 32;
-                ChunkPos chunk_pos_scan = null;
-                long scan_start = System.currentTimeMillis();
-                int scan_count = 0;
-                for (int scanX = 0; scanX < 32; scanX++) {
-                    for (int scanZ = 0; scanZ < 32; scanZ++) {
-                        // [THT-DEBUG] 确认循环开始执行
-                        if (scanX == 0 && scanZ == 0) {
-                            if (Core.log_tree_location) System.out.println("[THT-DEBUG] TreeLocation.run() - Scan loop first iteration (0,0)");
-                        }
-
-                        world_gen_overlay_bar.incrementAndGet();
-                        chunk_pos_scan = new ChunkPos(posX + scanX, posZ + scanZ);
-                        RandomSource random = RandomSource.create(level_accessor.getServer().overworld().getSeed() ^ ((chunk_pos_scan.x * 341873128712L) + (chunk_pos_scan.z * 132897987541L)));
-                        if (random.nextDouble() < Handcode.Config.region_scan_percent * 0.01) {
-                            getData(level_accessor, dimension, chunk_pos_scan, data);
-                            scan_count++;
-                        }
-                    }
-                }
-                long scan_time = System.currentTimeMillis() - scan_start;
-                if (Core.log_tree_location) System.out.println("[THT-DEBUG] TreeLocation.run() - Scan loop completed, count: " + scan_count + ", time: " + scan_time + "ms");
-                Core.logger.info("[THT-DEBUG] Region " + regionKey + " scan completed: " + scan_count + " chunks scanned in " + scan_time + "ms");
-            }
-
-            // [LMax Fix V38] 扫描完成标记：FALSE→TRUE，后续chunk的TreePlacer.start可读到落盘数据
-            // [长期记忆: 004] 先A后B决策的A1：region原子认领消除600×冗余
-            // [LMax Fix V42] 顺序修正：先同步落盘再置 TRUE（V26 起 flushCachesAsync 已是同步写盘）。
-            // claims=TRUE 从此严格蕴含「数据已落盘且解析缓存已失效」，终态判定与事件唤醒共享此不变量。
-        // [刀V] [长期记忆: 176] run 尾部改 drainDirty(全维度脏集): 扫描期间 writeData 只标脏,
-        // 此处统一落盘(含跨 region 足迹写的邻 region 标记); V42 不变量保持 = drain 同步在前,
-        // TRUE 严格在后蕴含「数据已落盘」
-        drainDirty(dimension);
-        // [刀Y] [长期记忆: 180] 本区直冲硬保证: 熔断是尽力而为, TRUE 必须严格蕴含落盘 —— 与 pregenComputeRegion
-        // 尾修复统一, 双链不变量同口径。幂等: drain 已冲过则写缓存快照为空, 无操作。
-        flushCachesAsync(dimension, regionX, regionZ);
-        region_scan_claims.put(regionKey, Boolean.TRUE); // [LMax Fix V42] 移至同步落盘之后（原在 flush 之前，存在"TRUE但数据在途"窗口）
-            // [LMax Fix V42] 事件唤醒：本 region 扫描完成 → 唤醒等待集中 3×3 邻域含本 region 的空数据 chunk
-            // 重跑一次。必须在 flushCachesAsync 之后（数据先落盘失效，唤醒的 start() 才能读到最新）。[长期记忆: 014]
-            wakeOnRegionComplete(dimension, regionX, regionZ, level_accessor);
-            world_gen_overlay_animation.set(0);
-            Core.logger.info("Completed!");
-
-            // [Poker Agent Fix] 彻底移除全局 clear() 调用。在并发环境下，一个 Region 扫描完成不应清空全局缓存，
-            // 这会导致其他正在生成的区块丢失数据并引发 NPE。缓存生命周期应由系统统一管理。
-        } finally {
-            // [LMax Fix V38] 原子回滚：remove(key, FALSE) 仅当值仍为 FALSE（扫描未完成）时才移除认领。
-            // 正常完成时值已是 TRUE，此调用空转无副作用；异常时移除，下一个 chunk 可重新认领并重试扫描。
-            region_scan_claims.remove(regionKey, Boolean.FALSE);
-        }
-    }
-
-    private static void scanning_overlay_loop() {
-        int current = world_gen_overlay_animation.get();
-        if (current != 0) {
-            if (current < 4) {
-                world_gen_overlay_animation.incrementAndGet();
-            } else {
-                world_gen_overlay_animation.set(1);
-            }
-            Core.DelayedWork.create(true, 20, TreeLocation::scanning_overlay_loop);
-        }
-    }
 
     private static void getData(LevelAccessor level_accessor, String dimension, ChunkPos chunk_pos, Map<String, Map<String, String>> data) {
         // [THT-DEBUG] 方法入口日志
