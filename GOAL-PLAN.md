@@ -82,3 +82,13 @@
 - 验收协议: (1)PARALLEL PASS计数主导+off-thread requeue趋零 (2)FORCED PASSED吞吐/DQ深度 (3)E码直方图回归(E2基线22566) (4)空白视觉复测 (5)异常清点RejectedExecution/CME/NPE (6)可选A/B: config翻false回刀I对照 (7)风险监控: FORCED洪峰dq_budget滴灌限流吸收/stale ready-set退刀I兜底/落叶双消费原子互斥
 - 待办: max确认实例坐标→部署+补commit→开实例跑验收数据
 - 刀T部署补录(26晨): E:\MC\.minecraft\versions\TEST 1.20.1-Forge_47.4.10\mods MD5双验通过, 待max开实例跑验收数据
+
+## 刀T验收终判 (2026-09-26 晨, 世界71, 74min, debug全开)
+- 核心达标: 异常清零(REJ/CME/NPE/THT-ERROR=0) + E4=0(§2.2补达标) + FORCED闭环(84.7万block/20450棵, 约41block/树) + PARALLEL通道0→6991生效实锤
+- 未达: 放行率约1/3(6991放行/14146 requeue, 刀I是100%转投故结构性改善实锤, 主导未成); E2=96076超基线4.3倍(会话不可直比: 新世界+74min+debug全开, 样本全bush系, 低优先级对照); watchdog episode@DQ.processTick:203滴灌热点(budget expr armed在働, 体感不卡, 非阻塞观察)
+- 空白残留定性: 极小空白=FORCED滴灌滞后窗口或自然稀疏(零异常+20450棵之下), 待办=复访原空白点(树后长出=滞后结案, 永不出现=立案)
+- 刀Q验收全闭环(GP §2.2): dictionary 122id 0dup 0gap 0bad连续 + E4=0 + shape-missing=0
+- U2: pregen_mode=player_center(u2b保留) + [U2]offer 400行 + pregenComputeRegion 579行 = 引擎激活在算实锤; bin目录仅version.txt(判例163只算不载语义下大概率正常, 落盘位置精确侦察留低优先级)
+- E9=105: 集中#vanilla/variants/polaris单id(样本截断推断)01:59:48单时刻突发, 案D村庄世界复验条件满足, 噪音级留观察不立案
+- 日志税520MB/74min: 开关=config\tanshugetrees\lmax-debuglog.json五true(tree_location/event_center/pending_blocks/place_calculate/placer_start), 正式使用前关; log_deferred_queue与log_queue_depth现false
+- 待办移转: U3请令(判例163免重设计, 侦察已启动) / 空白复访 / E9观察 / 刀S验收2-3(热切static+log_queue_depth) / E2对照 / bin侦察 / 26 STALE jar / config格式革命+双语化

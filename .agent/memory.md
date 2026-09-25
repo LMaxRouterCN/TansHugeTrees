@@ -768,3 +768,19 @@ tag: exec, 回执安全, 判例, 诊断方法论
 实例坐标逐层坍缩判例(25深夜): 失准形态=mods缺(depth3)→versions缺(depth2)→游戏目录本体缺(depth1)逐层坍缩; 判读纪律=逐层坍缩立即怀疑用户最大尺度重组(清场/迁移/换启动器)而非转录漂移; 侦察四件套=①根目录全量列举(警惕Select -First截断, 前30≠全部)②游戏签名探测(config+logs同层=游戏目录本体; '!前缀’置顶命名=用户手工整理痕迹, 高嫌疑)③Recent .lnk解析(WScript.Shell CreateShortcut .TargetPath=用户最近操作目标硬证据)④运行中java/launcher进程CommandLine; 部署纪律=连续≥3次坐标失败后, 动态发现目标须精确签名匹配(实例名+config+logs)或用户确认才可部署; 刀S先例=落地commit与部署解耦, 代码归档不等部署坐标
 tag: 实例路径, 坐标坍缩, 侦察方法论, 部署, 判例
 <!-- END:193 -->
+<!-- ID:194 -->
+max机器E盘布局census(25深夜): E根101目录要点: !GAME=GAL/单机游戏库(非MC), curseforge\minecraft\Install\versions存在(CF启动器结构), ARModLauncher(含bin/Data/Resources), E:\MC裸名目录+E:\moved(归置习惯目录)+MCLauncher/MCLDownload/MCStudioDownload/MCA Selector/MCreatorWorkspaces/Pylo/Java/SteamLibrary; D根有Game/GameHole/TOOLS; C默认%APPDATA%.minecraft仅cache空壳(无versions)=启动器用自定义gameDir; RECENT .lnk空+无java进程常态. 判例: gameish候选过滤必须在每层全量列表上跑, 不能只探预选候选内部(上轮MC/moved漏探事故); CF结构mods在depth5, jar考古depth须≥5
+tag: 测试环境, 实例路径, E盘布局, max机器, 侦察方法论
+<!-- END:194 -->
+<!-- ID:195 -->
+harness切换边界写入丢失判例(26晨): max更新harness(指令字典换代+存储迁移, 单行→
+tag: harness, 写入丢失, 假绿, 回执安全, 判例
+<!-- END:195 -->
+<!-- ID:196 -->
+游戏测试实例路径V2=E:\MC\.minecraft\versions\TEST 1.20.1-Forge_47.4.10 (26晨变迁: 原E:\MC.minecraft整体搬迁为E:\MC\.minecraft, PCL/HMCL结构, version隔离实例自带config/logs/mods; 路径含空格须双引号; 本条目为坐标权威, 因185覆盖写入损坏弃用185; 部署jar=tanshugetrees-1.8.0-20260925224407已MD5双验在位; 坐标兜底链=本条+GP-PLAN部署补录行+commit 532d1b9)
+tag: 测试环境, 实例路径, MC, TansHugeTrees
+<!-- END:196 -->
+<!-- ID:197 -->
+harness记忆系统三缺陷判例(26晨): 1覆盖路径静默失败(185两次覆盖回执均报成功, 跨4轮search全返回旧值; 同批新增条目与remember均正常落地=覆盖与新增写入路径分流, 覆盖坏); 2内容毒字符截断(195正文内嵌全角方括号code标记字面量, search返回恰在该处截断, 与刀T行合并假绿同构=传输层标记污染; 铁律: 记忆正文禁含全角方括号字符); 3remember偶发丢失孤例(R3回执成功但下轮注入未见, 未决被覆盖); 附认领: 我方轮B轮C两次判读假阴性(轮B注入明明显示R1全文却判其丢失, 轮C把R2正常即时生效误读为丢失后复活并构建异步慢提交模型, 两模型均收回)——判读结论自身也需跨轮写后读复验, 与编译防假绿三件套同构; agent_server.py不在工作目录, 帮助文档项目根目录指路失效; 195残体留档作证据, 修正版即本条
+tag: harness, 写入丢失, 覆盖, 截断, 判例, 回执安全
+<!-- END:197 -->
