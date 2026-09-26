@@ -29,7 +29,7 @@ import tannyjung.tanshugetrees_core.game.world_gen.FeatureAreaGrass;
 import tannyjung.tanshugetrees_core.game.world_gen.WorldGenStepBeforePlants;
 import tannyjung.tanshugetrees_core.game.world_gen.WorldGenStepLast;
 import tannyjung.tanshugetrees_core.outside.CacheManager;
-import tannyjung.tanshugetrees_core.outside.ConfigClassic;
+import tannyjung.tanshugetrees_core.outside.ConfigToml; // [U5 Stage1]
 import tannyjung.tanshugetrees_core.outside.CustomPackOrganizing;
 import tannyjung.tanshugetrees_core.outside.FileManager;
 import tannyjung.tanshugetrees_core.outside.TXTFunction;
@@ -118,7 +118,7 @@ public class Core {
         // [LMax] 读取调试日志开关
         loadDebugLogConfig();
 
-        // [LMax Fix V54 刀S] [长期记忆: 149] 预算三键热重载: WatchService 事件驱动监听 config.txt(零轮询),
+        // [LMax Fix V54 刀S] [长期记忆: 149] 预算三键热重载: WatchService 事件驱动监听 config.toml(零轮询),
         // 只热应用 budget_mode/budget_ms/budget_expr 三键, 其余键改动需重启(边界清晰). 详见 WatchConfigReload.
         WatchConfigReload.start();
 
@@ -248,26 +248,10 @@ public class Core {
         // Main Config
         {
 
-            Handcode.Config.repair("""
-                    ----------------------------------------------------------------------------------------------------
-                    Main Pack
-                    ----------------------------------------------------------------------------------------------------
-                    
-                    auto_check_update = true
-                    | Check for new update from GitHub every time the world starts
-                    
-                    wip_version = false
-                    | Use development version of the pack instead of release version. Not recommended for game play, as it's still in development, it might unstable. Sometimes it needed development version of the mod.
-                    
-                    """, """
-                    
-                    developer_mode = false
-                    | Enable some features for debugging such as detailed error messages, info overlay in-game, etc.
-                    
-                    ----------------------------------------------------------------------------------------------------
-                    """);
+            // [U5 Stage1] 79-key bilingual template lives in Handcode.Config.TEMPLATE_TOML; start/end assembly retired.
+            Handcode.Config.repair();
 
-            Map<String, String> data = ConfigClassic.getValues(path_config + "/config.txt");
+            Map<String, String> data = ConfigToml.getValues(path_config + "/config.toml"); // [U5 Stage1] night-config read chain, Map contract parity
             Handcode.Config.apply(data);
 
             auto_check_update = Boolean.parseBoolean(data.get("auto_check_update"));

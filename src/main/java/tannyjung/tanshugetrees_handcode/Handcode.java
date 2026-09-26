@@ -255,263 +255,308 @@ public class Handcode {
         // [LMax Fix V47] 看门狗全线程 dump 开关：冻结持续过里程碑(1s/5s/20s/...)时 dump 全部线程堆栈抓"饥饿者"
         public static boolean watchdog_dump_all_threads = true; // 诊断取证用, 不影响看门狗基本报警
 
-        public static void repair (String start, String end) {
+        // [U5 Stage1] Single source of truth: bilingual TOML template (79 keys), content byte-identical to
+        // .scratch/config_template.toml (harness 12/12: migration / phantom / cold / idempotent).
+        private static final String TEMPLATE_TOML = """
+            # Tan's Huge Trees - Main Config / 主配置
+            #
+            # FAQ / 常见问题:
+            # - How to apply changes? Run [ /restart ] or restart the world. / 修改如何生效? 运行 /restart 或重启世界.
+            # - Missing keys are auto-repaired with defaults on launch. Your edited values are kept.
+            #   / 缺失键会在启动时自动补全为默认值; 你已修改的值会被保留.
+            # - TOML syntax: https://toml.io - numbers/booleans are bare, text values use single quotes.
+            #   / TOML 语法: 数值与布尔直接写, 文本值放在单引号里.
 
-            ConfigClassic.repair(Core.path_config + "/config.txt", start + """
-                    ----------------------------------------------------------------------------------------------------
-                    World Generation
-                    ----------------------------------------------------------------------------------------------------
-                    
-                    region_scan_percent = 100
-                    | Set percent of chunk scan per region, from region pre-location system. One region contains 32x32 chunks, or 1,024 chunks. Lower this can reduce scan time, also lower the chance of all trees.
-                    
-                    multiply_rarity = 1.0
-                    multiply_min_distance = 1.0
-                    multiply_group_size = 1.0
-                    multiply_dead_tree_chance = 1.0
-                    | These number will be multiplied to all tree config in these types
-                    
-                    tree_location = true
-                    | Enable marker entity for tree location to store some tree data and for some custom features. Disable this can reduce number of entities, but some features will not work such as living mechanics.
-                    
-                    world_gen_roots = true
-                    | Enable tree roots when generate in world gen. Note that disable this will no affect to some trees, because roots is important part for them. Also will no affect to taproot part.
-                    
-                    max_height_spawn = 0
-                    | Cancel the trees when their spawn center is above this Y level. As some world gen mods such as ReTerraForged, replacing mountain block and my trees can't detect those new block, make them spawn on blocks that not in the list. Set to 0 to disable this.
-                    
-        
+            # ===== Main Pack / 主包 =====
 
-          
-                    unviable_ecology_skip_chance = 0.75
-                    | Skip trees that generate in unviable ecosystems. For example, land trees that generate in water. This config only affect to dead trees, as normal trees already skip generate in unviable ecosystems.
+            auto_check_update = true
+            # Check for new update from GitHub every time the world starts
+            # 每次世界启动时从 GitHub 检查新版本更新
 
-                    unviable_ecology_height_tolerance = 1
-                    | Height tolerance (in blocks) for terrestrial tree viability check. If the difference between OCEAN_FLOOR_WG and WORLD_SURFACE_WG height is within this tolerance, the tree will NOT be marked as unviable ecology. Set to 0 for strict check. Default 1 to handle superflat worlds where getBaseHeight noise may cause 1-block offset.
-                    
-                    leaf_litter_world_gen = true
-                    leaf_litter_world_gen_chance = 0.1
-                    leaf_litter_world_gen_chance_coniferous = 0.05
-                    | Create leaf litter on ground and water, while in world gen. Leaf litter config must be enable to allow this.
-                    
-                    abscission_world_gen = true
-                    | Make all deciduous trees generate with all leaves dropped to the ground when they're in snowy biomes
-                    
-                    dead_tree_auto_level = 11 / 12 / 13 / 14 / 15 / 16 / 17 / 18 / 19 / 21 / 22 / 23 / 24 / 25 / 26 / 27 / 28 / 29 / 31 / 32 / 33 / 34 / 35 / 36 / 37 / 38 / 39
-                    | Randomly pick these number for trees that set dead tree level as "auto" and "auto_pine". 1X is normal dead trees. 2X is fallen trees with roots. 3X is fallen trees without roots. X1 X2 X3 X4 X5 is no leaves, no sprig, no twig, no limb, no branch. X6 X7 is only trunk 50-100% and hollowed. X8 X9 is only trunk 10-50% and hollowed.
-                    
-                    tree_decorations = true
-                    tree_decorations_normal_chance = 0.01
-                    tree_decorations_decay_chance = 0.5
-                    | Run decoration functions while generate trees. Disable these or reduce their chances can improve world gen speed.
-                    
-                    ----------------------------------------------------------------------------------------------------
-                    World Generation : Surrounding Area Detection
-                    ----------------------------------------------------------------------------------------------------
-                    
-                    shoreline_detection = true
-                    | Enable shoreline system for trees that use this feature. If disable this, all trees that spawn at waterside, landside, and shoreline will be skipped and not spawn anywhere.
-                    
-                    surface_smoothness_detection = true
-                    | Force the trees to only spawn on good areas. Note that this system only detects 4 points around tree center, so it's not 100% perfect.
-                    
-                    surface_smoothness_detection_percent = 50
-                    | How far detection point is at. Set to 100 for same as tree size.
-                    
-                    surface_smoothness_detection_height_up = 50
-                    | Set height up of surface smoothness. Set to 100 for same as Y size of the tree above its center.
-                    
-                    surface_smoothness_detection_height_down = 25
-                    | Set height down of surface smoothness. Set to 100 for same as Y size of the tree below its center.
-                    
-        
+            wip_version = false
+            # Use development version of the pack instead of release version. Not recommended for game play, as it's still in development, it might unstable. Sometimes it needed development version of the mod.
+            # 使用数据包的开发版而非正式版. 不建议游玩时开启: 开发版仍在开发中可能不稳定, 且有时需要搭配开发版模组使用.
 
-          
-                    structure_detection_size = 0
-                    | Cancel trees if they detect structure in their area based from their size. This number will be plus with their size, higher number bigger distance. Note that this feature is not perfect, trees with long size might not be canceled. Only support number between is 0 to 9. Set to 0 for only chunks that marked as having structures. Set to -1 to disable this feature.
+            # ===== World Generation / 世界生成 =====
 
-                    test_fallen_area_max_height_checks = 64
-                    | Maximum number of getHeightWorldGen calls in testFallenArea. Large tree shapes can trigger hundreds of height queries causing lag. Lower this to improve performance at the cost of fallen tree placement accuracy. Set to 0 for unlimited.
+            region_scan_percent = 100
+            # Set percent of chunk scan per region, from region pre-location system. One region contains 32x32 chunks, or 1,024 chunks. Lower this can reduce scan time, also lower the chance of all trees.
+            # 设置 region 预定位系统中每个 region 的区块扫描比例. 一个 region 为 32x32 区块, 即 1024 个. 调低可减少扫描耗时, 但也会降低所有树的生成几率.
 
-                    structure_detection_max_chunks = 64
-                    | Maximum number of chunks to scan during structure detection. Large tree sizes can cause scanning of many chunks leading to lag. Lower this to improve performance. Set to 0 for unlimited.
-                    ----------------------------------------------------------------------------------------------------
-                    Living Mechanics
-                    ----------------------------------------------------------------------------------------------------
-                    
-                    living_mechanics = true
-                    | Enable some custom systems to make the trees from this mod feel more alive. Such as leaf drop and regrowth, leaf decay, leaf litter, and abscission.
-                    
-                    living_mechanics_tick = 5
-                    | How fast in tick of living mechanics system. Set to 0 to temporary pause the tick.
-                    
-                    living_mechanics_process_limit = 500
-                    | How many process for trees to run this system per time. Set to 0 for one time process.
-                    
-                    living_mechanics_simulation = 100
-                    | Simulate fake trees to slowdown the process. For example, when I set tree speed for 100 trees. But there's only 1 tree in the area, it will drop and regrow leaves very fast because that's the speed for 100 trees. Set this config will simulate fake trees and make that 1 tree slowdown it process like there's 99 trees around it.
-                    
-                    leaf_litter = true
-                    | Create leaf litter on ground and water
-                    
-                    leaf_litter_classic = true
-                    | Use classic style for leaf litter when that leaves block have no custom style. Classic style will use block of itself as litter block.
-                    
-                    leaf_litter_classic_only = false
-                    | Only use classic style for all leaf litters
-                    
-                    leaf_litter_remover_chance = 0.001
-                    | Chance of leaf litter on the ground to disappear per process
-                    
-                    leaf_litter_remover_count_limit = 100
-                    | Count limit of the leaf litter remover
-                    
-                    falling_leaf_chance = 1.0
-                    | Chance of falling leaf that will appear at leaves blocks when leaf drop system pick that block. When this leaf animation touch the ground or water, it will create leaf litter there. Other than this chance will be use instant drop without animation.
-                    
-                    falling_leaf_count_limit = 500
-                    | Count limit of falling leaf
-                    
-                    leaf_light_level_detection = 7
-                    | Minimum light level of leaves can survive. Leaves will drop themselves if light level is under this value. Set to 15 for only full bright level. Set to 0 for no light level affect.
-                    
-                    dead_leaf_drop_chance = 0.001
-                    | Chance of leaves to drop themselves when the tree is dead by light level and missing center block
-                    
-                    ----------------------------------------------------------------------------------------------------
-                    Living Mechanics : Leaf Cycle and Seasons
-                    ----------------------------------------------------------------------------------------------------
-                    
-                    compatibility_serene_seasons = true
-                    | Sync seasons to Serene Seasons mod by using area at world spawn, run the test every one minute.
-                    
-                    leaf_drop_chance_spring = 0.0
-                    leaf_drop_chance_summer = 0.005
-                    leaf_drop_chance_autumn = 0.01
-                    leaf_drop_chance_winter = 0.01
-                    leaf_regrowth_chance_spring = 0.01
-                    leaf_regrowth_chance_summer = 0.01
-                    leaf_regrowth_chance_autumn = 0.0
-                    leaf_regrowth_chance_winter = 0.0
-                    | Chance of deciduous leaves to drop and regrow based on seasons. But note that it will only use summer value when in tropical biomes, and for other leaves that not marked as deciduous and coniferous.
-                    
-                    leaf_drop_chance_coniferous = 0.0001
-                    leaf_regrowth_chance_coniferous = 0.005
-                    | Chance of coniferous leaves to drop in summer and regrow in any season
-                    
-                    deciduous_leaves_list = minecraft:oak_leaves / minecraft:birch_leaves
-                    coniferous_leaves_list = minecraft:spruce_leaves
-                    | List of deciduous and coniferous leaves blocks. Deciduous is oak trees and similar. They will drop their leaves before winter, but note that they will not do that in tropical biomes. Coniferous is pine trees. They will drop their leaves only in summer and almost very rare.
-                    
-                    ----------------------------------------------------------------------------------------------------
-                    Tree Generator
-                    ----------------------------------------------------------------------------------------------------
-                    
-                    tree_generator_speed_global = true
-                    | If set this to true, it will use same speed for all generators.
-                    
-                    tree_generator_speed_tick = 1
-                    | How fast of generators in tick. Increase this will make them slower. Set to 0 for temporary pause all generators.
-                    
-                    tree_generator_speed_repeat = 1000
-                    | How many processes the generators run in a time. Increase this will make them generate faster but also can cause lag. Set to 0 for one time generation that can freeze the game.
-                    
-                    tree_generator_count_limit = 3
-                    | How many generators will be generating in the same time. Set to 0 for no limit.
-                    
-                    tree_generator_tp_limit = 16
-                    | How many blocks the generators can move per time. Lower this can reduce lag spikes caused by placing blocks in many chunks at once. Set to 0 for no limit.
-        
+            multiply_rarity = 1.0
+            multiply_min_distance = 1.0
+            multiply_group_size = 1.0
+            multiply_dead_tree_chance = 1.0
+            # These number will be multiplied to all tree config in these types
+            # 这些倍率会乘到所有树配置的对应项上(稀有度/最小间距/群组规模/枯树几率)
 
-          
+            tree_location = true
+            # Enable marker entity for tree location to store some tree data and for some custom features. Disable this can reduce number of entities, but some features will not work such as living mechanics.
+            # 启用树位置标记实体以存储树数据并支持部分自定义机制. 关闭可减少实体数量, 但部分机制(如生命系统)将失效.
 
-        
+            world_gen_roots = true
+            # Enable tree roots when generate in world gen. Note that disable this will no affect to some trees, because roots is important part for them. Also will no affect to taproot part.
+            # 世界生成时启用树根. 注意: 对部分树无效(树根是其重要组成), 也不影响主根部分.
 
-          
-                    memory_cache_max_entries = 4096
-                    | Maximum number of entries in DetailedDetection memory cache. Older entries will be evicted when limit is reached.
+            max_height_spawn = 0
+            # Cancel the trees when their spawn center is above this Y level. As some world gen mods such as ReTerraForged, replacing mountain block and my trees can't detect those new block, make them spawn on blocks that not in the list. Set to 0 to disable this.
+            # 取消生成中心高于此 Y 坐标的树. 部分 world gen 模组(如 ReTerraForged)会替换山体方块, 本模组无法识别这些新方块导致树生成在列表外方块上. 设 0 关闭此功能.
 
-                    deferred_queue_max_size = 0
-                    | Maximum number of pending tasks in deferred tree placement queue. Oldest tasks will be discarded when limit is reached.
+            unviable_ecology_skip_chance = 0.75
+            # Skip trees that generate in unviable ecosystems. For example, land trees that generate in water. This config only affect to dead trees, as normal trees already skip generate in unviable ecosystems.
+            # 跳过生成在不可行生态位的树(例如陆地树生成在水里). 仅影响枯树, 普通树本身就会跳过不可行生态位.
 
-                    deferred_queue_retry_limit = 400
-                    | Maximum retry attempts for deferred tree placement before giving up.
+            unviable_ecology_height_tolerance = 1
+            # Height tolerance (in blocks) for terrestrial tree viability check. If the difference between OCEAN_FLOOR_WG and WORLD_SURFACE_WG height is within this tolerance, the tree will NOT be marked as unviable ecology. Set to 0 for strict check. Default 1 to handle superflat worlds where getBaseHeight noise may cause 1-block offset.
+            # 陆地树生态位检查的高度容差(格). OCEAN_FLOOR_WG 与 WORLD_SURFACE_WG 高度差在容差内则不判为不可行生态位. 严格检查设 0. 默认 1 用于兼容超平坦世界 getBaseHeight 噪声导致的 1 格偏差.
 
-                    deferred_queue_process_per_tick = 32
-                    | Maximum number of deferred tasks to process per tick.
-                    deferred_queue_budget_ms = 40
-                    | Time budget in milliseconds for deferred tree placement per tick. Main thread consumes tasks until
-                    | budget runs out, keeping tick time constant regardless of queue depth. Set to 0 to pause processing.
+            leaf_litter_world_gen = true
+            leaf_litter_world_gen_chance = 0.1
+            leaf_litter_world_gen_chance_coniferous = 0.05
+            # Create leaf litter on ground and water, while in world gen. Leaf litter config must be enable to allow this.
+            # 世界生成时在地面与水面生成落叶层. 需落叶层总开关(leaf_litter)开启.
 
-                    deferred_queue_budget_mode = expr
-                    | Budget control mode. "static": use deferred_queue_budget_ms directly (classic behavior; explicit opt-out).
-                    | "expr": evaluate deferred_queue_budget_expr once per tick at the tick boundary (default); compile failure
-                    | or non-finite result falls back to deferred_queue_budget_ms. Hot-reloadable without server restart.
+            abscission_world_gen = true
+            # Make all deciduous trees generate with all leaves dropped to the ground when they're in snowy biomes
+            # 在雪原群系中, 落叶树生成时叶片全部落至地面(脱落效应)
 
-                    deferred_queue_budget_expr = clamp(45-t,2,40)
-                    | Expression evaluated each tick when mode is "expr". Variables: t: current tick elapsed ms
-                    | (measured before this drain runs), d: previous tick drain duration ms, q: deferred queue depth.
-                    | Operators: + - * / % ( ), functions: min max clamp, plain decimal numbers, lowercase only.
-                    | Example clamp(45-t,2,40): spend remaining headroom before a 45ms tick, floor 2ms, cap 40ms.
+            dead_tree_auto_level = '11 / 12 / 13 / 14 / 15 / 16 / 17 / 18 / 19 / 21 / 22 / 23 / 24 / 25 / 26 / 27 / 28 / 29 / 31 / 32 / 33 / 34 / 35 / 36 / 37 / 38 / 39'
+            # Randomly pick these number for trees that set dead tree level as "auto" and "auto_pine". 1X is normal dead trees. 2X is fallen trees with roots. 3X is fallen trees without roots. X1 X2 X3 X4 X5 is no leaves, no sprig, no twig, no limb, no branch. X6 X7 is only trunk 50-100% and hollowed. X8 X9 is only trunk 10-50% and hollowed.
+            # 枯树等级设为 "auto"/"auto_pine" 的树从此列表随机取值. 编码规则: 首位=形态(1X 普通枯立木, 2X 带根倒木, 3X 无根倒木); 个位=残缺程度(X1 无叶, X2 无新芽, X3 无细枝, X4 无大枝, X5 无分枝, X6/X7 仅存主干 50-100% 且中空, X8/X9 仅存主干 10-50% 且中空).
 
-                    pregen_radius_expr = v+8
-                    | Window radius expression for pregeneration. Variable: v: server view distance. Result is
-                    | the full window radius in chunks (player center +/- radius). Invalid compile / non-finite /
-                    | negative result falls back to v+8 (U1 constant semantics). Hot-reloadable.
+            tree_decorations = true
+            tree_decorations_normal_chance = 0.01
+            tree_decorations_decay_chance = 0.5
+            # Run decoration functions while generate trees. Disable these or reduce their chances can improve world gen speed.
+            # 生成树时执行装饰函数. 关闭或调低几率可提升世界生成速度.
 
-                    pregen_max_inflight = 8
-                    | Soft backpressure: max concurrent pregen region tasks submitted to the tree pool. Pool has
-                    | 12 threads; leftover capacity serves the legacy chain. Check-then-act allows brief overshoot
-                    | (harmless: oversubscription only recomputes, never drops).
+            # ===== World Generation : Surrounding Area Detection / 世界生成: 周边区域检测 =====
 
-                    pregen_task_priority = fifo
-                    | Pregen region task priority. "fifo": first-offered first-computed (default).
-                    | "nearest": regions closest to the player computed first. ELYTRA WARNING: trees may
-                    | pop up right in front of a fast-flying player (crash risk) - use with care.
-                    | "farthest": farthest first (safest for elytra: trees ready before player arrives).
-                    | Invalid values fall back to fifo at runtime. Hot-reloadable.
+            shoreline_detection = true
+            # Enable shoreline system for trees that use this feature. If disable this, all trees that spawn at waterside, landside, and shoreline will be skipped and not spawn anywhere.
+            # 启用岸线系统. 关闭后, 所有需要岸线定位的树(水侧/陆侧/岸线)将被跳过, 不会在任何位置生成.
 
-                      chunk_status_guard = false
-                      | [LMax V42] Skip writing tree data when any chunk in the +-4 range has already passed the "features" stage. Default false (guard removed): the guard discarded whole trees near spawn and behind fast travel. Enable only for debugging.
+            surface_smoothness_detection = true
+            # Force the trees to only spawn on good areas. Note that this system only detects 4 points around tree center, so it's not 100% perfect.
+            # 强制树只在平整区域生成. 注意: 只检测树中心周围 4 个点, 并非 100% 精确.
 
-                      placement_gate_parallel_offthread = true
-                      | [LMax V55] Off-thread (executor) parallel placement when the whole tree footprint is confirmed ready via the Load-event ready-set. Blocks still land on the main thread through the FORCED flush (knife-N contract intact). false: legacy knife-I behavior: every off-thread task requeued into the single main-thread drip queue (root cause of the small-blank-patch backlog).
+            surface_smoothness_detection_percent = 50
+            # How far detection point is at. Set to 100 for same as tree size.
+            # 检测点距离. 设 100 表示与树尺寸相同.
 
-                    bin_convert_futures_max_entries = 256
-                    | Maximum number of region futures cached in memory for binary data conversion.
-        
+            surface_smoothness_detection_height_up = 50
+            # Set height up of surface smoothness. Set to 100 for same as Y size of the tree above its center.
+            # 平整检测向上高度. 设 100 表示与树中心上方 Y 尺寸相同.
 
-          
-                    cache_other_region_max = 256
-                    | Maximum number of other region caches to keep in memory for tree location distance tests.
+            surface_smoothness_detection_height_down = 25
+            # Set height down of surface smoothness. Set to 100 for same as Y size of the tree below its center.
+            # 平整检测向下高度. 设 100 表示与树中心下方 Y 尺寸相同.
 
-                    pending_blocks_max_chunks = 1024
-                    | Maximum number of chunks in PendingBlocks cache for cross-chunk tree placement. Older entries will be evicted when limit is reached.
+            structure_detection_size = 0
+            # Cancel trees if they detect structure in their area based from their size. This number will be plus with their size, higher number bigger distance. Note that this feature is not perfect, trees with long size might not be canceled. Only support number between is 0 to 9. Set to 0 for only chunks that marked as having structures. Set to -1 to disable this feature.
+            # 检测到结构时取消树的生成, 检测范围基于树尺寸加此值. 注意: 该功能不完美, 尺寸很大的树可能不被取消. 仅支持 0-9; 设 0 只检查已标记含结构的区块; 设 -1 关闭此功能.
 
-                    deferred_queue_suspended_max = 65536
-                    | Maximum number of suspended deferred tasks (waiting for their chunks to load) before new suspends are dropped with a warning. Defensive cap only, normal play stays far below it.
+            test_fallen_area_max_height_checks = 64
+            # Maximum number of getHeightWorldGen calls in testFallenArea. Large tree shapes can trigger hundreds of height queries causing lag. Lower this to improve performance at the cost of fallen tree placement accuracy. Set to 0 for unlimited.
+            # testFallenArea 中 getHeightWorldGen 调用上限. 大型树形状可能触发数百次高度查询造成卡顿. 调低可提升性能但牺牲倒木落位精度. 设 0 不限制.
 
-          
-                    cache_other_region_max = 256
-                    | Maximum number of other region caches to keep in memory for tree location distance tests.
+            structure_detection_max_chunks = 64
+            # Maximum number of chunks to scan during structure detection. Large tree sizes can cause scanning of many chunks leading to lag. Lower this to improve performance. Set to 0 for unlimited.
+            # 结构检测的区块扫描上限. 大型树会扫描大量区块导致卡顿. 调低可提升性能. 设 0 不限制.
 
-                    ----------------------------------------------------------------------------------------------------
-                    Watchdog
-                    ----------------------------------------------------------------------------------------------------
+            # ===== Living Mechanics / 生命机制 =====
 
+            living_mechanics = true
+            # Enable some custom systems to make the trees from this mod feel more alive. Such as leaf drop and regrowth, leaf decay, leaf litter, and abscission.
+            # 启用自定义生命系统: 落叶与再生, 叶片衰亡, 落叶层, 脱落效应.
 
-                    watchdog_threshold_ms = 50
-                    | Watchdog trigger threshold in milliseconds. A normal tick is 50ms. Increase this if the watchdog is too sensitive.
+            living_mechanics_tick = 5
+            # How fast in tick of living mechanics system. Set to 0 to temporary pause the tick.
+            # 生命机制系统 tick 间隔. 设 0 暂停.
 
-                    watchdog_dump_all_threads = true
-                    | Dump all threads' stack traces when a stall persists past milestones (1s/5s/20s/...). Diagnostic tool for finding what starves the server thread.
-                    ----------------------------------------------------------------------------------------------------
-                    Miscellaneous
-                    ----------------------------------------------------------------------------------------------------
-                    
-                    world_gen_icon = true
-                    | Enable little icon at top-left showing everytime the mod generate new region. This config only affect on singleplayer.
-                    """ + end);
+            living_mechanics_process_limit = 500
+            # How many process for trees to run this system per time. Set to 0 for one time process.
+            # 每轮处理的树数量上限. 设 0 为单次处理.
+
+            living_mechanics_simulation = 100
+            # Simulate fake trees to slowdown the process. For example, when I set tree speed for 100 trees. But there's only 1 tree in the area, it will drop and regrow leaves very fast because that's the speed for 100 trees. Set this config will simulate fake trees and make that 1 tree slowdown it process like there's 99 trees around it.
+            # 模拟虚拟树来平滑处理速度. 例: 速度按 100 棵树设定, 但区域内只有 1 棵树时它会以 100 棵的速度疯狂落叶再生. 此配置模拟虚拟树, 让这 1 棵像周围有 99 棵一样按正常节奏运行.
+
+            leaf_litter = true
+            # Create leaf litter on ground and water
+            # 在地面与水面生成落叶层(总开关)
+
+            leaf_litter_classic = true
+            # Use classic style for leaf litter when that leaves block have no custom style. Classic style will use block of itself as litter block.
+            # 叶片方块无自定义样式时使用经典落叶样式(以叶片方块自身作为落叶层方块).
+
+            leaf_litter_classic_only = false
+            # Only use classic style for all leaf litters
+            # 所有落叶层强制使用经典样式
+
+            leaf_litter_remover_chance = 0.001
+            # Chance of leaf litter on the ground to disappear per process
+            # 每轮地面落叶层消失的几率
+
+            leaf_litter_remover_count_limit = 100
+            # Count limit of the leaf litter remover
+            # 落叶层清理器每轮的处理数量上限
+
+            falling_leaf_chance = 1.0
+            # Chance of falling leaf that will appear at leaves blocks when leaf drop system pick that block. When this leaf animation touch the ground or water, it will create leaf litter there. Other than this chance will be use instant drop without animation.
+            # 叶片脱落系统选中方块时出现飘落叶片动画的几率. 动画触地/触水后在该处生成落叶层. 其余情况直接落地(无动画).
+
+            falling_leaf_count_limit = 500
+            # Count limit of falling leaf
+            # 飘落叶片动画的数量上限
+
+            leaf_light_level_detection = 7
+            # Minimum light level of leaves can survive. Leaves will drop themselves if light level is under this value. Set to 15 for only full bright level. Set to 0 for no light level affect.
+            # 叶片存活的最低光照等级. 低于此值叶片自行脱落. 设 15 仅全亮存活; 设 0 关闭光照检测.
+
+            dead_leaf_drop_chance = 0.001
+            # Chance of leaves to drop themselves when the tree is dead by light level and missing center block
+            # 树因光照不足或中心方块缺失而死亡时, 叶片自行脱落的几率
+
+            # ===== Living Mechanics : Leaf Cycle and Seasons / 生命机制: 叶片循环与季节 =====
+
+            compatibility_serene_seasons = true
+            # Sync seasons to Serene Seasons mod by using area at world spawn, run the test every one minute.
+            # 与 Serene Seasons 模组同步季节(以世界出生点区域为准, 每分钟测试一次).
+
+            leaf_drop_chance_spring = 0.0
+            leaf_drop_chance_summer = 0.005
+            leaf_drop_chance_autumn = 0.01
+            leaf_drop_chance_winter = 0.01
+            leaf_regrowth_chance_spring = 0.01
+            leaf_regrowth_chance_summer = 0.01
+            leaf_regrowth_chance_autumn = 0.0
+            leaf_regrowth_chance_winter = 0.0
+            # Chance of deciduous leaves to drop and regrow based on seasons. But note that it will only use summer value when in tropical biomes, and for other leaves that not marked as deciduous and coniferous.
+            # 落叶树叶片随季节脱落与再生的几率. 热带群系只用夏季值; 未标记为落叶/针叶的叶片也只用夏季值.
+
+            leaf_drop_chance_coniferous = 0.0001
+            leaf_regrowth_chance_coniferous = 0.005
+            # Chance of coniferous leaves to drop in summer and regrow in any season
+            # 针叶树叶片夏季脱落与全年再生的几率
+
+            deciduous_leaves_list = 'minecraft:oak_leaves / minecraft:birch_leaves'
+            coniferous_leaves_list = 'minecraft:spruce_leaves'
+            # List of deciduous and coniferous leaves blocks. Deciduous is oak trees and similar. They will drop their leaves before winter, but note that they will not do that in tropical biomes. Coniferous is pine trees. They will drop their leaves only in summer and almost very rare.
+            # 落叶/针叶叶片方块列表(斜杠分隔). 落叶=橡树类: 冬前落叶(热带群系除外); 针叶=松树类: 仅夏季落叶且极其罕见.
+
+            # ===== Tree Generator / 树生成器 =====
+
+            tree_generator_speed_global = true
+            # If set this to true, it will use same speed for all generators.
+            # 所有生成器使用同一速度设定.
+
+            tree_generator_speed_tick = 1
+            # How fast of generators in tick. Increase this will make them slower. Set to 0 for temporary pause all generators.
+            # 生成器 tick 间隔. 增大变慢. 设 0 暂停全部生成器.
+
+            tree_generator_speed_repeat = 1000
+            # How many processes the generators run in a time. Increase this will make them generate faster but also can cause lag. Set to 0 for one time generation that can freeze the game.
+            # 每轮生成进程数. 增大变快但可能卡顿. 设 0 一次性生成(可能冻结游戏).
+
+            tree_generator_count_limit = 3
+            # How many generators will be generating in the same time. Set to 0 for no limit.
+            # 同时运行的生成器数量上限. 设 0 不限制.
+
+            tree_generator_tp_limit = 16
+            # How many blocks the generators can move per time. Lower this can reduce lag spikes caused by placing blocks in many chunks at once. Set to 0 for no limit.
+            # 生成器单轮移动方块数上限. 调低可减少多区块同时放块造成的卡顿尖峰. 设 0 不限制.
+
+            memory_cache_max_entries = 4096
+            # Maximum number of entries in DetailedDetection memory cache. Older entries will be evicted when limit is reached.
+            # DetailedDetection 内存缓存条目上限, 满后逐出最老条目.
+
+            deferred_queue_max_size = 0
+            # Maximum number of pending tasks in deferred tree placement queue. Oldest tasks will be discarded when limit is reached.
+            # 延迟放置队列的待处理任务上限, 满后丢弃最老任务. 0 为不限制.
+
+            deferred_queue_retry_limit = 400
+            # Maximum retry attempts for deferred tree placement before giving up.
+            # 延迟放置的最大重试次数, 超过则放弃.
+
+            deferred_queue_process_per_tick = 32
+            # Maximum number of deferred tasks to process per tick.
+            # 每 tick 处理的延迟任务数上限.
+
+            deferred_queue_budget_ms = 40
+            # Time budget in milliseconds for deferred tree placement per tick. Main thread consumes tasks until budget runs out, keeping tick time constant regardless of queue depth. Set to 0 to pause processing.
+            # 延迟放置每 tick 的时间预算(毫秒). 主线程消费任务直到预算耗尽, 队列深浅不再影响 tick 时长. 设 0 暂停处理.
+
+            deferred_queue_budget_mode = 'expr'
+            # Budget control mode. "static": use deferred_queue_budget_ms directly (classic behavior; explicit opt-out). "expr": evaluate deferred_queue_budget_expr once per tick at the tick boundary (default); compile failure or non-finite result falls back to deferred_queue_budget_ms. Hot-reloadable without server restart.
+            # 预算控制模式. "static": 直接用 deferred_queue_budget_ms(经典行为, 显式退出). "expr": 每 tick 边界求值一次 deferred_queue_budget_expr(默认); 编译失败或非有限数回退到 ms 值. 支持热重载无需重启.
+
+            deferred_queue_budget_expr = 'clamp(45-t,2,40)'
+            # Expression evaluated each tick when mode is "expr". Variables: t: current tick elapsed ms (measured before this drain runs), d: previous tick drain duration ms, q: deferred queue depth. Operators: + - * / % ( ), functions: min max clamp, plain decimal numbers, lowercase only. Example clamp(45-t,2,40): spend remaining headroom before a 45ms tick, floor 2ms, cap 40ms.
+            # "expr" 模式下每 tick 求值的表达式. 变量: t=当前 tick 已耗毫秒(排水前测量), d=上 tick 排水耗时, q=队列深度. 运算: + - * / % ( ); 函数: min max clamp; 纯小数十进制数(仅小写). 示例 clamp(45-t,2,40): 在 45ms tick 内花掉剩余余量, 下限 2ms 上限 40ms.
+
+            pregen_radius_expr = 'v+8'
+            # Window radius expression for pregeneration. Variable: v: server view distance. Result is the full window radius in chunks (player center +/- radius). Invalid compile / non-finite / negative result falls back to v+8 (U1 constant semantics). Hot-reloadable.
+            # 预生成窗口半径表达式. 变量: v=服务器视距. 结果为完整窗口半径(区块, 玩家中心 +/- 半径). 编译失败/非有限数/负数回退到 v+8(U1 常量语义). 支持热重载.
+
+            pregen_max_inflight = 8
+            # Soft backpressure: max concurrent pregen region tasks submitted to the tree pool. Pool has 12 threads; leftover capacity serves the legacy chain. Check-then-act allows brief overshoot (harmless: oversubscription only recomputes, never drops).
+            # 软背压: 提交到树池的并发预生成 region 任务上限. 池有 12 线程, 剩余容量服务旧链. 检查后行动允许短暂超发(无害: 超发只重算不丢弃).
+
+            pregen_task_priority = 'fifo'
+            # Pregen region task priority. "fifo": first-offered first-computed (default). "nearest": regions closest to the player computed first. ELYTRA WARNING: trees may pop up right in front of a fast-flying player (crash risk) - use with care. "farthest": farthest first (safest for ellytra: trees ready before player arrives). Invalid values fall back to fifo at runtime. Hot-reloadable.
+            # 预生成任务优先级. "fifo": 先投先算(默认). "nearest": 离玩家最近的先算(鞘翅警告: 树可能当面弹出, 有撞机风险, 慎用). "farthest": 最远的先算(鞘翅最安全: 玩家到达前树已就绪). 非法值运行时回退 fifo. 支持热重载.
+
+            chunk_status_guard = false
+            # [LMax V42] Skip writing tree data when any chunk in the +-4 range has already passed the "features" stage. Default false (guard removed): the guard discarded whole trees near spawn and behind fast travel. Enable only for debugging.
+            # [LMax V42] 当 +-4 范围内任一区块已过 "features" 阶段时跳过树数据写入. 默认 false(守卫已移除): 该守卫曾整树丢弃出生点附近与快速移动身后的树. 仅调试用.
+
+            placement_gate_parallel_offthread = true
+            # [LMax V55] Off-thread (executor) parallel placement when the whole tree footprint is confirmed ready via the Load-event ready-set. Blocks still land on the main thread through the FORCED flush (knife-N contract intact). false: legacy knife-I behavior: every off-thread task requeued into the single main-thread drip queue (root cause of the small-blank-patch backlog).
+            # [LMax V55] 足迹全部就绪(Load 事件就绪集)时, 由 executor 线程并行放置. 方块仍经 FORCED 冲刷落在主线程(刀N 契约不破). false = 回退刀I 行为: 非主线程任务一律转投主线程滴灌队列(小空白欠账的根因).
+
+            bin_convert_futures_max_entries = 256
+            # Maximum number of region futures cached in memory for binary data conversion.
+            # 二进制数据转换的区域 future 内存缓存上限.
+
+            cache_other_region_max = 256
+            # Maximum number of other region caches to keep in memory for tree location distance tests.
+            # 树间距检测持有的跨 region 缓存数量上限.
+
+            pending_blocks_max_chunks = 1024
+            # Maximum number of chunks in PendingBlocks cache for cross-chunk tree placement. Older entries will be evicted when limit is reached.
+            # 跨区块放置的 PendingBlocks 缓存区块数上限, 满后逐出最老条目.
+
+            deferred_queue_suspended_max = 65536
+            # Maximum number of suspended deferred tasks (waiting for their chunks to load) before new suspends are dropped with a warning. Defensive cap only, normal play stays far below it.
+            # 挂起任务(等区块加载)上限, 超过后新挂起任务丢弃并警告. 纯防御性上限, 正常游玩远低于此值.
+
+            # ===== Watchdog / 看门狗 =====
+
+            watchdog_threshold_ms = 50
+            # Watchdog trigger threshold in milliseconds. A normal tick is 50ms. Increase this if the watchdog is too sensitive.
+            # 看门狗触发阈值(毫秒). 正常 tick 为 50ms. 误报频繁时调高.
+
+            watchdog_dump_all_threads = true
+            # Dump all threads' stack traces when a stall persists past milestones (1s/5s/20s/...). Diagnostic tool for finding what starves the server thread.
+            # 冻结持续过里程碑(1s/5s/20s/...)时 dump 全部线程堆栈, 用于定位谁饿死服务器线程.
+
+            # ===== Miscellaneous / 杂项 =====
+
+            world_gen_icon = true
+            # Enable little icon at top-left showing everytime the mod generate new region. This config only affect on singleplayer.
+            # 左上角图标: 每生成新 region 时提示. 仅单人模式生效.
+
+            developer_mode = false
+            # Enable some features for debugging such as detailed error messages, info overlay in-game, etc.
+            # 启用调试功能: 详细报错信息, 游戏内信息浮层等.
+            """;
+        // [U5 Stage1] config.toml lifecycle: template-driven render + atomic write + reparse self-check
+        // + legacy config.txt migration (old file kept as config.txt.migrated). start/end assembly retired.
+        public static void repair () {
+
+            // [U5 Stage1] full lifecycle: template render + atomic write + self-check + legacy migration.
+            ConfigToml.repair(Core.path_config + "/config.toml", TEMPLATE_TOML);
 
         }
 

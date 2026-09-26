@@ -25,7 +25,7 @@ import java.lang.management.ThreadMXBean;
  * chunk 管线（主线程是受害人视角），看不到是谁饿死 worldgen 管线——
  * 全线程 dump 才能拍到持锁者 / 连锁加载者 / 死锁环的现行。
  *
- * 配置项（在 config.txt 中）：
+ * 配置项（在 config.toml 中）：
  * - watchdog_enabled：是否启用看门狗
  * - watchdog_threshold_ms：触发阈值（毫秒），默认 50
  * - watchdog_dump_all_threads：里程碑时刻是否 dump 全部线程堆栈，默认 true

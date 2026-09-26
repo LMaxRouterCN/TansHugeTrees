@@ -1,6 +1,6 @@
 package tannyjung.tanshugetrees_core;
 
-// [LMax Fix V54 刀S] [长期记忆: 149] 预算三键热重载 — WatchService 事件驱动(零轮询)监听 config/config.txt,
+// [LMax Fix V54 刀S] [长期记忆: 149] 预算三键热重载 — WatchService 事件驱动(零轮询)监听 config/config.toml,
 // 文件变更时重读并热应用 budget_mode / deferred_queue_budget_ms / deferred_queue_budget_expr 三键
 // (经 TreePlacer.DeferredQueue.reloadBudget → compileProgram 原子换装 Program), 服务器无需重启.
 // 作用域锁死三键: 其余 config 键改动需重启生效(与 lmax-debuglog.json 同边界), 避免半写半应用状态扩散.
@@ -11,7 +11,7 @@ package tannyjung.tanshugetrees_core;
 // (守护线程内的有界等待, 不阻塞游戏任何线程; 是防抖收尾不是轮询循环).
 // 防半写: 三键不齐 = 编辑/写入中途, 跳过本次应用(下次事件再试), 永不应用残缺值.
 // 失败语义 fail-open: watcher 任何异常退出 = 热重载缺席, 游戏零影响(静态值仍由启动加载持有).
-// 读取复用 FileManager.readTXT — 与启动加载同一条读取路径(charset 判例隔离, 双语化/格式革命前不引入第二读法).
+// [U5] 读取链统一为 ConfigToml.getValues(night-config 解析), 与启动加载同一条读链; 旧手搓行级 parse 退役.
 
 import java.io.File;
 import java.nio.file.FileSystems;
@@ -20,6 +20,7 @@ import java.nio.file.StandardWatchEventKinds;
 import java.nio.file.WatchEvent;
 import java.nio.file.WatchKey;
 import java.nio.file.WatchService;
+import java.util.Map; // [U5 Stage1] ConfigToml.getValues returns Map<String,String>
 
 public class WatchConfigReload {
 
@@ -37,7 +38,7 @@ public class WatchConfigReload {
         thread.setDaemon(true); // 不阻止 JVM 退出
         watch_thread = thread;
         thread.start();
-        System.out.println("[LMax] budget hot-reload watching: " + dir.getPath() + "/config.txt");
+        System.out.println("[LMax] budget hot-reload watching: " + dir.getPath() + "/config.toml");
     }
 
     private static void loop () {
@@ -67,11 +68,11 @@ public class WatchConfigReload {
         }
     }
 
-    // 排空单个 key 的事件表; 返回是否触及 config.txt. OVERFLOW 事件(context=null)忽略.
+    // 排空单个 key 的事件表; 返回是否触及 config.toml. OVERFLOW 事件(context=null)忽略.
     private static boolean drain_key (WatchKey key) {
         boolean touched = false;
         for (WatchEvent<?> event : key.pollEvents()) {
-            if (event.context() != null && event.context().toString().equals("config.txt")) {
+            if (event.context() != null && event.context().toString().equals("config.toml")) {
                 touched = true;
             }
         }
@@ -79,37 +80,24 @@ public class WatchConfigReload {
         return touched;
     }
 
-    // 重读 config.txt 并热应用三键. 半写守卫: 三键不齐 = 编辑/写入中途, 跳过本次(下次事件再试).
+    // 重读 config.toml 并热应用三键. 半写守卫: 三键不齐 = 编辑/写入中途, 跳过本次(下次事件再试).
     private static void apply () {
+        // [U5] 读取链统一为 ConfigToml.getValues(night-config 解析); 三键不齐 = 编辑/写入中途, 跳过本次(下次事件再试).
         try {
-            File file = new File(Core.path_config + "/config.txt");
+            File file = new File(Core.path_config + "/config.toml");
             if (file.isFile() == false) return;
-            String mode = null;
-            String expr = null;
+            Map<String, String> data = tannyjung.tanshugetrees_core.outside.ConfigToml.getValues(file.getPath());
+            String mode = data.get("deferred_queue_budget_mode");
+            String expr = data.get("deferred_queue_budget_expr");
             Integer budget = null;
-            // 行格式与 ConfigClassic.repair 同构: "key = value"; 描述行("| ...")自然被 " = " 分隔排除.
-            // expr 字符集前向锁 [长期记忆: 151] 不含 '=', indexOf(" = ") 必命中键分隔符本身, 不会劈进表达式.
-            for (String line : tannyjung.tanshugetrees_core.outside.FileManager.readTXT(file.getPath())) {
-                if (line == null) continue;
-                line = line.trim();
-                int sep = line.indexOf(" = ");
-                if (sep < 0) continue;
-                String k = line.substring(0, sep).trim();
-                String v = line.substring(sep + 3).trim();
-                if (k.equals("deferred_queue_budget_mode")) {
-                    mode = v;
-                } else if (k.equals("deferred_queue_budget_ms")) {
-                    try { budget = Integer.parseInt(v); } catch (NumberFormatException e) { budget = null; }
-                } else if (k.equals("deferred_queue_budget_expr")) {
-                    expr = v;
-                }
-            }
+            // [U5] Integer.parseInt(null) throws NumberFormatException: one guard covers missing key and non-numeric value.
+            try { budget = Integer.parseInt(data.get("deferred_queue_budget_ms")); } catch (NumberFormatException e) { budget = null; }
             if (mode == null || expr == null || budget == null) {
                 System.err.println("[LMax] budget hot-reload skipped: incomplete keys (mode=" + mode + " ms=" + budget + ")");
                 return;
             }
             tannyjung.tanshugetrees_handcode.systems.world_gen.TreePlacer.DeferredQueue.reloadBudget(mode, budget, expr);
-            // reloadBudget 内部 compileProgram 失败时保留旧 Program(warn-once); 本行只报收到的值
+            // reloadBudget keeps the old Program on compile failure (warn-once); this line only reports received values.
             System.out.println("[LMax] budget hot-reloaded: mode=" + mode + " ms=" + budget + " expr='" + expr + "'");
         } catch (Exception e) {
             System.err.println("[LMax] budget hot-reload failed (keeping current values): " + e);

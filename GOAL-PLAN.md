@@ -92,3 +92,19 @@
 - E9=105: 集中#vanilla/variants/polaris单id(样本截断推断)01:59:48单时刻突发, 案D村庄世界复验条件满足, 噪音级留观察不立案
 - 日志税520MB/74min: 开关=config\tanshugetrees\lmax-debuglog.json五true(tree_location/event_center/pending_blocks/place_calculate/placer_start), 正式使用前关; log_deferred_queue与log_queue_depth现false
 - 待办移转: U3请令(判例163免重设计, 侦察已启动) / 空白复访 / E9观察 / 刀S验收2-3(热切static+log_queue_depth) / E2对照 / bin侦察 / 26 STALE jar / config格式革命+双语化
+
+## U3收档 + U4 config编码根修 (2026-09-26 晨, max授权自动模式)
+- U3 claims账本统一: commit 5f6df36 / tag u3-claims-unify。PE单文件7刀: computed_ledger(4处)/allBits/抄写桥/BitSet import 全退役, 去重账本统一至 TreeLocation.region_scan_claims, 写点唯一=pregenComputeRegion尾部, 契约=判例163读侧3x3零改动(V42不动)+Observer防预谎分离保持。过程事故=BOM注入(PS Encoding.UTF8发射型写盘, 判例198已pin), 剥除后build绿。
+- U4 config编码根修: commit 433833c / tag u4-config-encoding。中文bug根因=FileManager readTXT/writeTXT读写charset不对称(write=FileWriter平台默认GBK / read=readAllLines默认UTF8): 用户中文经repair写回被GBK重编码, 下次UTF8读撞非法序列报错。修复=A1 import StandardCharsets + A2 writeTXT显式UTF8(OutputStreamWriter) + A3 readTXT显式UTF8+BOM归一(剥首行U+FEFF) + B1 ConfigClassic判例174运行时守卫x2(repair GetOldValues段/getValues补竖线注释守卫, 与Generate段同构, 用户注释含等号不再被吸作配置项)。ASCII存量字节级零变化, 零迁移。
+- 部署: jar 20260926043522 (U4), MD5双验MATCH, mods唯一, 红线合规(GAME-PROC=0); U3 jar 20260926041652已被U4接力替换。
+- 运行验收待max: U3=开游戏看[U2] offer日志链+同region重复差分不重入队; U4=config.txt写中文值保存后进世界不报错+值保持(重启repair不毁中文)。
+- 提案(晨呈批): 1)双语化: HC 270描述行纯内容工程, 建议描述行"EN | 中"并列格式, 文案质量max定调; 2)TOML格式革命: 将来正解=night-config(Forge 1.20.1自带零新依赖)+字面量单引号零转义, 但=破坏性变更(全量转换器+兼容窗口+重测, 判例174证明config不测会崩), 非今晚刀。YAML(缩进地狱)/MD(无结构标准)已否决。
+- 待办: 空白复访 / E9观察 / 刀S验收2-3 / E2对照(低) / bin落盘侦察(低) / 26 STALE jar / 195残体 / 双语化+TOML两提案待批
+## U5 Stage1: config TOML 革命 + 双语化 (2026-09-26 晨, max授权自动模式)
+- 架构: ConfigToml.java(outside包, 零tannyjung依赖, 纯night-config+JDK): getValues(解析+BOM剥+plainDecimal归一) / repair(旧txt迁移→toml基线→模板驱动渲染→ATOMIC_MOVE原子写→写后reparse自检闭环) / parseTemplate(保序raw_lines+defaults+forms) / parseLegacyUserEdits(Default is对齐+竖线守卫, 只取用户改值) / formatValue(形态跟随模板+单引号零转义+含换行回默认) / plainDecimal(无E原样/有E剥尾零, 幂等不动点).
+- 79键双语模板单一事实源=Handcode.Config.TEMPLATE_TOML(与.scratch/config_template.toml字节对账); Core start/end两段拼装退役; 地雷拆除=cache_other_region_max模板双写(老手搓默吞, TOML硬拒).
+- 读链统一: Core与WCR均走ConfigToml.getValues(Map契约等价; WCR三键热重载守卫语义零变, watch目标→config.toml, 旧行级parse退役).
+- 范围界: dev/shape_file_converter/settings.txt仍走ConfigClassic(dev工具, 范围外, ConfigClassic.java保留); .scratch脚手架不入库.
+- 验证: harness 12/12(迁移79键对live副本对账/幻影改2键保值+77键零漂移/冷启动/双repair字节幂等/文件层中文保真/LF only); RED gate战果=三缺陷拦于合并前(钻石操作符/PS劈token/plainDecimal尾零).
+- 待max裁决: 75条中文直译审校 / night-config运行时打包(compileOnly, D阶段jarJar或嵌套) / libs两jar入库(veto即revert) / 模板驱动写盘覆盖用户自加注释行(与老repair一致, 已文档) / U4真实验位(215形状txt vs config.toml) / U3+U4游戏内验收.
+- 部署锁: build jar未入实例, max关游戏后自部署; tag u5-config-toml.
