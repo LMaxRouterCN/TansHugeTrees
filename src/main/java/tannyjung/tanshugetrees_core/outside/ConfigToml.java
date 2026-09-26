@@ -140,6 +140,44 @@ public class ConfigToml {
         }
     }
 
+    /** [U6] 模板默认值表 (加载兜底 / ensure 共用; 只读不写盘). */
+    public static Map<String, String> templateDefaults (String template_toml) {
+
+        Template template = parseTemplate(template_toml.replace("\r\n", "\n")); // [U5-B2] CRLF 归一
+        return new LinkedHashMap<>(template.defaults);
+    }
+
+    /** [U6] "文件为真" 建盘门: 文件已存在 = 零接触(用户注释永生, 值由调用方走读链取);
+     *  文件缺失 = 模板渲染 + overrides 覆盖 + 原子写 + 回读自检(自检失败回退纯模板重写).
+     *  与 repair(模板为真, 每次渲染覆盖) 刻意互斥: debuglog 面板走本门, 主 config 走 repair. */
+    public static void ensureFromTemplate (String path_toml, String template_toml, Map<String, String> overrides) {
+
+        Path path = Path.of(path_toml);
+        if (Files.isRegularFile(path) == true) return; // 文件为真: 绝不重写
+
+        Template template = parseTemplate(template_toml.replace("\r\n", "\n")); // [U5-B2] CRLF 归一
+        Map<String, String> merged = new LinkedHashMap<>(template.defaults);
+        if (overrides != null) {
+            for (Map.Entry<String, String> entry : overrides.entrySet()) {
+                if (template.defaults.containsKey(entry.getKey()) == true) {
+                    merged.put(entry.getKey(), entry.getValue());
+                }
+            }
+        }
+
+        List<String> warnings = new ArrayList<>();
+        atomicWrite(path, render(template, merged, warnings));
+        try {
+            readTomlFile(path); // 回读自检 (防假绿: 产物必须能被 night-config 重新 parse)
+        } catch (Exception exception) {
+            System.err.println(TAG + "ensure self-check FAILED, rewriting pristine template: " + exception);
+            atomicWrite(path, render(template, new LinkedHashMap<>(template.defaults), warnings));
+        }
+        for (String warning : warnings) {
+            System.err.println(TAG + "value form fallback to default: " + warning);
+        }
+    }
+
     // ============ 内部机制 ============
 
     /** night-config 解析 (读侧唯一入口). 剥 BOM (用户编辑器可能写入, 键名防污染). */

@@ -77,14 +77,14 @@ public class Core {
     public static boolean wip_version = false;
     public static boolean developer_mode = false;
 
-    // [LMax] 调试日志开关，读取 config/tanshugetrees/lmax-debuglog.json
+    // [LMax] 调试日志/看门狗开关, 读取 config/tanshugetrees/lmax-debuglog.toml [U6]
     public static boolean debug_log = false;
 
-    // [LMax Fix V50.3 刀M] [长期记忆: 113/114] 看门狗总开关（lmax-debuglog.json 键控体系，默认 false = 生产静默）
+    // [LMax Fix V50.3 刀M] [长期记忆: 113/114] 看门狗总开关(默认 false = 生产静默) [U6] lmax-debuglog.toml 三键集中
     public static boolean watchdog_enabled = false;
 
         // [LMax V42] 模块级日志有效开关（已预计算 = debug_log || 对应模块键），调用点单布尔判断零开销
-        // [长期记忆: 015] 键控日志体系：lmax-debuglog.json 中 8 个模块键独立控制各自子系统
+        // [长期记忆: 015] 键控日志体系: lmax-debuglog.toml 中 9 个模块键独立控制各自子系统 [U6]
         public static boolean log_deferred_queue = false;  // DeferredQueue 任务生命周期
         public static boolean log_placer_start = false;    // TreePlacer.start 入口/空数据/耗时
         public static boolean log_place_calculate = false; // placeCalculate/检测/检查点
@@ -112,11 +112,11 @@ public class Core {
         main_pack_type_original = main_pack_type;
         Registry.start(bus);
         DataMigration.run(false);
-        restart(null, true, true);
 
-        // [LMax] 读取调试日志开关
-        // [LMax] 读取调试日志开关
+        // [U6] 调用点上移: 须在 restart()(主 config 模板瘦身渲染)之前,
+        // 迁移桥才能读到旧主 config 里的 watchdog 两键用户值(渲染后该两键不再存在)
         loadDebugLogConfig();
+        restart(null, true, true);
 
         // [LMax Fix V54 刀S] [长期记忆: 149] 预算三键热重载: WatchService 事件驱动监听 config.toml(零轮询),
         // 只热应用 budget_mode/budget_ms/budget_expr 三键, 其余键改动需重启(边界清晰). 详见 WatchConfigReload.
@@ -124,47 +124,69 @@ public class Core {
 
     }
 
-    // [LMax] 从 config/tanshugetrees/lmax-debuglog.json 读取调试日志开关
-    // [LMax V42] 重写：lmax-debuglog.json 键控日志加载器 [长期记忆: 015]
-    // 语义：模块有效开关 = debug_log_print(主开关) || 模块键（OR 关系：主开关 true 时行为与旧版全开一致，单模块键可独控子系统）
-    // 文件不存在 → 自动创建全 false 模板（含全部键）；存在但缺键 → 该键按 false，不回写用户文件；解析失败 → 全 false + stderr 告警
+    // [LMax] 调试日志/看门狗配置加载 [U6]: lmax-debuglog.json -> lmax-debuglog.toml (文件为真语义)
+    // 现存 toml 永不重写(用户注释永生); 缺键=内存默认不回写; parse 失败=全默认+stderr, 均不碰盘.
+    // 唯一写盘 = 文件缺失: 首建 或 json 一次性迁移(旧 json 保档改名 .json.migrated).
+    // watchdog 三键集中此地(原 enabled 本就在此 + 主 config 两键迁入): 主 config 只留游戏语义.
+    // [U6] 调用点已上移至 restart() 之前: 迁移桥必须在旧 79 键主 config 被模板瘦身渲染前读
+    // watchdog 两键, 否则用户自定义值会被渲染蒸发(一般用户保值; live 实例两键恰为默认, 零携带).
     private static void loadDebugLogConfig() {
-        java.io.File file = new java.io.File(path_config + "/lmax-debuglog.json");
-        try {
-            if (file.exists() == false) {
-                // 首次运行：创建 config 目录与默认模板（全 false，生产环境静默）
-                file.getParentFile().mkdirs();
-                java.nio.file.Files.writeString(file.toPath(), "{\n  \"debug_log_print\": false,\n  \"log_deferred_queue\": false,\n  \"log_placer_start\": false,\n  \"log_place_calculate\": false,\n  \"log_pending_blocks\": false,\n  \"log_tree_location\": false,\n  \"log_event_center\": false,\n  \"log_world_gen_step\": false,\n  \"log_queue_overflow\": false,\n  \"log_queue_depth\": false,\n  \"watchdog_enabled\": false\n}\n");
-                System.out.println("[LMax] lmax-debuglog.json not found, created default template (all false)");
-                return;
-            }
-            com.google.gson.JsonObject obj = com.google.gson.JsonParser.parseString(java.nio.file.Files.readString(file.toPath())).getAsJsonObject();
-            // Gson 无 optBoolean，手写安全取值：缺键/类型不符一律 false
-            java.util.function.Function<String, Boolean> get = (String key) -> obj.has(key) && obj.get(key).isJsonPrimitive() && obj.get(key).getAsBoolean();
-            debug_log = get.apply("debug_log_print");
-            // 有效值预计算：主开关 OR 模块键
-            log_deferred_queue  = debug_log || get.apply("log_deferred_queue");
-            log_placer_start    = debug_log || get.apply("log_placer_start");
-            log_place_calculate = debug_log || get.apply("log_place_calculate");
-            log_pending_blocks  = debug_log || get.apply("log_pending_blocks");
-            log_tree_location   = debug_log || get.apply("log_tree_location");
-            log_event_center    = debug_log || get.apply("log_event_center");
-            log_world_gen_step  = debug_log || get.apply("log_world_gen_step");
-            log_queue_overflow  = debug_log || get.apply("log_queue_overflow");
-            // [LMax Fix V54 刀S] [长期记忆: 149] 队列深度仪表键(缺键安全 false, 不回写用户文件)
-            log_queue_depth = debug_log || get.apply("log_queue_depth");
-        watchdog_enabled = get.apply("watchdog_enabled"); // [LMax Fix V50.3 刀M] 看门狗开关解析（缺键安全 false，不回写用户文件）
 
-        // [LMax Fix V50.3 刀M] [长期记忆: 113/114] 启动点随迁至此（json 读取后）——治旧时序坑：
-        // 旧启动点在 Handcode.start 内，早于本方法执行，开关永远来不及生效。threshold / dump_all_threads
-        // 两键仍留主 config（Handcode 解析先于本方法，静态赋值已无条件完成，顺序依然成立）。
-        if (watchdog_enabled) {
-            tannyjung.tanshugetrees_handcode.debug.Watchdog.start();
+        // [U6] 迁移桥: watchdog 两键最后一次从主 config 读取(读的是渲染前的旧文件)
+        java.util.Map<String, String> bridge = new java.util.HashMap<>();
+        try {
+            java.util.Map<String, String> main_config = tannyjung.tanshugetrees_core.outside.ConfigToml.getValues(path_config + "/config.toml");
+            if (main_config.containsKey("watchdog_threshold_ms")) bridge.put("watchdog_threshold_ms", main_config.get("watchdog_threshold_ms"));
+            if (main_config.containsKey("watchdog_dump_all_threads")) bridge.put("watchdog_dump_all_threads", main_config.get("watchdog_dump_all_threads"));
+        } catch (Exception ignored) {
+            // 主 config 缺/坏: 桥空, 两键走模板默认 (50 / true)
         }
-            System.out.println("[LMax] Debug log config loaded: master=" + debug_log + ", modules(on)=" + (log_deferred_queue?"deferred_queue,":"") + (log_placer_start?"placer_start,":"") + (log_place_calculate?"place_calculate,":"") + (log_pending_blocks?"pending_blocks,":"") + (log_tree_location?"tree_location,":"") + (log_event_center?"event_center,":"") + (log_world_gen_step?"world_gen_step,":"") + (log_queue_overflow?"queue_overflow,":"") + (log_queue_depth?"queue_depth":""));
+
+        java.util.Map<String, String> values;
+        try {
+            values = tannyjung.tanshugetrees_core.outside.DebugLogToml.load(path_config + "/lmax-debuglog.toml", bridge);
+        } catch (Exception exception) {
+            // 诊断面板任何意外不炸启动: 空 map -> 全默认 (沿袭旧 catch 语义)
+            values = new java.util.HashMap<>();
+        }
+
+        try {
+            debug_log = Boolean.parseBoolean(values.getOrDefault("debug_log_print", "false"));
+            // 有效值预计算: 主开关 OR 模块键 [LMax V42 语义原样, 调用点单布尔判断零开销]
+            log_deferred_queue  = debug_log || Boolean.parseBoolean(values.getOrDefault("log_deferred_queue", "false"));
+            log_placer_start    = debug_log || Boolean.parseBoolean(values.getOrDefault("log_placer_start", "false"));
+            log_place_calculate = debug_log || Boolean.parseBoolean(values.getOrDefault("log_place_calculate", "false"));
+            log_pending_blocks  = debug_log || Boolean.parseBoolean(values.getOrDefault("log_pending_blocks", "false"));
+            log_tree_location   = debug_log || Boolean.parseBoolean(values.getOrDefault("log_tree_location", "false"));
+            log_event_center    = debug_log || Boolean.parseBoolean(values.getOrDefault("log_event_center", "false"));
+            log_world_gen_step  = debug_log || Boolean.parseBoolean(values.getOrDefault("log_world_gen_step", "false"));
+            log_queue_overflow  = debug_log || Boolean.parseBoolean(values.getOrDefault("log_queue_overflow", "false"));
+            log_queue_depth     = debug_log || Boolean.parseBoolean(values.getOrDefault("log_queue_depth", "false"));
+
+            // [U6] watchdog 三键: threshold/dump 直接喂 Watchdog 静态(Handcode 两中转静态已退役)
+            tannyjung.tanshugetrees_handcode.debug.Watchdog.thresholdMs = Long.parseLong(values.getOrDefault("watchdog_threshold_ms", "50"));
+            tannyjung.tanshugetrees_handcode.debug.Watchdog.dumpAllThreadsEnabled = Boolean.parseBoolean(values.getOrDefault("watchdog_dump_all_threads", "true"));
+            watchdog_enabled = Boolean.parseBoolean(values.getOrDefault("watchdog_enabled", "false"));
+
+            // [LMax Fix V50.3 刀M] [长期记忆: 113/114] 启动门原位: enabled 后启动(首 tick 才武装, 上移无时序影响)
+            if (watchdog_enabled) {
+                tannyjung.tanshugetrees_handcode.debug.Watchdog.start();
+            }
+
+            System.out.println("[LMax] Debug log config loaded (lmax-debuglog.toml): master=" + debug_log + ", watchdog=" + watchdog_enabled + ", threshold=" + values.getOrDefault("watchdog_threshold_ms", "50") + "ms, modules(on)=" + (log_deferred_queue?"deferred_queue,":"") + (log_placer_start?"placer_start,":"") + (log_place_calculate?"place_calculate,":"") + (log_pending_blocks?"pending_blocks,":"") + (log_tree_location?"tree_location,":"") + (log_event_center?"event_center,":"") + (log_world_gen_step?"world_gen_step,":"") + (log_queue_overflow?"queue_overflow,":"") + (log_queue_depth?"queue_depth":""));
         } catch (Exception e) {
-            // 解析失败：全 false 兜底（含 debug_log 本身），不让坏配置炸启动
+            // 解析失败: 全 false 兜底(含 debug_log), 不让坏配置炸启动 [LMax V42 原语义]
             debug_log = false;
+            log_deferred_queue = false;
+            log_placer_start = false;
+            log_place_calculate = false;
+            log_pending_blocks = false;
+            log_tree_location = false;
+            log_event_center = false;
+            log_world_gen_step = false;
+            log_queue_overflow = false;
+            log_queue_depth = false;
+            watchdog_enabled = false;
             System.err.println("[LMax] Failed to load debug log config (all switches off): " + e.getMessage());
         }
     }

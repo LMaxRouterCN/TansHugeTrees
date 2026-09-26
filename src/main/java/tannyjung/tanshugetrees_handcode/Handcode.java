@@ -250,12 +250,10 @@ public class Handcode {
 
           
         public static int cache_other_region_max = 256; // TreeLocation cache_other_region 最大区域数 (原64)
-        // [LMax Fix] 看门狗配置
-        public static long watchdog_threshold_ms = 50; // 看门狗触发阈值（毫秒），正常 tick 为 50ms
-        // [LMax Fix V47] 看门狗全线程 dump 开关：冻结持续过里程碑(1s/5s/20s/...)时 dump 全部线程堆栈抓"饥饿者"
-        public static boolean watchdog_dump_all_threads = true; // 诊断取证用, 不影响看门狗基本报警
+        // [U6] watchdog_threshold_ms / watchdog_dump_all_threads 两静态退役: 三键迁入 lmax-debuglog.toml,
+        // 解析与静态赋值移至 Core.loadDebugLogConfig (历史: 刀M [长期记忆: 113/114], V47 dump)
 
-        // [U5 Stage1] Single source of truth: bilingual TOML template (79 keys), content byte-identical to
+        // [U5 Stage1] Single source of truth: bilingual TOML template (77 keys), content byte-identical to
         // .scratch/config_template.toml (harness 12/12: migration / phantom / cold / idempotent).
         private static final String TEMPLATE_TOML = """
             # Tan's Huge Trees - Main Config / 主配置
@@ -531,16 +529,6 @@ public class Handcode {
             # Maximum number of suspended deferred tasks (waiting for their chunks to load) before new suspends are dropped with a warning. Defensive cap only, normal play stays far below it.
             # 挂起任务(等区块加载)上限, 超过后新挂起任务丢弃并警告. 纯防御性上限, 正常游玩远低于此值.
 
-            # ===== Watchdog / 看门狗 =====
-
-            watchdog_threshold_ms = 50
-            # Watchdog trigger threshold in milliseconds. A normal tick is 50ms. Increase this if the watchdog is too sensitive.
-            # 看门狗触发阈值(毫秒). 正常 tick 为 50ms. 误报频繁时调高.
-
-            watchdog_dump_all_threads = true
-            # Dump all threads' stack traces when a stall persists past milestones (1s/5s/20s/...). Diagnostic tool for finding what starves the server thread.
-            # 冻结持续过里程碑(1s/5s/20s/...)时 dump 全部线程堆栈, 用于定位谁饿死服务器线程.
-
             # ===== Miscellaneous / 杂项 =====
 
             world_gen_icon = true
@@ -668,14 +656,8 @@ public class Handcode {
           
             cache_other_region_max = Integer.parseInt(data.get("cache_other_region_max"));
 
-            // [LMax Fix V50.3 刀M] [长期记忆: 113/114] watchdog_enabled 开关与启动迁至 Core.loadDebugLogConfig
-            // （lmax-debuglog.json 键控体系统一入口，默认 false 生产静默；新建 json 模板已含该键）。threshold /
-            // dump_all_threads 两键保留在此且静态赋值无条件执行（先于新启动点，赋值顺序成立）；threshold 加兜底。
-            watchdog_threshold_ms = Long.parseLong(data.getOrDefault("watchdog_threshold_ms", "50"));
-            // [LMax Fix V47] 全线程dump开关解析: getOrDefault 兜底旧配置缺键(默认 true)
-            watchdog_dump_all_threads = Boolean.parseBoolean(data.getOrDefault("watchdog_dump_all_threads", "true"));
-            tannyjung.tanshugetrees_handcode.debug.Watchdog.thresholdMs = watchdog_threshold_ms;
-            tannyjung.tanshugetrees_handcode.debug.Watchdog.dumpAllThreadsEnabled = watchdog_dump_all_threads; // [LMax Fix V47] 里程碑全线程dump
+            // [U6] watchdog 两键解析块退役: 三键(threshold/dump/enabled)全迁 lmax-debuglog.toml,
+            // Core.loadDebugLogConfig 统一解析赋值 (历史: 刀M [长期记忆: 113/114], V47 dump 开关)
         }
 
     }

@@ -3,7 +3,7 @@ package tannyjung.tanshugetrees_core;
 // [LMax Fix V54 刀S] [长期记忆: 149] 预算三键热重载 — WatchService 事件驱动(零轮询)监听 config/config.toml,
 // 文件变更时重读并热应用 budget_mode / deferred_queue_budget_ms / deferred_queue_budget_expr 三键
 // (经 TreePlacer.DeferredQueue.reloadBudget → compileProgram 原子换装 Program), 服务器无需重启.
-// 作用域锁死三键: 其余 config 键改动需重启生效(与 lmax-debuglog.json 同边界), 避免半写半应用状态扩散.
+// 作用域锁死三键: 其余 config 键改动需重启生效(与 lmax-debuglog.toml 同边界), 避免半写半应用状态扩散.
 // max 规程 [长期记忆: 060] 沿袭: 机制(监听/解析/换装)在代码层, 策略(表达式/数值)在用户数据层.
 //
 // 线程模型: 单守护线程 "THT-ConfigWatch"; WatchService.take() 事件驱动阻塞(无事件零 CPU, 拒绝轮询).
