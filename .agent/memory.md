@@ -788,3 +788,27 @@ tag: harness, 写入丢失, 覆盖, 截断, 判例, 回执安全
 判例·BOM注入重演(2026-09-26): PS [IO.File]::WriteAllText(path, str, [Text.Encoding]::UTF8) 会写BOM前导(EF BB BF)——Encoding.UTF8静态属性=发射型UTF8Encoding; javac报非法字符\ufeff构建死. U3手术PregenEngine.java中招(原仓库文件全无BOM). 铁律: 文件手术写盘必须New-Object System.Text.UTF8Encoding($false)或[IO.File]::WriteAllBytes裸字节; 写后复验除内容断言外必须查首3字节无BOM. ReadAllText会静默剥离BOM所以读侧复验探不到写侧注入——读写不对称是本判例的隐身机制. 与既有BOM判例合并记档
 tag: 工具bug，BOM判例，写入验证，编码，教训
 <!-- END:198 -->
+<!-- ID:199 -->
+判例·读写charset不对称(2026-09-26, U4根修): Java17平台默认charset陷阱——FileManager.writeTXT用new FileWriter(平台默认, 中文Win=GBK), readTXT用Files.readAllLines(默认UTF8), 同一文件写GBK读UTF8不对称流水线: 用户中文经repair写回被GBK重编码, 下次UTF8读撞非法序列报错=config不能用中文的根因(前作者bug, 与判例174解析层叠加). 根修=两端显式StandardCharsets.UTF_8对称+readTXT BOM归一(剥首行U+FEFF防编辑器BOM污染键名). 泛化教训: 任何文本I/O禁止依赖平台默认charset(FileReader/FileWriter/printStackTrace系列/Files新旧API混用), 必须显式charset且读写对称; 用户编辑器可能写BOM, 读侧必须归一
+tag: 编码，charset，Default is，判例，根因，config解析
+<!-- END:199 -->
+<!-- ID:200 -->
+U3+U4双刀战报(2026-09-26晨, max授权自动模式夜战): U3 claims账本统一(commit 5f6df36/tag u3-claims-unify)=PE单文件7刀退役computed_ledger/allBits/抄写桥, 去重统一至region_scan_claims, 写点唯一, 读侧3x3零改动; U4 config编码根修(commit 433833c/tag u4-config-encoding)=FileManager读写charset对称UTF8+BOM归一+ConfigClassic判例174运行时守卫x2, 中文config可用. 现役jar=20260926043522(MD5双验, mods唯一). 过程事故两个已判例化: BOM注入(WriteAllText+Encoding.UTF8发射型, 判例198 pin)+图像工具误触三次(环境挂载edit_image对代码项目属永久禁区, 已remember). 待max: U3/U4运行验收(开游戏[U2]offer链+config中文写读) + 双语化/TOML革命两提案晨批. GP已收档, 回档点pre-u3-surgery/u3-claims-unify/u4-config-encoding三tag齐
+tag: 战报，U3，U4，收档，部署，运行验收
+<!-- END:200 -->
+<!-- ID:201 -->
+U5 Stage1 config TOML 革命终态(26/27夜): 主 commit 9ad5253 (tag u5-config-toml, 9 files 761+/300-) + ops commit c6d0a60 (部署行). 架构: ConfigToml.java (outside 包, 零 tannyjung 依赖, 纯 night-config): getValues(解析+BOM剥+plainDecimal归一) / repair(旧 txt 迁移→模板驱动渲染→ATOMIC_MOVE 原子写→写后 reparse 自检) / parseTemplate(保序 raw_lines+defaults+forms) / parseLegacyUserEdits(Default-is 对齐+竖线守卫, 只取用户改值) / formatValue(形态跟模板+单引号零转义+换行回默认) / plainDecimal(无 E 原样/有 E 剥尾零, 幂等不动点). 79 键双语模板单一事实源=Handcode.Config.TEMPLATE_TOML(字节对账 .scratch/config_template.toml). 读链统一 Core+WCR(热重载三键守卫语义零变). 范围界: dev/shape_file_converter/settings.txt 仍走 ConfigClassic(范围外, 类保留). 部署: jar tanshugetrees-1.8.0-20260926231224 入实例 mods, MD5 D2EE56EB384FDAC52F557F4EB4655C49, 旧 U4 jar 备份 .scratch/deploy_backup(回滚位). 验证: .scratch/TestConfigToml harness 12/12(迁移/幻影/冷启动/幂等/中文文件层). 待游戏内验收: 首启迁移+79键+中文保值+WCR 盯 toml.
+tag: U5, TansHugeTrees, config, commit链, 部署, 架构决策
+<!-- END:201 -->
+<!-- ID:202 -->
+exec 通道判例四条(26/27夜实证): 1) 硬上限 3600s: 休眠用 Start-Sleep 3540 拿干净回执; 顶满 3600 被框架强杀但回执仍完成唤醒(机制有效). 2) 中文往返安全: EXEC-CN-TEST 实证完美; 早期乱码根因=Java18+ JEP400 stdout 不再跟 file.encoding(修 -Dstdout.encoding=UTF-8), 文件层校验须与控制台显示层解耦. 3) PS 5.1 单引号串内反斜杠无需转义: 写 ''\'r'' 致字符串提前闭合 ParserError 整脚本不跑; 正确=''` + "`r`" + `''(直接写 r). 4) 长脚本字符串锚点替换前必须先 [regex]::Matches 计数门(==1 才动刀), 锚点含路径片段比裸方法名更唯一(教训源=Handcode L99 dev 调用与主调用同前缀, 裸锚会吞错区段). 另: 框架杀任务残留后台进程(gradle daemon), 下次构建冷启动属正常.
+tag: PokerAgent, exec, PowerShell, 脚本判例
+<!-- END:202 -->
+<!-- ID:203 -->
+断链第四犯判例(26/27夜): 消息尾承诺"回执确认后做 X"却未附任何指令 → 无指令=无回执=无唤醒 → 无限死等, 被用户手动叫醒才解. 断链演化四形态: 前三犯=方案陈述挤占输出预算致指令截断; 第四犯=指令完整未发但承诺了回执驱动的后续. 规则(硬): 每条消息收尾二选一——(a) 附指令(回执自然驱动下一步), (b) 明文"无后续动作, 等用户输入". 禁止悬空承诺"等回执"而不发指令(自我催眠死循环: PokerAgent 一次输入只调一次输出, 无输入=永久静默).
+tag: 沟通, 判例, 回执安全
+<!-- END:203 -->
+<!-- ID:204 -->
+U6 完整档案 (2026-09-27): lmax-debuglog.json->toml. 设计核心=两套写门语义刻意并存: 主config走ConfigToml.repair(模板为真, 每次渲染覆盖用户注释) vs 诊断面板走DebugLogToml+ConfigToml.ensureFromTemplate(文件为真: 现存永不重写->用户注释绝对永生; 缺键=内存默认不回写; 坏文件=全默认+stderr不碰盘; 唯一写盘=文件缺失时模板渲染+overrides+原子写+回读自检). 面板13键=master(debug_log_print)+9模块log键+watchdog三键(默认 threshold_ms=50/dump_all_threads=true/enabled=false). 时序判例[U6核心]: loadDebugLogConfig调用点必须在restart()渲染主config之前, 否则模板瘦身(79->77)会先蒸发watchdog两键用户自定义值——现位于Core.start的DataMigration.run后; 迁移桥在旧文件上取值, Watchdog.start提前无碍(首tick武装). json一次性迁移=flat手搓行解析(容错回退空表)+桥值优先+ensureFromTemplate+json改名.json.migrated保档(U5判例). harness模式(54/54, TestDebugLogToml六用例): javac -encoding UTF-8 -sourcepath src\main\java -cp libs\night-config两jar -d .scratch\classes, 运行同cp, 判定走exit code+RESULT行不依赖控制台中文(U5判例). 主体名不变判令(max): lmax-debuglog名保留, 仅扩展名json->toml. commit e0de1bb tag u6-debuglog-toml; jar tanshugetrees-1.8.0-20260927030051 MD5 F99E169DC513F123A41D015FB73CC9C0; 部署=版本隔离mods E:\MC\.minecraft\versions\TEST 1.20.1-Forge_47.4.10\mods\ 唯一; U5 jar 20260926231224回滚点.scratch\deploy_backup. 主config 79->77键; Watchdog.java读侧零手术(吃自身静态, Core.loadDebugLogConfig直喂thresholdMs/dumpAllThreadsEnabled, Handcode两中转静态+解析块退役留tombstone). 手术判例: 前置脏检查白名单必须含本刀计划内新文件(??状态), 否则自拦; WriteAllLines强制CRLF->用EOL/BOM/尾换行三保真写入器防整文件EOL假diff. 回滚=reset --hard c6d0a60+deploy_backup.
+tag: U6, DebugLogToml, 文件为真, lmax-debuglog, watchdog迁移, harness, 判例
+<!-- END:204 -->

@@ -109,3 +109,4 @@
 - 待max裁决: 75条中文直译审校 / night-config运行时打包(compileOnly, D阶段jarJar或嵌套) / libs两jar入库(veto即revert) / 模板驱动写盘覆盖用户自加注释行(与老repair一致, 已文档) / U4真实验位(215形状txt vs config.toml) / U3+U4游戏内验收.
 - 部署锁: build jar未入实例, max关游戏后自部署; tag u5-config-toml.
 - 部署: jar tanshugetrees-1.8.0-20260926231224 (U5, 含ConfigToml.class判别通过), MD5 D2EE56EB384FDAC52F557F4EB4655C49 双验MATCH, mods唯一, 红线合规(GAME-PROC=0, WMI CommandLine含实例路径判定); 旧U4 jar 20260926043522已备份至.scratch/deploy_backup。游戏内验收待max: 首启=config.txt→toml迁移+config.txt.migrated保留+79键对账+中文保值+WCR盯toml(热重载)。
+- 部署: jar tanshugetrees-1.8.0-20260927030051 (U6, 含DebugLogToml.class判别通过), MD5 F99E169DC513F123A41D015FB73CC9C0 双验MATCH, mods唯一, 红线合规(GAME-PROC=0无java进程, 版本隔离mods定位无歧义); 旧U5 jar 20260926231224已备份至.scratch/deploy_backup。游戏内验收待max: 首启=lmax-debuglog.json→toml迁移(7true保值+缺键默认)+json.migrated保档+主config 79→77瘦身+watchdog三键集中; 注释永生(手写注释重启存活)+坏文件不碰盘+进世界看WCR热重载。
