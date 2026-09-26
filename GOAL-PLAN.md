@@ -108,3 +108,4 @@
 - 验证: harness 12/12(迁移79键对live副本对账/幻影改2键保值+77键零漂移/冷启动/双repair字节幂等/文件层中文保真/LF only); RED gate战果=三缺陷拦于合并前(钻石操作符/PS劈token/plainDecimal尾零).
 - 待max裁决: 75条中文直译审校 / night-config运行时打包(compileOnly, D阶段jarJar或嵌套) / libs两jar入库(veto即revert) / 模板驱动写盘覆盖用户自加注释行(与老repair一致, 已文档) / U4真实验位(215形状txt vs config.toml) / U3+U4游戏内验收.
 - 部署锁: build jar未入实例, max关游戏后自部署; tag u5-config-toml.
+- 部署: jar tanshugetrees-1.8.0-20260926231224 (U5, 含ConfigToml.class判别通过), MD5 D2EE56EB384FDAC52F557F4EB4655C49 双验MATCH, mods唯一, 红线合规(GAME-PROC=0, WMI CommandLine含实例路径判定); 旧U4 jar 20260926043522已备份至.scratch/deploy_backup。游戏内验收待max: 首启=config.txt→toml迁移+config.txt.migrated保留+79键对账+中文保值+WCR盯toml(热重载)。
