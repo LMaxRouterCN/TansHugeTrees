@@ -1,0 +1,50 @@
+# Tan's Huge Trees - Debug Log & Watchdog Config / 调试日志与看门狗配置
+# [U6] This file is NEVER rewritten by the mod once created: your comments survive every restart.
+#      Missing keys fall back to defaults. To regenerate with the latest template, delete this file.
+# [U6] 本文件创建后永远不会被模组重写: 你写的注释在每次重启后都会原样保留.
+#      缺失的键自动使用默认值. 想用最新模板重新生成? 删除本文件再启动即可.
+# All changes take effect after a restart. / 所有修改需重启生效.
+
+# Master switch: when true, ALL module switches below count as ON (module keys OR into it).
+# 主开关: 为 true 时下方所有模块开关视为开启(模块键以 OR 关系叠加, 可单独开启).
+debug_log_print = false
+
+# ===== Module log switches / 模块日志开关 =====
+# Effective value = debug_log_print || module key. / 有效值 = 主开关 OR 模块键.
+
+log_deferred_queue = false
+# DeferredQueue task lifecycle. / DeferredQueue 任务生命周期.
+
+log_placer_start = false
+# TreePlacer.start entry, empty data, timing. / TreePlacer.start 入口/空数据/耗时.
+
+log_place_calculate = false
+# placeCalculate, detection, checkpoints. / placeCalculate 检测与检查点.
+
+log_pending_blocks = false
+# PendingBlocks add/place/placeForced. / PendingBlocks add/place/placeForced.
+
+log_tree_location = false
+# TreeLocation scan/write/read. / TreeLocation 扫描/写入/读取.
+
+log_event_center = false
+# Biome feature checks. / 生物群系 feature 检查.
+
+log_world_gen_step = false
+# WorldGenStepBeforePlants. / 世界生成步骤 (WorldGenStepBeforePlants).
+
+log_queue_overflow = false
+# DeferredQueue overflow eviction. / DeferredQueue 溢出驱逐.
+
+log_queue_depth = false
+# DeferredQueue depth gauge at budget exhaustion. / DeferredQueue 深度仪表 (预算耗尽打点).
+
+# ===== Watchdog / 看门狗 =====
+watchdog_enabled = false
+# Master switch of the server-thread stall watchdog. / 看门狗(服务器线程冻结监控)总开关.
+
+watchdog_threshold_ms = 50
+# Trigger threshold in milliseconds; a normal tick is 50ms. Raise if too sensitive. / 触发阈值(毫秒), 正常 tick 为 50ms, 误报频繁时调高.
+
+watchdog_dump_all_threads = true
+# Dump all threads' stacks when a stall persists past milestones (1s/5s/20s/...). / 冻结持续过里程碑(1s/5s/20s/...)时 dump 全部线程堆栈.

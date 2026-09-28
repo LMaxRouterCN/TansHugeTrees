@@ -1,0 +1,504 @@
+package tannyjung.tanshugetrees_core;
+
+import java.io.File;
+import java.util.AbstractMap;
+import java.util.Collection;
+import java.util.HashMap;
+import java.util.Map;
+import java.util.concurrent.ConcurrentLinkedQueue;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.ScheduledExecutorService;
+import java.util.concurrent.TimeUnit;
+import java.util.function.Supplier;
+
+import org.apache.logging.log4j.LogManager;
+import org.apache.logging.log4j.Logger;
+
+import net.minecraft.core.registries.Registries;
+import net.minecraft.server.level.ServerLevel;
+import net.minecraft.world.entity.Entity;
+import net.minecraft.world.level.LevelAccessor;
+import net.minecraft.world.level.levelgen.feature.Feature;
+import net.minecraftforge.eventbus.api.IEventBus;
+import net.minecraftforge.fml.loading.FMLPaths;
+import net.minecraftforge.registries.DeferredRegister;
+import tannyjung.tanshugetrees_core.game.GameUtils;
+import tannyjung.tanshugetrees_core.game.world_gen.FeatureAreaDirt;
+import tannyjung.tanshugetrees_core.game.world_gen.FeatureAreaGrass;
+import tannyjung.tanshugetrees_core.game.world_gen.WorldGenStepBeforePlants;
+import tannyjung.tanshugetrees_core.game.world_gen.WorldGenStepLast;
+import tannyjung.tanshugetrees_core.outside.CacheManager;
+import tannyjung.tanshugetrees_core.outside.ConfigClassic;
+import tannyjung.tanshugetrees_core.outside.CustomPackOrganizing;
+import tannyjung.tanshugetrees_core.outside.FileManager;
+import tannyjung.tanshugetrees_core.outside.TXTFunction;
+import tannyjung.tanshugetrees_handcode.Handcode;
+import tannyjung.tanshugetrees_handcode.systems.Loops;
+
+public class Core {
+
+    public static net.minecraft.server.MinecraftServer currentServer = null;
+
+    /*
+
+    Use replace-all tool to replace these words, without "___" by the way. Note that you need to enable match cases and match words as well.
+
+    (1.20.1)
+    ___ForgeData___
+    (1.21.1) (1.21.8)
+    ___NeoForgeData___
+
+    */
+    
+    public static String mod_name = "";
+    public static String mod_id = "";
+    public static String mod_id_big = "";
+    public static String mod_id_short = "";
+    
+    public static int data_structure_version_core = 0;
+    public static String data_structure_version_mod = "";
+    public static String data_structure_version_pack = "";
+    public static String main_pack_type = "";
+    public static String main_pack_type_original = "";
+    public static String github_pack = "";
+    public static String wiki = "";
+    public static boolean have_world_data_cleaner = false;
+    
+    public static Logger logger = null;
+    public static boolean global_locking = false;
+    public static String path_game = FMLPaths.GAMEDIR.get().toString();
+    public static String path_config = null; // 延迟初始化，等 mod_id 赋值后再计算
+    public static String path_world_core = null;
+    public static String path_world_mod = null;
+    public static final ExecutorService thread_main = Executors.newFixedThreadPool(1, name -> { Thread thread = new Thread(name); thread.setName(mod_name); return thread; });
+
+    public static boolean auto_check_update = false;
+    public static boolean wip_version = false;
+    public static boolean developer_mode = false;
+
+    // [LMax] 调试日志开关，读取 config/tanshugetrees/lmax-debuglog.json
+    public static boolean debug_log = false;
+
+    // [LMax Fix V50.3 刀M] [长期记忆: 113/114] 看门狗总开关（lmax-debuglog.json 键控体系，默认 false = 生产静默）
+    public static boolean watchdog_enabled = false;
+
+        // [LMax V42] 模块级日志有效开关（已预计算 = debug_log || 对应模块键），调用点单布尔判断零开销
+        // [长期记忆: 015] 键控日志体系：lmax-debuglog.json 中 8 个模块键独立控制各自子系统
+        public static boolean log_deferred_queue = false;  // DeferredQueue 任务生命周期
+        public static boolean log_placer_start = false;    // TreePlacer.start 入口/空数据/耗时
+        public static boolean log_place_calculate = false; // placeCalculate/检测/检查点
+        public static boolean log_pending_blocks = false;  // PendingBlocks add/place/placeForced
+        public static boolean log_tree_location = false;   // TreeLocation 扫描/写入/读取
+        public static boolean log_event_center = false;    // 生物群系 feature 检查
+        public static boolean log_world_gen_step = false;  // WorldGenStepBeforePlants
+        public static boolean log_queue_overflow = false;  // DeferredQueue 溢出驱逐
+    // [LMax Fix V54 刀S] [长期记忆: 149] 队列深度仪表: 预算耗尽处打点(深度/t/d/mode, counter vs size() 双报兼漂移探测)
+    public static boolean log_queue_depth = false;  // DeferredQueue 深度仪表(预算耗尽打点)
+
+    public static void start (IEventBus bus) {
+
+        // [LMax Fix] 确保 logger 在使用前已初始化
+        if (logger == null) {
+            logger = LogManager.getLogger(mod_name);
+        }
+
+        Handcode.start();
+        // [LMax Fix V2] 必须在 Handcode.start() 赋值 mod_id 之后才能计算路径！
+        // 否则 mod_id 为空字符串，导致路径变成 config/ 而不是 config/tanshugetrees/
+        path_config = path_game + "/config/" + mod_id;
+        path_world_core = path_game + "/saves";
+        path_world_mod = path_game + "/saves";
+        main_pack_type_original = main_pack_type;
+        Registry.start(bus);
+        DataMigration.run(false);
+        restart(null, true, true);
+
+        // [LMax] 读取调试日志开关
+        // [LMax] 读取调试日志开关
+        loadDebugLogConfig();
+
+        // [LMax Fix V54 刀S] [长期记忆: 149] 预算三键热重载: WatchService 事件驱动监听 config.txt(零轮询),
+        // 只热应用 budget_mode/budget_ms/budget_expr 三键, 其余键改动需重启(边界清晰). 详见 WatchConfigReload.
+        WatchConfigReload.start();
+
+    }
+
+    // [LMax] 从 config/tanshugetrees/lmax-debuglog.json 读取调试日志开关
+    // [LMax V42] 重写：lmax-debuglog.json 键控日志加载器 [长期记忆: 015]
+    // 语义：模块有效开关 = debug_log_print(主开关) || 模块键（OR 关系：主开关 true 时行为与旧版全开一致，单模块键可独控子系统）
+    // 文件不存在 → 自动创建全 false 模板（含全部键）；存在但缺键 → 该键按 false，不回写用户文件；解析失败 → 全 false + stderr 告警
+    private static void loadDebugLogConfig() {
+        java.io.File file = new java.io.File(path_config + "/lmax-debuglog.json");
+        try {
+            if (file.exists() == false) {
+                // 首次运行：创建 config 目录与默认模板（全 false，生产环境静默）
+                file.getParentFile().mkdirs();
+                java.nio.file.Files.writeString(file.toPath(), "{\n  \"debug_log_print\": false,\n  \"log_deferred_queue\": false,\n  \"log_placer_start\": false,\n  \"log_place_calculate\": false,\n  \"log_pending_blocks\": false,\n  \"log_tree_location\": false,\n  \"log_event_center\": false,\n  \"log_world_gen_step\": false,\n  \"log_queue_overflow\": false,\n  \"log_queue_depth\": false,\n  \"watchdog_enabled\": false\n}\n");
+                System.out.println("[LMax] lmax-debuglog.json not found, created default template (all false)");
+                return;
+            }
+            com.google.gson.JsonObject obj = com.google.gson.JsonParser.parseString(java.nio.file.Files.readString(file.toPath())).getAsJsonObject();
+            // Gson 无 optBoolean，手写安全取值：缺键/类型不符一律 false
+            java.util.function.Function<String, Boolean> get = (String key) -> obj.has(key) && obj.get(key).isJsonPrimitive() && obj.get(key).getAsBoolean();
+            debug_log = get.apply("debug_log_print");
+            // 有效值预计算：主开关 OR 模块键
+            log_deferred_queue  = debug_log || get.apply("log_deferred_queue");
+            log_placer_start    = debug_log || get.apply("log_placer_start");
+            log_place_calculate = debug_log || get.apply("log_place_calculate");
+            log_pending_blocks  = debug_log || get.apply("log_pending_blocks");
+            log_tree_location   = debug_log || get.apply("log_tree_location");
+            log_event_center    = debug_log || get.apply("log_event_center");
+            log_world_gen_step  = debug_log || get.apply("log_world_gen_step");
+            log_queue_overflow  = debug_log || get.apply("log_queue_overflow");
+            // [LMax Fix V54 刀S] [长期记忆: 149] 队列深度仪表键(缺键安全 false, 不回写用户文件)
+            log_queue_depth = debug_log || get.apply("log_queue_depth");
+        watchdog_enabled = get.apply("watchdog_enabled"); // [LMax Fix V50.3 刀M] 看门狗开关解析（缺键安全 false，不回写用户文件）
+
+        // [LMax Fix V50.3 刀M] [长期记忆: 113/114] 启动点随迁至此（json 读取后）——治旧时序坑：
+        // 旧启动点在 Handcode.start 内，早于本方法执行，开关永远来不及生效。threshold / dump_all_threads
+        // 两键仍留主 config（Handcode 解析先于本方法，静态赋值已无条件完成，顺序依然成立）。
+        if (watchdog_enabled) {
+            tannyjung.tanshugetrees_handcode.debug.Watchdog.start();
+        }
+            System.out.println("[LMax] Debug log config loaded: master=" + debug_log + ", modules(on)=" + (log_deferred_queue?"deferred_queue,":"") + (log_placer_start?"placer_start,":"") + (log_place_calculate?"place_calculate,":"") + (log_pending_blocks?"pending_blocks,":"") + (log_tree_location?"tree_location,":"") + (log_event_center?"event_center,":"") + (log_world_gen_step?"world_gen_step,":"") + (log_queue_overflow?"queue_overflow,":"") + (log_queue_depth?"queue_depth":""));
+        } catch (Exception e) {
+            // 解析失败：全 false 兜底（含 debug_log 本身），不让坏配置炸启动
+            debug_log = false;
+            System.err.println("[LMax] Failed to load debug log config (all switches off): " + e.getMessage());
+        }
+    }
+    public static void restart (ServerLevel level_server, boolean message, boolean config) {
+
+        Runnable runnable = () -> {
+
+            // Start Message
+            {
+
+                if (message == true && config == true) {
+
+                    if (level_server != null) {
+
+                        GameUtils.Misc.sendChatMessage(level_server, "Restarting the mod... / gray");
+
+                    }
+
+                }
+
+            }
+
+            String cache_size = "";
+
+            if (config == true) {
+
+                cache_size = CacheManager.clear();
+                repairConfig(level_server);
+
+            }
+
+            // End Message
+            {
+
+                if (message == true && config == true) {
+
+                    CustomPackOrganizing.Error.sendMessage(level_server);
+
+                    if (level_server != null) {
+
+                        GameUtils.Misc.sendChatMessage(level_server, "Restarted and cleared main caches about " + cache_size + " / gray");
+
+                    }
+
+                }
+
+            }
+
+        };
+
+        if (level_server == null) {
+
+            runnable.run();
+
+        } else {
+
+            thread_main.submit(() -> {
+
+                GlobalLocking.test();
+                GlobalLocking.lock();
+
+                DelayedWork.create(true, 20, () -> {
+
+                    runnable.run();
+                    GameUtils.Score.create(level_server, mod_id_big);
+
+                    GlobalLocking.unlock();
+
+                });
+
+            });
+
+        }
+
+    }
+
+    private static void repairConfig (ServerLevel level_server) {
+
+        FileManager.createEmptyFile(Core.path_config + "/custom_packs", true);
+
+        // Main Config
+        {
+
+            Handcode.Config.repair("""
+                    ----------------------------------------------------------------------------------------------------
+                    Main Pack
+                    ----------------------------------------------------------------------------------------------------
+                    
+                    auto_check_update = true
+                    | Check for new update from GitHub every time the world starts
+                    
+                    wip_version = false
+                    | Use development version of the pack instead of release version. Not recommended for game play, as it's still in development, it might unstable. Sometimes it needed development version of the mod.
+                    
+                    """, """
+                    
+                    developer_mode = false
+                    | Enable some features for debugging such as detailed error messages, info overlay in-game, etc.
+                    
+                    ----------------------------------------------------------------------------------------------------
+                    """);
+
+            Map<String, String> data = ConfigClassic.getValues(path_config + "/config.txt");
+            Handcode.Config.apply(data);
+
+            auto_check_update = Boolean.parseBoolean(data.get("auto_check_update"));
+            wip_version = Boolean.parseBoolean(data.get("wip_version"));
+            developer_mode = Boolean.parseBoolean(data.get("developer_mode"));
+
+            if (wip_version == true) {
+
+                main_pack_type = "WIP";
+
+            } else {
+
+                main_pack_type = main_pack_type_original;
+
+            }
+
+        }
+
+        Handcode.repairData(level_server);
+
+    }
+
+    public static class Registry {
+
+        public static Map<String, Supplier<Feature<?>>> features = new HashMap<>();
+
+        public static void start (IEventBus bus) {
+
+            features.put("world_gen_before_plants", WorldGenStepBeforePlants::new);
+            features.put("world_gen_last", WorldGenStepLast::new);
+            features.put("area_grass", FeatureAreaGrass::new);
+            features.put("area_dirt", FeatureAreaDirt::new);
+
+            // Feature
+            {
+
+                DeferredRegister<Feature<?>> deferred = DeferredRegister.create(Registries.FEATURE, mod_id);
+
+                for (Map.Entry<String, Supplier<Feature<?>>> entry : features.entrySet()) {
+
+                    deferred.register(entry.getKey(), entry.getValue());
+
+                }
+
+                deferred.register(bus);
+                features.clear();
+
+            }
+
+        }
+
+    }
+    
+    public static class GlobalLocking {
+
+        // [LMax Fix] Global lock removed to prevent deadlocks in async chunk generation (e.g., Distant Horizons).
+        public static void lock () { }
+        public static void unlock () { }
+        public static void test () { }
+
+    }
+
+    public static class DelayedWork {
+
+        private static final Collection<AbstractMap.SimpleEntry<Runnable, Integer>> delayed_works = new ConcurrentLinkedQueue<>();
+        private static final ScheduledExecutorService thread_delay = Executors.newScheduledThreadPool(1);
+
+        public static void create (boolean async, int tick, Runnable work) {
+
+            if (async == true) {
+
+                thread_delay.schedule(work, tick * 50L, TimeUnit.MILLISECONDS);
+
+            } else {
+
+                delayed_works.add(new AbstractMap.SimpleEntry<>(work, tick));
+
+            }
+
+        }
+
+        public static void runTick () {
+
+            for (AbstractMap.SimpleEntry<Runnable, Integer> work : delayed_works) {
+
+                work.setValue(work.getValue() - 1);
+
+                if (work.getValue() == 0) {
+
+                    work.getKey().run();
+                    delayed_works.remove(work);
+
+                }
+
+            }
+
+        }
+
+    }
+
+    public static class Loop {
+
+        private static int second = 0;
+        private static int minute = 0;
+
+        public static void loopTick (LevelAccessor level_accessor, ServerLevel level_server) {
+
+            Loops.tick(level_accessor, level_server);
+            second = second + 1;
+
+            if (second > 20) {
+
+                second = 0;
+                loopSecond(level_accessor, level_server);
+
+            }
+
+        }
+
+        private static void loopSecond (LevelAccessor level_accessor, ServerLevel level_server) {
+
+            // Developer Mode
+            {
+
+                if (developer_mode == true) {
+
+                    for (Entity entity : GameUtils.Mob.getAtEverywhere(level_server, "", mod_id_big)) {
+
+                        GameUtils.Misc.spawnParticle(level_server, entity.position(), 0, 0, 0, 0, 1, "minecraft:end_rod");
+
+                    }
+
+                }
+
+            }
+
+            TXTFunction.loop(level_server);
+            Loops.second(level_accessor, level_server);
+            minute = minute + 1;
+
+            if (minute > 60) {
+
+                minute = 0;
+                loopMinute(level_accessor, level_server);
+
+            }
+
+        }
+
+        private static void loopMinute (LevelAccessor level_accessor, ServerLevel level_server) {
+
+            Loops.minute(level_accessor, level_server);
+
+        }
+
+    }
+
+    public static class DataMigration {
+
+        public static void run(boolean is_world) {
+
+            if (is_world == false) {
+
+                String path = path_config + "/dev/version.txt";
+                File test_exist = new File(path_config);
+                String version = "";
+
+                // Get Version
+                {
+
+                    if (test_exist.exists() == true) {
+
+                        for (String scan : FileManager.readTXT(path)) {
+
+                            version = scan;
+
+                        }
+
+                    } else {
+
+                        version = "not found";
+
+                    }
+
+                }
+
+                if (version.equals("not found") == false) {
+
+                    Handcode.DataMigration.runConfig(version);
+
+                }
+
+                FileManager.writeTXT(path, data_structure_version_mod, false);
+
+            } else {
+
+                String path = path_world_mod + "/version.txt";
+                File test_exist = new File(path_world_mod);
+                String version = "";
+
+                // Get Version
+                {
+
+                    if (test_exist.exists() == true) {
+
+                        for (String scan : FileManager.readTXT(path)) {
+
+                            version = scan;
+
+                        }
+
+                    } else {
+
+                        version = "not found";
+
+                    }
+
+                }
+
+                if (version.equals("not found") == false) {
+
+                    Handcode.DataMigration.runWorld(version);
+
+                }
+
+                FileManager.writeTXT(path, data_structure_version_mod, false);
+
+            }
+
+        }
+
+    }
+
+}

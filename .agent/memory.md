@@ -611,8 +611,10 @@ tag: 刀S, 表达式, ExprEngine, 滴灌, budget_ms, 架构决策, 审计, 验�
 tag: 刀S, 结案, commit链, 锚点, 终档, jar, 刀U, P0-R2, 手术单, 滴灌, 表达式
 <!-- END:154 -->
 <!-- ID:155 -->
-判例修正(gp3两轮失配根因确诊): 真相=GOAL-PLAN.md的todo块(刀R立项轮追加)为LF-only行尾而全文其余CRLF → CRLF归一化锚点Contains必败(两块显示层完全相同); CRLF-only分裂把7行LF区折叠成1元素=52行假象+todo头对行前缀匹配隐形; 原"全/半角标点宽度/传输层变换"假说作废(→与CRLF均已被gp1/gp2 OK证明可传输). 通用判例: ①多行锚手术前必做行尾法医( (?<!)
- 计数) ②分裂一律regex ?
+判例修正(gp3两轮失配根因确诊): 真相=GOAL-PLAN.md的todo块(刀R立项轮追加)为LF-only行尾而全文其余CRLF → CRLF归一化锚点Contains必败(两块显示层完全相同); CRLF-only分裂把7行LF区折叠成1元素=52行假象+todo头对行前缀匹配隐形; 原"全/半角标点宽度/传输层变换"假说作废(→与CRLF均已被gp1/gp2 OK证明可传输). 通用判例: ①多行锚手术前必做行尾法医( (?<!
+)
+ 计数) ②分裂一律regex 
+?
 双向 ③写回统一CRLF归一; 判例族=显示层与字节层不一致(混合行尾+EventCenter凭印象路径同族), 解法=字节级取证+count守卫+写后磁盘复读+git清白预检
 tag: 锚点, 行尾, 判例, 方法论, 安全阀, GOAL-PLAN
 <!-- END:155 -->
@@ -833,7 +835,7 @@ max五裁决定档(2026-09-27 23:00 U6收尾): (1)日志洪水永久维持不处
 tag: max裁决, U7, config, 部署, 判例
 <!-- END:209 -->
 <!-- ID:210 -->
-U7 终档(2026-09-28, 实盘验收通过): world_gen config 革命完成. 架构: config_world_gen.toml = 用户唯一真源, mod 永不重写(文件为真); resolve 三层合并 spec默认 < pack快照 < 用户toml; 一次性 verbatim 迁移(txt->toml, 旧档改名 .migrated 保档原时间戳, INCOMPATIBLE 丢弃); ensureFromPack 仅建盘(文件在场=零接触); ConfigDynamic 312->83L 写门退役, LOCK 伪键退役, getData 缓存契约不变, 消费者(Handcode/TreeLocation/TreePlacer/FileManager)零改动; INCOMPATIBLE 运行时=spec默认硬注入不吃pack值. night-config 要点: 表键用 quoted key 形如 ['#main/#global/tree'] 绕 # 开头路径歧义; 嵌套读值用 asTableMap 双兼容. 事实: reorganize 每会话被调 2 次(modloading-worker-0 pack解压后 + Server thread 世界启动, 原作调用图), 幂等设计使多次调用零成本. 验收证据: harness 32/0 + 实盘 75 条 verbatim 0diff + toml mtime 跨会话零接触 + max 手测(注释永生/改值生效). 锚: tag u7-worldgen-toml(U7) / 0915506(U6) / U6 jar 在 deploy_backup. 代码: ConfigDynamicToml.java(outside 纯函数) + ConfigDynamic.java 重写 + ConfigToml 可见性收口.
+U7 终档(2026-09-28, 实盘验收通过): world_gen config 革命完成. 架构: config_world_gen.toml = 用户唯一真源, mod 永不重写(文件为真); resolve 三层合并 spec默认 < pack快照 < 用户toml; 一次性 verbatim 迁移(txt->toml, 旧档改名 .migrated 保档原时间戳, INCOMPATIBLE 丢弃); ensureFromPack 仅建盘(文件在场=零接触); ConfigDynamic 312->83L 写门退役, LOCK 伪键退役, getData 缓存契约不变, 消费者(Handcode/TreeLocation/TreePlacer/FileManager)零改动; INCOMPATIBLE 运行时=spec默认硬注入不吃pack值. night-config 要点: 表键用 quoted key 形如 ['#main/#global/tree'] 绕 # 开头路径歧义; 嵌套读值用 asTableMap 双兼容. 事实: reorganize 每会话被调 2 次(modloading-worker-0 pack解压后 + Server thread 世界启动, 原作调用图), 幂等设计使多次调用零成本. 验收证据: harness 32/0 + 实盘 75 条 verbatim 0diff + toml mtime 跨会话零接触(含 max 终测轮: 注释行 +24B 精确字节差铁证) + max 手测签字(注释永生/改值生效). 后续: .migrated 档案当晚被 max 顺手清理(安全: toml 即完整 verbatim 快照, toml 在场则 migrateLegacy 永不重跑; 重置手段=删 toml 走 pack 快照重建). 锚: tag u7-worldgen-toml(U7主commit 487e96b+ops收尾) / 0915506(U6) / U6 jar 在 deploy_backup. 代码: ConfigDynamicToml.java(outside 纯函数) + ConfigDynamic.java 重写 + ConfigToml 可见性收口.
 tag: U7, 终档, 架构决策, config, 文件为真, toml
 <!-- END:210 -->
 <!-- ID:211 -->

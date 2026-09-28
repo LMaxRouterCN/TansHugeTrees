@@ -1,0 +1,12 @@
+{
+  "debug_log_print": false,
+  "log_deferred_queue": false,
+  "log_placer_start": true,
+  "log_place_calculate": true,
+  "log_pending_blocks": true,
+  "log_tree_location": true,
+  "log_event_center": true,
+  "log_world_gen_step": false,
+  "log_queue_overflow": true,
+  "watchdog_enabled": true
+}
