@@ -110,3 +110,21 @@
 - 部署锁: build jar未入实例, max关游戏后自部署; tag u5-config-toml.
 - 部署: jar tanshugetrees-1.8.0-20260926231224 (U5, 含ConfigToml.class判别通过), MD5 D2EE56EB384FDAC52F557F4EB4655C49 双验MATCH, mods唯一, 红线合规(GAME-PROC=0, WMI CommandLine含实例路径判定); 旧U4 jar 20260926043522已备份至.scratch/deploy_backup。游戏内验收待max: 首启=config.txt→toml迁移+config.txt.migrated保留+79键对账+中文保值+WCR盯toml(热重载)。
 - 部署: jar tanshugetrees-1.8.0-20260927030051 (U6, 含DebugLogToml.class判别通过), MD5 F99E169DC513F123A41D015FB73CC9C0 双验MATCH, mods唯一, 红线合规(GAME-PROC=0无java进程, 版本隔离mods定位无歧义); 旧U5 jar 20260926231224已备份至.scratch/deploy_backup。游戏内验收待max: 首启=lmax-debuglog.json→toml迁移(7true保值+缺键默认)+json.migrated保档+主config 79→77瘦身+watchdog三键集中; 注释永生(手写注释重启存活)+坏文件不碰盘+进世界看WCR热重载。
+## U6 收档 (2026-09-27 深夜, max游戏内验收通过+五裁决)
+- 终验全绿: 13键8true(7json桥源+dump) / json.migrated 296B死时间戳(纯改名铁证) / 主config 79->77 / 注释永生: mtime钉21:26:41穿越三启+进世界+38min负载, 手写注释尾部在 / migrated日志行在轮转gz(2026-09-27-2+debug-3)实锤 / 干净退出(All chunks saved + Stopping!)
+- 归档: ops commit 0915506(pins 204-207); 链 e0de1bb -> 91998ec -> 0915506; tag u6-debuglog-toml
+- 观察判读(非缺陷, max裁决永久维持): THT-DE 89%洪水=6模块true忠实输出, 测试环境全开=设计状态; watchdog tellraw 27条/min聊天广播=50ms自设敏感值
+- max五裁决(27深夜): 洪水维持 / U7即时开工 / 75条中文审校免(文案授权) / GOAL-PLAN补行(本节) / U4中文验位取消(U5文件层中文保真+U4根修背书)
+
+## U7: world_gen TOML 革命 (2026-09-27 深夜开工, max令即时执行)
+- 对象: config_world_gen.txt 51286B 75条目(树生成核心配置面)
+- 动机现场: 老txt写门自修缮=迁移启+进世界各重写一次(字节恒51286B), 用户注释活不过重启
+- 手术链: 侦察(格式/触点/写门) -> 手术单 -> harness对账 -> build -> 部署(GAME-PROC=0红线) -> max游戏内验收
+- 回滚锚: reset --hard 0915506 + deploy_backup接力U6 jar
+
+## 2026-09-28 U7 收档 - world_gen config TOML 革命
+- 状态: 完成; max 实盘验收通过 (主菜单/进世界/注释永生/改值生效)
+- 交付: ConfigDynamicToml.java 新增 (纯函数: verbatim 一次性迁移 / 文件为真建盘 / 三层合并 / 双语头);
+  ConfigDynamic.java 重写 (312 -> 83L, 写门退役, getData 缓存契约不变); ConfigToml 可见性收口
+- 证据: harness 32/0; 实盘 75 条 verbatim 迁移 0diff; toml mtime 跨会话零接触; tag u7-worldgen-toml
+- 回滚锚: tag u7-worldgen-toml (U7); 0915506 (U6); U6 jar 备份于 deploy_backup

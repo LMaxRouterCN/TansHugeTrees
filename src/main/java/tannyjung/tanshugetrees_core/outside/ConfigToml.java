@@ -198,7 +198,7 @@ public class ConfigToml {
     }
 
     /** Object -> String 保真归一 (防科学计数法变形, 防半份配置). */
-    private static String normalize (Object value) {
+    static String normalize (Object value) { // [U7] private -> 包内可见: ConfigDynamicToml 复用 (单一归一实现)
 
         if (value == null) {
             return null;
@@ -439,7 +439,7 @@ public class ConfigToml {
     }
 
     /** 原子写: tmp + ATOMIC_MOVE (降级普通 move), 显式 UTF-8 无 BOM. */
-    private static void atomicWrite (Path path, String content) {
+    static void atomicWrite (Path path, String content) { // [U7] private -> 包内可见: ConfigDynamicToml 复用 (单一原子写实现)
 
         try {
             Files.createDirectories(path.getParent());
