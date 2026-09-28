@@ -824,3 +824,19 @@ tag: 实例路径, 路径判例, config布局, 客户端判据, 搜索边界, Ta
 活锁文件读取判例(2026-09-27): 读运行中JVM持有的latest.log: (1)[IO.File]::ReadAllLines/ReadLines内部用FileShare.Read独占开, 与JVM写句柄冲突→"being used by another process"失败(实战踩过, 损失一轮探针); (2)正确姿势=[IO.FileStream]::new(path, Open, Read, [IO.FileShare]::ReadWrite)+StreamReader, Select-String也可(实测通过); (3)大日志增量计数: 状态文件存(offset+各计数器+size+ts), 下轮seek到offset只扫增量, ReadLine到EOF后$fs.Position即真实消费边界可作新offset, 轮转判定=size缩水→全量重扫重置; (4)本机MC日志为GBK编码(log4j平台默认), UTF8读出乱码但ASCII模式计数不受影响, 想显示干净用GetEncoding(936)(PS7已注册CodePages, PS5.1原生); (5)latest.log每次启动轮转换血, 历史session的日志行要去logs\目录的轮转文件(含.gz)里找, 例: 21:15首启的migrated行在轮转文件中.
 tag: 文件锁, log读取, PowerShell, latest.log, 判例, 增量扫描, GBK
 <!-- END:207 -->
+<!-- ID:208 -->
+仓库部署事实(27晚U6结案定档): (1)libs两jar(night-config core+toml 3.6.4, 232KB)已被git跟踪(ls-files实证, U5/U6期入库), Apache-2.0与MPL-2.0兼容, veto裁决位已死; (2)night-config运行时供给=Forge 1.20.1自带, compileOnly即终态(U5/U6两会话生产实证, jarJar/嵌套打包担忧不成立); (3)deploy_backup语义=只保上一代jar(现U5 20260926231224在位, U4被接力清掉=设计内); (4)build\libs=33个历史构建产物(09-12~09-27共~2.1GB, git不跟踪, 可整目录删, gradle重建); (5)U6收尾回滚坐标=reset --hard c6d0a60(ops锚)+.scratch/deploy_backup U5 jar, HEAD=0915506, tag u6-debuglog-toml
+tag: libs, 部署, commit链, build.gradle, 判例
+<!-- END:208 -->
+<!-- ID:209 -->
+max五裁决定档(2026-09-27 23:00 U6收尾): (1)日志洪水永久维持不处置=测试环境debug全开是设计状态(THT-DE 89%与watchdog tellraw 27条/min皆忠实配置输出, 该观察案永结不立案) (2)U7即时开工令: config_world_gen.txt(51286B 75条目)TOML化, 标准手术链=侦察->手术单->harness->build->部署(GAME-PROC=0)->max游戏内验收 (3)75条中文审校免除=U7模板双语文案质量授权agent定稿 (4)GOAL-PLAN已补U6收档+U7开工节 (5)U4中文验位取消=信心判定(U5 harness文件层中文保真+U4 charset根修双背书). U7回滚锚=reset --hard 0915506+deploy_backup接力U6 jar. world_gen txt触发器实测模型: 被写=迁移启+进世界两次, 普通启不碰, 字节恒51286B(重渲染vs纯touch未证, MD5稳定AA25F681)
+tag: max裁决, U7, config, 部署, 判例
+<!-- END:209 -->
+<!-- ID:210 -->
+U7 终档(2026-09-28, 实盘验收通过): world_gen config 革命完成. 架构: config_world_gen.toml = 用户唯一真源, mod 永不重写(文件为真); resolve 三层合并 spec默认 < pack快照 < 用户toml; 一次性 verbatim 迁移(txt->toml, 旧档改名 .migrated 保档原时间戳, INCOMPATIBLE 丢弃); ensureFromPack 仅建盘(文件在场=零接触); ConfigDynamic 312->83L 写门退役, LOCK 伪键退役, getData 缓存契约不变, 消费者(Handcode/TreeLocation/TreePlacer/FileManager)零改动; INCOMPATIBLE 运行时=spec默认硬注入不吃pack值. night-config 要点: 表键用 quoted key 形如 ['#main/#global/tree'] 绕 # 开头路径歧义; 嵌套读值用 asTableMap 双兼容. 事实: reorganize 每会话被调 2 次(modloading-worker-0 pack解压后 + Server thread 世界启动, 原作调用图), 幂等设计使多次调用零成本. 验收证据: harness 32/0 + 实盘 75 条 verbatim 0diff + toml mtime 跨会话零接触 + max 手测(注释永生/改值生效). 锚: tag u7-worldgen-toml(U7) / 0915506(U6) / U6 jar 在 deploy_backup. 代码: ConfigDynamicToml.java(outside 纯函数) + ConfigDynamic.java 重写 + ConfigToml 可见性收口.
+tag: U7, 终档, 架构决策, config, 文件为真, toml
+<!-- END:210 -->
+<!-- ID:211 -->
+判例(U7 会): (1) harness 源码目录绝不可与运行时 work 目录同处 — v1 事故: TestWorldGenToml 的 main 开头 deleteRecursively(work), 而 work 恰是源文件所在目录, 运行即自删源码(下轮 ReadAllText 找不到文件才暴露). 修正 = 源放 .scratch/u7harness, work 用 .scratch/u7test, 分离. (2) 文件为真判据法: 用户文件 mtime 跨会话不动 + log 零写盘噪音 = 结构性证明, 强于单次手测(旧系统每次 reorganize 重写全量 txt, 新系统 4 次调用零写, mtime 是磁盘实证). (3) 测试自身也会写 bug: 32 用例唯一 FAIL = 期望值漏 presets/ 前缀, 同轮 A4 verbatim 0diff 反证代码无罪 — FAIL 先尸检测试再尸检代码. (4) PowerShell 大段文本写入宁可用字符串数组 -join, 不用 here-string — here-string 闭合标记后误粘垃圾会让整条 script 死于解析错误(script1 事故: 整 script 未执行=零副作用, 但当轮全废).
+tag: harness, 判例, 测试方法论, 文件为真, 教训
+<!-- END:211 -->
